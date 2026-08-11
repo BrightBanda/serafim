@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/data/login_form_state.dart';
 import 'package:serafim/src/data/models/app_user.dart';
 import 'package:serafim/src/presentation/viewmodel/auth_view_model.dart';
+import 'package:serafim/src/presentation/viewmodel/login_viewmodel.dart';
 import 'package:serafim/src/presentation/viewmodel/signup_view_model.dart';
 
 /// The session. Long-lived — never auto-disposed, or the user would be signed
@@ -38,3 +40,7 @@ final signupViewModelProvider =
       SignupViewModel.new,
       isAutoDispose: true,
     );
+
+final loginViewModelProvider = NotifierProvider<LoginViewModel, LoginFormState>(
+  LoginViewModel.new,
+);

@@ -13,11 +13,13 @@ class SerafimButton extends StatelessWidget {
     required this.label,
     required this.onPressed,
     this.fullWidth = true,
+    this.isPrimary = true,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final bool fullWidth;
+  final bool isPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -26,11 +28,20 @@ class SerafimButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [AppColors.primary, AppColors.primaryDeep],
-          ),
+          gradient: isPrimary
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primary, AppColors.primaryDeep],
+                )
+              : LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color.fromARGB(255, 16, 21, 33),
+                    const Color.fromARGB(255, 16, 21, 35),
+                  ],
+                ),
           border: Border.all(color: AppColors.line, width: 2),
           borderRadius: BorderRadius.zero,
           boxShadow: const [

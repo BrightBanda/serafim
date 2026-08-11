@@ -156,8 +156,6 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
   static bool _isUsernameTaken(String error) =>
       error.toLowerCase().contains('username already taken');
 
-  /// Builds a username from a display name: lowercase, non-alphanumerics
-  /// collapsed to underscores, trimmed to the column's 50-char limit.
   static String _slugify(String input) {
     final slug = input
         .toLowerCase()
