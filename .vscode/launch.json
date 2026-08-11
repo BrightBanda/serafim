@@ -1,0 +1,35 @@
+{
+  // Config reaches the app through --dart-define-from-file, which is a
+  // COMPILE-time flag. Launching without it leaves every
+  // String.fromEnvironment empty and the app shows "Not configured".
+  //
+  // These entries put the flag on the IDE's Run button so that cannot happen.
+  // Changing .env requires a full restart, not a hot reload — the values are
+  // baked into the compiled output.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "serafim (chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "chrome",
+      "toolArgs": ["--dart-define-from-file=.env"]
+    },
+    {
+      "name": "serafim (current device)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define-from-file=.env"]
+    },
+    {
+      "name": "serafim (profile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "profile",
+      "toolArgs": ["--dart-define-from-file=.env"]
+    }
+  ]
+}
