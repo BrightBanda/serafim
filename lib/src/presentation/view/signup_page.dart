@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/viewmodel/signup_view_model.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
-import 'package:serafim/src/utils/app_colors.dart';
-import 'package:serafim/src/utils/app_text_styles.dart';
+import 'package:serafim/src/utils/app_top_bar.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/google_button.dart';
 import 'package:serafim/src/utils/password_field.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/serafim_divider.dart';
 import 'package:serafim/src/utils/text_field.dart';
-import 'package:serafim/src/utils/top_bar.dart';
 
 /// Sign-up screen.
 ///
@@ -58,7 +58,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.paper,
-      appBar: TopBar(onBack: widget.onBack),
+      appBar: AppTopBar(onBack: widget.onBack),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 26, 20, 20),
@@ -89,7 +89,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               const SizedBox(height: 14),
               SerafimPasswordField(
                 controller: _passwordController,
-                hintText: 'At least ${SignupViewModel.minPasswordLength} characters',
+                hintText:
+                    'At least ${SignupViewModel.minPasswordLength} characters',
                 helperText:
                     '${SignupViewModel.minPasswordLength} characters minimum',
                 onChanged: viewModel.passwordChanged,

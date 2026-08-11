@@ -9,7 +9,8 @@ import 'package:serafim/src/data/models/auth_session.dart';
 /// so the difference is modelled explicitly instead of returning a nullable
 /// session and hoping the view model remembers why.
 class SignUpResult {
-  const SignUpResult.signedIn(AuthSession this.session) : needsEmailConfirmation = false;
+  const SignUpResult.signedIn(AuthSession this.session)
+    : needsEmailConfirmation = false;
   const SignUpResult.awaitingConfirmation()
     : session = null,
       needsEmailConfirmation = true;
@@ -31,7 +32,10 @@ class AuthService {
   final Dio _dio;
 
   /// `POST /auth/v1/signup`
-  Future<SignUpResult> signUp({required String email, required String password}) async {
+  Future<SignUpResult> signUp({
+    required String email,
+    required String password,
+  }) async {
     final json = await _post('/signup', {'email': email, 'password': password});
 
     // No access_token means the project requires email confirmation.
@@ -42,7 +46,10 @@ class AuthService {
   }
 
   /// `POST /auth/v1/token?grant_type=password`
-  Future<AuthSession> signIn({required String email, required String password}) async {
+  Future<AuthSession> signIn({
+    required String email,
+    required String password,
+  }) async {
     final json = await _post(
       '/token',
       {'email': email, 'password': password},
@@ -92,7 +99,9 @@ class AuthService {
       );
       final data = response.data;
       if (data is! Map<String, dynamic>) {
-        throw const ApiException('The authentication server sent an unexpected response.');
+        throw const ApiException(
+          'The authentication server sent an unexpected response.',
+        );
       }
       return data;
     } on DioException catch (error) {

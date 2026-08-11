@@ -22,8 +22,14 @@ class ProfileInterestsPage extends StatefulWidget {
   });
 
   final VoidCallback? onBack;
-  final VoidCallback? onFinish;
-  final VoidCallback? onSkip;
+
+  /// Receives the chosen interests — the page owns the selection, so it has
+  /// to hand it out rather than expect the caller to read it back.
+  final ValueChanged<Set<String>>? onFinish;
+
+  /// Same, with whatever happens to be selected; skipping means "no
+  /// interests", not "abandon setup".
+  final ValueChanged<Set<String>>? onSkip;
 
   @override
   State<ProfileInterestsPage> createState() => _ProfileInterestsPageState();
@@ -128,13 +134,17 @@ class _ProfileInterestsPageState extends State<ProfileInterestsPage> {
 
                     SerafimButton(
                       label: 'Finish setup',
-                      onPressed: widget.onFinish,
+                      onPressed: widget.onFinish == null
+                          ? null
+                          : () => widget.onFinish!(_selected),
                     ),
                     const SizedBox(height: 14),
 
                     Center(
                       child: GestureDetector(
-                        onTap: widget.onSkip,
+                        onTap: widget.onSkip == null
+                            ? null
+                            : () => widget.onSkip!(_selected),
                         child: RichText(
                           text: TextSpan(
                             style: AppTextStyles.smallDim,

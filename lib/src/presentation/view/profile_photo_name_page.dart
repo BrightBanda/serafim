@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_text_styles.dart';
-import '../widgets/serafim_top_bar.dart';
-import '../widgets/serafim_progress_bar.dart';
-import '../widgets/serafim_avatar_picker.dart';
-import '../widgets/serafim_text_field.dart';
-import '../widgets/serafim_button.dart';
+import 'package:serafim/src/utils/app_top_bar.dart';
+import 'package:serafim/src/utils/avatar_picker.dart';
+import 'package:serafim/src/utils/progress_bar.dart';
+import 'package:serafim/src/utils/serafim_button.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
+import 'package:serafim/src/utils/ui_text_field.dart';
 
 /// Onboarding Step 2 — photo + display name only. Reuses SerafimTopBar,
 /// SerafimTextField and SerafimButton from the signup flow.
@@ -35,7 +35,7 @@ class ProfilePhotoNamePage extends StatefulWidget {
   State<ProfilePhotoNamePage> createState() => _ProfilePhotoNamePageState();
 }
 
-class _ProfilePhotoNameScreenState extends State<ProfilePhotoNamePage> {
+class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
   late final TextEditingController _nameController =
       widget.nameController ?? TextEditingController();
   int _charCount = 0;
@@ -52,14 +52,14 @@ class _ProfilePhotoNameScreenState extends State<ProfilePhotoNamePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.paper,
-      appBar: SerafimTopBar(
+      appBar: AppTopBar(
         onBack: widget.onBack,
         trailing: Text('STEP 2 OF 3', style: AppTextStyles.fieldLabel),
       ),
       body: SafeArea(
         child: Column(
           children: [
-            const SerafimProgressBar(progress: 0.66),
+            const ProgressBar(progress: 0.66),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
@@ -82,14 +82,14 @@ class _ProfilePhotoNameScreenState extends State<ProfilePhotoNamePage> {
                     const SizedBox(height: 22),
 
                     Center(
-                      child: SerafimAvatarPicker(
+                      child: AvatarPicker(
                         onEditTap: widget.onEditPhoto,
                         onUploadTap: widget.onUploadPhoto,
                       ),
                     ),
                     const SizedBox(height: 22),
 
-                    SerafimTextField(
+                    UiTextField(
                       label: 'Display name',
                       controller: _nameController,
                       hintText: 'How should people see you?',

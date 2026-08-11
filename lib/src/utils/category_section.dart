@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_text_styles.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 /// A labeled group of chips (Sports, Hobbies, Entertainment, etc).
 /// Purely layout — [children] are whatever chip widgets the caller builds.

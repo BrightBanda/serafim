@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:serafim/src/utils/app_colors.dart';
-import 'package:serafim/src/utils/app_text_styles.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 /// Labeled input field: small mono-caps label above a flat-bordered
 /// field, matching the web version's `.field` / `.field input`.

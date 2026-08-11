@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_text_styles.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 /// Circular avatar placeholder with a small edit badge, plus an
 /// "Upload photo" text button underneath. UI only — [onEditTap] and

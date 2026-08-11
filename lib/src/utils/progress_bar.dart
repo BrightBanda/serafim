@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../theme/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
 
 /// Thin progress indicator used under the top bar during onboarding.
 /// UI only — [progress] is just a 0.0–1.0 value the caller supplies.

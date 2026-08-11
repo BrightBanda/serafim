@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:serafim/src/utils/app_colors.dart';
-import 'package:serafim/src/utils/app_text_styles.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/text_field.dart';
 
 /// Password field with a Show/Hide text toggle, mirroring the web

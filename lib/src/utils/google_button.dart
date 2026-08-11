@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:serafim/src/utils/app_colors.dart';
-import 'package:serafim/src/utils/app_text_styles.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/google_G_icon.dart';
 
 /// "Continue with Google" button — same flat/hard-shadow language as

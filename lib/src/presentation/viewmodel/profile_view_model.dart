@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/data/services/profile_service.dart';
-import 'package:serafim/src/presentation/viewmodel/auth_view_model.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/service_providers.dart';
 
@@ -18,11 +17,13 @@ class ProfileViewModel extends AsyncNotifier<Profile?> {
 
   @override
   Future<Profile?> build() async {
-    // Watching only the status — not the whole AuthState — means an unrelated
-    // change such as `isBusy` toggling does not refetch the profile.
-    final status = ref.watch(authViewModelProvider.select((state) => state.status));
+    // Keyed on the account id, not the auth status: status flips back to
+    // `authenticated` when a *different* person signs in, which would leave
+    // the previous account's profile on screen. Watching the id also avoids
+    // refetching when an unrelated field such as `isBusy` toggles.
+    final accountId = ref.watch(currentAccountIdProvider);
 
-    if (status != AuthStatus.authenticated) return null;
+    if (accountId == null) return null;
     return _profiles.getMine();
   }
 

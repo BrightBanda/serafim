@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:serafim/src/utils/app_colors.dart';
-import 'package:serafim/src/utils/app_text_styles.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 /// Primary action button. Flat corners, gradient fill, a hard
 /// (non-blurred) offset shadow instead of a soft Material elevation —

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/onboarding_flow.dart';
 import 'package:serafim/src/presentation/view/signup_page.dart';
 import 'package:serafim/src/presentation/viewmodel/auth_view_model.dart';
 import 'package:serafim/src/providers/app_providers.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
-import 'package:serafim/src/utils/app_colors.dart';
-import 'package:serafim/src/utils/app_text_styles.dart';
+import 'package:serafim/src/providers/onboarding_providers.dart';
+import 'package:serafim/src/providers/profile_providers.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 
 void main() {
@@ -42,7 +45,9 @@ class _AuthGate extends ConsumerWidget {
     // A missing --dart-define is a build mistake, not a runtime state; fail
     // loudly rather than firing requests at an empty base URL.
     final configError = ref.watch(appConfigProvider).configurationError;
-    if (configError != null) return _Message(title: 'Not configured', body: configError);
+    if (configError != null) {
+      return _Message(title: 'Not configured', body: configError);
+    }
 
     final status = ref.watch(authStatusProvider);
 
@@ -52,21 +57,52 @@ class _AuthGate extends ConsumerWidget {
       AuthStatus.unauthenticated => const SignupScreen(),
       AuthStatus.awaitingEmailConfirmation => const _Message(
         title: 'Check your email',
-        body: 'We sent you a confirmation link. Open it, then come back and log in.',
+        body:
+            'We sent you a confirmation link. Open it, then come back and log in.',
       ),
       // Signed in with Supabase, but our own API is down. Offer a retry rather
       // than sending them back to sign-up, which would only produce a
       // "user already registered" error.
       AuthStatus.backendUnavailable => _Message(
         title: 'Server unreachable',
-        body: "You're signed in, but the Serafim backend at "
+        body:
+            "You're signed in, but the Serafim backend at "
             '${ref.watch(appConfigProvider).apiBaseUrl} did not respond. '
             'Start it, then retry.',
         onRetry: ref.read(authViewModelProvider.notifier).retryBackendSync,
         isRetrying: ref.watch(authViewModelProvider).isBusy,
       ),
-      AuthStatus.authenticated => const _Home(),
+      AuthStatus.authenticated => const _AuthedApp(),
     };
+  }
+}
+
+/// Everything behind a valid session.
+///
+/// Profile setup is gated here rather than pushed from the sign-up screen, so
+/// it also catches someone who signed up, closed the app mid-setup, and came
+/// back — they land straight back in the flow instead of an empty home.
+class _AuthedApp extends ConsumerWidget {
+  const _AuthedApp();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(profileViewModelProvider);
+    final onboarding = ref.watch(onboardingViewModelProvider);
+
+    return profile.when(
+      loading: () => const _Splash(),
+      error: (error, _) => _Message(
+        title: 'Could not load your profile',
+        body: '$error',
+        onRetry: ref.read(profileViewModelProvider.notifier).reload,
+      ),
+      data: (profile) {
+        // A profile exists, or they opted out of building one this session.
+        if (profile != null || onboarding.completed) return const _Home();
+        return const OnboardingFlow();
+      },
+    );
   }
 }
 
@@ -77,9 +113,7 @@ class _Splash extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       backgroundColor: AppColors.paper,
-      body: Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      ),
+      body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
     );
   }
 }
@@ -102,7 +136,10 @@ class _Home extends ConsumerWidget {
             children: [
               Text('Signed in', style: AppTextStyles.displayHeading),
               const SizedBox(height: 8),
-              Text(user?.email ?? 'no email on file', style: AppTextStyles.body),
+              Text(
+                user?.email ?? 'no email on file',
+                style: AppTextStyles.body,
+              ),
               const SizedBox(height: 24),
               TextButton(
                 onPressed: auth.isBusy
