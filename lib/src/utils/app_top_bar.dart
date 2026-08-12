@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -11,11 +12,13 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
     this.onBack,
     this.title = 'SERAFIM',
     this.trailing,
+    this.titleFontSize = 15,
   });
 
   final VoidCallback? onBack;
   final String title;
   final Widget? trailing;
+  final int titleFontSize;
 
   @override
   Widget build(BuildContext context) {

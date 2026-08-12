@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/chat_list_page.dart';
+import 'package:serafim/src/presentation/view/chat_thread_page.dart';
 import 'package:serafim/src/presentation/view/landing_page.dart';
 import 'package:serafim/src/presentation/view/login_page.dart';
 import 'package:serafim/src/presentation/view/onboarding_flow.dart';
@@ -92,7 +94,9 @@ class _AuthedApp extends ConsumerWidget {
         onRetry: ref.read(profileViewModelProvider.notifier).reload,
       ),
       data: (profile) {
-        if (profile != null || onboarding.completed) return const _Home();
+        if (profile != null || onboarding.completed) {
+          return const ChatListPage();
+        }
         return const OnboardingFlow();
       },
     );

@@ -21,6 +21,21 @@ class UserService {
   /// `GET /auth/me` — the user plus their profile, if they have one.
   Future<AppUser> me() => _get('/auth/me');
 
+  Future<List<AppUser>> getUsers() async {
+    try {
+      final response = await _dio.get<dynamic>('/users');
+      final data = response.data;
+      if (data is! List) {
+        throw const ApiException('The server sent an unexpected response.');
+      }
+      return data
+          .map((json) => AppUser.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
   Future<AppUser> _get(String path, {String method = 'GET'}) async {
     try {
       final response = await _dio.request<dynamic>(

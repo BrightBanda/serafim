@@ -47,7 +47,7 @@ class LandingPage extends StatelessWidget {
               const SizedBox(height: 12),
 
               SerafimButton(
-                label: 'Log In',
+                label: 'Already have an account? log In',
                 onPressed: onLoginTap,
                 isPrimary: false,
               ),
