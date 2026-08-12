@@ -4,6 +4,7 @@ import 'package:serafim/src/presentation/view/chat_list_page.dart';
 import 'package:serafim/src/presentation/view/chat_thread_page.dart';
 import 'package:serafim/src/presentation/view/landing_page.dart';
 import 'package:serafim/src/presentation/view/login_page.dart';
+import 'package:serafim/src/presentation/view/main_screen.dart';
 import 'package:serafim/src/presentation/view/onboarding_flow.dart';
 import 'package:serafim/src/presentation/view/signup_page.dart';
 import 'package:serafim/src/presentation/viewmodel/auth_view_model.dart';
@@ -95,7 +96,7 @@ class _AuthedApp extends ConsumerWidget {
       ),
       data: (profile) {
         if (profile != null || onboarding.completed) {
-          return const ChatListPage();
+          return const MainScreen();
         }
         return const OnboardingFlow();
       },

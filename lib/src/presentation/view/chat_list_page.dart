@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/chat_thread_page.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/user_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
@@ -108,10 +109,17 @@ class ChatListPage extends ConsumerWidget {
                 return ChatRow(
                   name: chat.name,
                   preview: chat.preview,
-                  time: chat.time,
+                  time: "12:00",
                   isGroup: chat.isGroup,
                   unread: chat.unread,
-                  onTap: () => onOpenChat?.call(chat),
+                  //onTap: () => onOpenChat?.call(chat),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          ChatThreadPage(contactName: chat.name),
+                    ),
+                  ),
                 );
               },
             );
