@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/chat_list_page.dart';
+import 'package:serafim/src/presentation/view/chat_test_screen.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
@@ -11,7 +12,10 @@ class MainScreen extends ConsumerWidget {
   // List of screens corresponding to each tab index
   static const List<Widget> _screens = [
     ChatListPage(),
-    Center(child: Text('Discover')),
+    ChatTestScreen(
+      recipientId: "4c3d4a54-ab64-4e54-945f-2886ae373319",
+      recipientName: "Hank",
+    ),
     Center(child: Text('Profile Screen')),
   ];
 
