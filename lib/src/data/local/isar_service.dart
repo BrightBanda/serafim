@@ -47,8 +47,9 @@ class IsarService {
   /// Update the delivery/read status of a message locally
   Future<void> updateMessageStatus(
     String messageId,
-    MessageStatus status,
-  ) async {
+    MessageStatus status, {
+    String? newMessageId,
+  }) async {
     final isar = await db;
     await isar.writeTxn(() async {
       final msg = await isar.localMessages
@@ -57,6 +58,9 @@ class IsarService {
           .findFirst();
       if (msg != null) {
         msg.status = status;
+        if (newMessageId != null && newMessageId != messageId) {
+          msg.messageId = newMessageId;
+        }
         await isar.localMessages.put(msg);
       }
     });
