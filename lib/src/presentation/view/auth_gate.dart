@@ -116,8 +116,8 @@ class _Splash extends StatelessWidget {
   }
 }
 
-class _Home extends ConsumerWidget {
-  const _Home();
+class Home extends ConsumerWidget {
+  const Home();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

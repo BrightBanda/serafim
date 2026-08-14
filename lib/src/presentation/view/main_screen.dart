@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/auth_gate.dart';
 import 'package:serafim/src/presentation/view/chat_list_page.dart';
+import 'package:serafim/src/presentation/view/chat_test_screen.dart';
+import 'package:serafim/src/presentation/view/chat_thread_page.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
@@ -12,7 +15,7 @@ class MainScreen extends ConsumerWidget {
   static const List<Widget> _screens = [
     ChatListPage(),
     Center(child: Text('Discover')),
-    Center(child: Text('Profile Screen')),
+    Home(),
   ];
 
   @override

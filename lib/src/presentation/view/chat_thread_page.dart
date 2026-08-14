@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
+import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/chat/chat_bubble.dart';
 import 'package:serafim/src/utils/chat/chat_input_bar.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
-/// A single message. Plain data holder — no send/receive logic here.
+/// A single message model for the thread UI.
 class ChatMessage {
   const ChatMessage({
     required this.who,
@@ -18,67 +21,79 @@ class ChatMessage {
   final ChatBubbleSide side;
 }
 
-/// Chat thread screen. Reuses SerafimTopBar (with its new `leading`
-/// slot for the small avatar), SerafimAvatarThumb, SerafimChatBubble,
-/// and SerafimChatInputBar.
-///
-/// UI only — [onSend] fires with the current text field contents;
-/// actually sending/appending the message is the caller's job.
-class ChatThreadPage extends StatefulWidget {
+/// Real-time Chat thread screen wired with Riverpod and WebSockets.
+class ChatThreadPage extends ConsumerStatefulWidget {
   const ChatThreadPage({
     super.key,
     required this.contactName,
+    required this.recipientId,
     this.isGroup = false,
-    this.messages = _sampleMessages,
     this.onBack,
-    this.onSend,
   });
 
   final String contactName;
+  final String recipientId;
   final bool isGroup;
-  final List<ChatMessage> messages;
   final VoidCallback? onBack;
-  final ValueChanged<String>? onSend;
-
-  static const _sampleMessages = [
-    ChatMessage(
-      who: 'Serafim · 22:05',
-      text:
-          'I sense a disturbance in the localized field near Sector 76. Have you checked the telemetry array?',
-      side: ChatBubbleSide.incoming,
-    ),
-    ChatMessage(
-      who: 'You · 22:07',
-      text:
-          "Yeah, recalibrated last cycle. Might be residual energy from the nebula storm — running a diagnostic sweep now.",
-      side: ChatBubbleSide.outgoing,
-    ),
-    ChatMessage(
-      who: 'Serafim · 22:08',
-      text:
-          "Keep your proximity sensors active — I don't want us caught off guard again.",
-      side: ChatBubbleSide.incoming,
-    ),
-    ChatMessage(
-      who: 'You · 22:09',
-      text: "Copy that. Sweep's clean so far, will report if anything spikes.",
-      side: ChatBubbleSide.outgoing,
-    ),
-  ];
 
   @override
-  State<ChatThreadPage> createState() => _ChatThreadPageState();
+  ConsumerState<ChatThreadPage> createState() => _ChatThreadPageState();
 }
 
-class _ChatThreadPageState extends State<ChatThreadPage> {
+class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   final _controller = TextEditingController();
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleSend() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+
+    // Trigger message sending via ChatViewModel and WebSocket service
+    ref
+        .read(chatViewModelProvider.notifier)
+        .sendMessage(recipientId: widget.recipientId, content: text);
+
+    _controller.clear();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final chatState = ref.watch(chatViewModelProvider);
+    final currentUser = ref.watch(currentUserProvider);
+
+    // Map raw incoming WebSocket messages into ChatMessage objects for display
+    final currentUserId = currentUser?.id?.toString();
+
+    final List<ChatMessage> messages = chatState.messages.map((msg) {
+      final isOutgoing =
+          currentUserId != null &&
+          msg['sender_id']?.toString() == currentUserId;
+      final senderName = isOutgoing ? 'You' : widget.contactName;
+      final timeStr = msg['timestamp'] != null
+          ? DateTime.tryParse(
+                  msg['timestamp'],
+                )?.toLocal().toString().substring(11, 16) ??
+                ''
+          : '';
+
+      return ChatMessage(
+        who: timeStr.isNotEmpty ? '$senderName · $timeStr' : senderName,
+        // fall back to alternate keys in case the optimistic append uses a
+        // different field name than the real socket payload
+        text: (msg['content'] ?? msg['text'] ?? msg['message'] ?? '') as String,
+        side: isOutgoing ? ChatBubbleSide.outgoing : ChatBubbleSide.incoming,
+      );
+    }).toList();
+
     return Scaffold(
       backgroundColor: AppColors.paper,
       appBar: AppTopBar(
-        onBack: widget.onBack,
+        onBack: widget.onBack ?? () => Navigator.of(context).pop(),
         titleFontSize: 15,
         title: widget.contactName,
         trailing: AvatarThumb(size: 28, isGroup: widget.isGroup),
@@ -93,18 +108,15 @@ class _ChatThreadPageState extends State<ChatThreadPage> {
             Expanded(
               child: ListView.separated(
                 padding: const EdgeInsets.all(14),
-                itemCount: widget.messages.length,
+                itemCount: messages.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
-                  final m = widget.messages[index];
+                  final m = messages[index];
                   return ChatBubble(who: m.who, message: m.text, side: m.side);
                 },
               ),
             ),
-            ChatInputBar(
-              controller: _controller,
-              onSend: () => widget.onSend?.call(_controller.text),
-            ),
+            ChatInputBar(controller: _controller, onSend: _handleSend),
           ],
         ),
       ),
