@@ -116,8 +116,10 @@ class ChatListPage extends ConsumerWidget {
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          ChatThreadPage(contactName: chat.name),
+                      builder: (context) => ChatThreadPage(
+                        contactName: chat.name,
+                        recipientId: chat.id,
+                      ),
                     ),
                   ),
                 );
