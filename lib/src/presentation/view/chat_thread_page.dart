@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
@@ -33,6 +34,21 @@ class ChatThreadPage extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<ChatThreadPage> createState() => _ChatThreadPageState();
+}
+
+ChatMessageStatus _mapStatus(MessageStatus s) {
+  switch (s) {
+    case MessageStatus.sending:
+      return ChatMessageStatus.sending;
+    case MessageStatus.sent:
+      return ChatMessageStatus.sent;
+    case MessageStatus.delivered:
+      return ChatMessageStatus.delivered;
+    case MessageStatus.read:
+      return ChatMessageStatus.read;
+    case MessageStatus.failed:
+      return ChatMessageStatus.failed;
+  }
 }
 
 class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
@@ -132,6 +148,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                         side: isOutgoing
                             ? ChatBubbleSide.outgoing
                             : ChatBubbleSide.incoming,
+                        status: isOutgoing ? _mapStatus(m.status) : null,
                       );
                     },
                   );

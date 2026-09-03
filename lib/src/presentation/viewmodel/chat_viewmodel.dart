@@ -56,8 +56,32 @@ class ChatViewModel extends Notifier<ChatState> {
         break;
 
       case 'status':
-        state = state.copyWith(isConnected: data['status'] == 'connected');
+        final isConnectedNow = data['status'] == 'connected';
+        state = state.copyWith(isConnected: isConnectedNow);
+
+        // When connection is re-established, resend any queued/pending messages
+        if (isConnectedNow) {
+          await _resendPendingMessages();
+        }
         break;
+    }
+  }
+
+  /// Queries Isar for messages with 'sending' status and pushes them down the socket
+  Future<void> _resendPendingMessages() async {
+    final isar = ref.read(isarServiceProvider);
+
+    // Fetch pending messages saved in Isar
+    final pendingMessages = await isar.getPendingMessages();
+
+    for (final msg in pendingMessages) {
+      ref.read(webSocketServiceProvider).sendMessage({
+        "type": "message",
+        "temp_id": msg.messageId, // temp_id is stored in messageId before ack
+        "recipient_id": msg.recipientId,
+        "content": msg.textContent,
+        "timestamp": msg.timestamp.toIso8601String(),
+      });
     }
   }
 
@@ -77,7 +101,7 @@ class ChatViewModel extends Notifier<ChatState> {
   }
 
   /// Send a chat message: write it locally first (instant UI update via
-  /// the Isar watch stream), then push it over the socket.
+  /// the Isar watch stream), then attempt to push it over the socket.
   Future<void> sendMessage({
     required String roomId,
     required String recipientId,
@@ -101,6 +125,8 @@ class ChatViewModel extends Notifier<ChatState> {
 
     await isar.saveMessage(localMsg);
 
+    // Try sending over socket; if offline, it remains saved in Isar as 'sending'
+    // and will automatically resend via _resendPendingMessages() on reconnect.
     ref.read(webSocketServiceProvider).sendMessage({
       "type": "message",
       "temp_id": tempId,
@@ -117,8 +143,6 @@ final chatViewModelProvider = NotifierProvider<ChatViewModel, ChatState>(
 
 DateTime _parseServerTimestamp(String? raw) {
   if (raw == null || raw.isEmpty) return DateTime.now().toUtc();
-  // Backend sends naive UTC timestamps (no offset marker). Telling Dart
-  // it's UTC via 'Z' avoids it being misread as local time.
   final hasOffset =
       raw.endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(raw);
   final normalized = hasOffset ? raw : '${raw}Z';

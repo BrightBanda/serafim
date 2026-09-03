@@ -78,6 +78,14 @@ class IsarService {
     });
   }
 
+  Future<List<LocalMessage>> getPendingMessages() async {
+    final isar = await db;
+    return await isar.localMessages
+        .filter()
+        .statusEqualTo(MessageStatus.sending)
+        .findAll();
+  }
+
   /// Watch real-time stream of all active chat rooms sorted by latest activity
   Stream<List<LocalChatRoom>> watchAllChatRooms() async* {
     final isar = await db;
