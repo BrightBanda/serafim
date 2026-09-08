@@ -44,11 +44,12 @@ class IsarService {
         .watch(fireImmediately: true);
   }
 
-  /// Update the delivery/read status of a message locally
+  /// Update the delivery/read status and timestamp of a message locally
   Future<void> updateMessageStatus(
     String messageId,
     MessageStatus status, {
     String? newMessageId,
+    DateTime? newTimestamp,
   }) async {
     final isar = await db;
     await isar.writeTxn(() async {
@@ -58,8 +59,13 @@ class IsarService {
           .findFirst();
       if (msg != null) {
         msg.status = status;
-        if (newMessageId != null && newMessageId != messageId) {
+        if (newMessageId != null &&
+            newMessageId.isNotEmpty &&
+            newMessageId != messageId) {
           msg.messageId = newMessageId;
+        }
+        if (newTimestamp != null) {
+          msg.timestamp = newTimestamp;
         }
         await isar.localMessages.put(msg);
       }

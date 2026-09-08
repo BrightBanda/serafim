@@ -15,6 +15,8 @@ class ChatState {
   }
 }
 
+Future<void> _eventQueue = Future.value();
+
 class ChatViewModel extends Notifier<ChatState> {
   @override
   ChatState build() {
@@ -22,23 +24,38 @@ class ChatViewModel extends Notifier<ChatState> {
       previous,
       next,
     ) {
-      next.whenData((data) => _persistIncoming(data));
+      next.whenData((data) {
+        _eventQueue = _eventQueue.then((_) => _persistIncoming(data));
+      });
     });
-
     return const ChatState();
   }
 
   Future<void> _persistIncoming(Map<String, dynamic> data) async {
     final isar = ref.read(isarServiceProvider);
+    final currentUser = ref.read(currentUserProvider);
     final type = data['type'];
 
     switch (type) {
       case 'message':
+        // Verify the message is actually addressed to the current user.
+        // The server should only send us messages where we are the recipient,
+        // but we double-check here to prevent leaking messages from other
+        // conversations (e.g. when roomId is used as a sender id).
+        final recipientId = data['recipient_id']?.toString();
+        if (currentUser == null || recipientId != currentUser.id) {
+          return; // Not for us; ignore.
+        }
+
+        final senderId = data['sender_id'].toString();
+        final roomId = buildRoomId(senderId, currentUser.id);
+
         final msg = LocalMessage()
           ..messageId = data['message_id'] as String
-          ..roomId = data['sender_id'] as String
-          ..senderId = data['sender_id'] as String
-          ..recipientId = data['recipient_id'] as String
+          ..roomId = roomId
+          ..senderId = senderId
+          ..recipientId =
+              recipientId! // Safe: checked above (non-null guard)
           ..textContent = data['content'] as String?
           ..status = _statusFromString(data['status'] as String?)
           ..timestamp = _parseServerTimestamp(data['timestamp'] as String?);
@@ -50,8 +67,26 @@ class ChatViewModel extends Notifier<ChatState> {
         final tempId = data['temp_id'] as String?;
         final realId = data['message_id'] as String?;
         final status = _statusFromString(data['status'] as String?);
+        final serverTimestamp = data['timestamp'] != null
+            ? _parseServerTimestamp(data['timestamp'] as String?)
+            : null;
+        print(
+          '[ack] type=$type tempId=$tempId realId=$realId ts=$serverTimestamp',
+        );
+
         if (tempId != null) {
-          await isar.updateMessageStatus(tempId, status, newMessageId: realId);
+          await isar.updateMessageStatus(
+            tempId,
+            status,
+            newMessageId: realId,
+            newTimestamp: serverTimestamp,
+          );
+        } else if (realId != null) {
+          await isar.updateMessageStatus(
+            realId,
+            status,
+            newTimestamp: serverTimestamp,
+          );
         }
         break;
 
@@ -65,6 +100,12 @@ class ChatViewModel extends Notifier<ChatState> {
         }
         break;
     }
+  }
+
+  /// Builds a deterministic, order-independent room id for a 1:1 conversation
+  /// between [userA] and [userB] so both sides arrive at the same value.
+  static String buildRoomId(String userA, String userB) {
+    return userA.compareTo(userB) < 0 ? '${userA}_$userB' : '${userB}_$userA';
   }
 
   /// Queries Isar for messages with 'sending' status and pushes them down the socket

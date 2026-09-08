@@ -64,12 +64,19 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    // 1:1 chat for now — roomId and recipientId are the same. Revisit this
-    // once group chats need a roomId distinct from any single participant.
+    // For 1:1 chat, roomId and recipientId should be distinct.
+    // roomId = composite of sender_id + recipient_id (ordered alphabetically)
+    // recipientId = other user's id
+    final currentUser = ref.read(currentUserProvider);
+    if (currentUser == null) return;
+
+    final currentUserId = currentUser.id;
+    final roomId = ChatViewModel.buildRoomId(currentUserId, widget.recipientId);
+
     ref
         .read(chatViewModelProvider.notifier)
         .sendMessage(
-          roomId: widget.recipientId,
+          roomId: roomId,
           recipientId: widget.recipientId,
           content: text,
         );
@@ -79,11 +86,14 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
 
   @override
   Widget build(BuildContext context) {
-    final messagesAsync = ref.watch(
-      roomMessagesStreamProvider(widget.recipientId),
-    );
     final currentUser = ref.watch(currentUserProvider);
     final currentUserId = currentUser?.id;
+
+    // Use the correct composite room ID to watch messages
+    final roomId = currentUserId != null
+        ? ChatViewModel.buildRoomId(currentUserId, widget.recipientId)
+        : widget.recipientId;
+    final messagesAsync = ref.watch(roomMessagesStreamProvider(roomId));
 
     return SafeArea(
       child: Scaffold(
@@ -112,7 +122,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                     style: const TextStyle(color: Colors.red),
                   ),
                 ),
-                data: (localMessages) {
+
+                /*data: (localMessages) {
                   if (localMessages.isEmpty) {
                     return const Center(
                       child: Text(
@@ -138,6 +149,49 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                           .toLocal()
                           .toString()
                           .substring(11, 16);
+                      final who = isOutgoing
+                          ? 'You · $timeStr'
+                          : '${widget.contactName} · $timeStr';
+
+                      return ChatBubble(
+                        who: who,
+                        message: m.textContent ?? '',
+                        side: isOutgoing
+                            ? ChatBubbleSide.outgoing
+                            : ChatBubbleSide.incoming,
+                        status: isOutgoing ? _mapStatus(m.status) : null,
+                      );
+                    },
+                  );
+                },*/
+                data: (localMessages) {
+                  if (localMessages.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'No messages yet. Say hi!',
+                        style: TextStyle(color: AppColors.textDim),
+                      ),
+                    );
+                  }
+
+                  final ordered = [...localMessages]
+                    ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(14),
+                    itemCount: ordered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final m = ordered[index];
+
+                      final isOutgoing =
+                          currentUserId != null && m.senderId == currentUserId;
+
+                      final timeStr = m.timestamp
+                          .toLocal()
+                          .toString()
+                          .substring(11, 16);
+
                       final who = isOutgoing
                           ? 'You · $timeStr'
                           : '${widget.contactName} · $timeStr';
