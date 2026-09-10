@@ -34,7 +34,9 @@ class ChatViewModel extends Notifier<ChatState> {
         _eventQueue = _eventQueue
             .then((_) => _persistIncoming(data))
             .catchError((Object error, StackTrace stackTrace) {
-              _log('Unhandled error in socket event queue: $error\n$stackTrace');
+              _log(
+                'Unhandled error in socket event queue: $error\n$stackTrace',
+              );
             });
       });
     });
@@ -66,14 +68,15 @@ class ChatViewModel extends Notifier<ChatState> {
           final roomId = buildRoomId(senderId, currentUser.id);
           final rawTimestamp = data['timestamp'] as String?;
           final parsedTimestamp = _parseServerTimestamp(rawTimestamp);
+          final messageId = data['message_id'] as String;
 
           _log(
-            'recv message_id=${data['message_id']} raw_ts=$rawTimestamp '
+            'recv message_id=$messageId raw_ts=$rawTimestamp '
             'parsed_ts=$parsedTimestamp content=${data['content']}',
           );
 
           final msg = LocalMessage()
-            ..messageId = data['message_id'] as String
+            ..messageId = messageId
             ..roomId = roomId
             ..senderId = senderId
             ..recipientId =
@@ -82,6 +85,17 @@ class ChatViewModel extends Notifier<ChatState> {
             ..status = _statusFromString(data['status'] as String?)
             ..timestamp = parsedTimestamp;
           await isar.saveMessage(msg);
+
+          // Confirm real, on-device receipt. This is the ONLY signal the
+          // server trusts to ever mark a message "delivered" — a socket
+          // write succeeding on the server's end does not prove the
+          // recipient's app actually received and persisted it (the
+          // "ghost socket" problem: a dead connection can look healthy
+          // to the server until a write finally fails).
+          ref.read(webSocketServiceProvider).sendMessage({
+            "type": "delivery_ack",
+            "message_id": messageId,
+          });
           break;
 
         case 'message_ack':
@@ -137,7 +151,9 @@ class ChatViewModel extends Notifier<ChatState> {
           break;
       }
     } catch (error, stackTrace) {
-      _log('Error persisting incoming event payload $data: $error\n$stackTrace');
+      _log(
+        'Error persisting incoming event payload $data: $error\n$stackTrace',
+      );
     }
   }
 
