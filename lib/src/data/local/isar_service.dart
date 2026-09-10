@@ -45,19 +45,25 @@ class IsarService {
   }
 
   /// Update the delivery/read status and timestamp of a message locally
-  Future<void> updateMessageStatus(
+  // lib/src/data/local/isar_service.dart
+
+  /// Update the delivery/read status and timestamp of a message locally.
+  /// Returns true if a matching row was found and updated, false otherwise.
+  Future<bool> updateMessageStatus(
     String messageId,
     MessageStatus status, {
     String? newMessageId,
     DateTime? newTimestamp,
   }) async {
     final isar = await db;
+    var found = false;
     await isar.writeTxn(() async {
       final msg = await isar.localMessages
           .filter()
           .messageIdEqualTo(messageId)
           .findFirst();
       if (msg != null) {
+        found = true;
         msg.status = status;
         if (newMessageId != null &&
             newMessageId.isNotEmpty &&
@@ -70,6 +76,7 @@ class IsarService {
         await isar.localMessages.put(msg);
       }
     });
+    return found;
   }
 
   // ==========================================

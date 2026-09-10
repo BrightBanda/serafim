@@ -1,5 +1,6 @@
-// lib/src/presentation/viewmodel/chat_view_model.dart
+// lib/src/presentation/viewmodel/chat_viewmodel.dart
 
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
@@ -15,9 +16,14 @@ class ChatState {
   }
 }
 
-Future<void> _eventQueue = Future.value();
-
 class ChatViewModel extends Notifier<ChatState> {
+  /// Every incoming socket event is chained onto this future, so events are
+  /// guaranteed to be fully persisted one at a time, in the order they
+  /// arrived — never concurrently, never out of order. Without this, a
+  /// receive and an ack landing close together could run as overlapping
+  /// async Isar writes with no guaranteed ordering between them.
+  Future<void> _eventQueue = Future.value();
+
   @override
   ChatState build() {
     ref.listen<AsyncValue<Map<String, dynamic>>>(webSocketStreamProvider, (
@@ -25,80 +31,113 @@ class ChatViewModel extends Notifier<ChatState> {
       next,
     ) {
       next.whenData((data) {
-        _eventQueue = _eventQueue.then((_) => _persistIncoming(data));
+        _eventQueue = _eventQueue
+            .then((_) => _persistIncoming(data))
+            .catchError((Object error, StackTrace stackTrace) {
+              _log('Unhandled error in socket event queue: $error\n$stackTrace');
+            });
       });
     });
+
     return const ChatState();
   }
 
+  void _log(String message) {
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[chat] $message');
+    }
+  }
+
   Future<void> _persistIncoming(Map<String, dynamic> data) async {
-    final isar = ref.read(isarServiceProvider);
-    final currentUser = ref.read(currentUserProvider);
-    final type = data['type'];
+    try {
+      final isar = ref.read(isarServiceProvider);
+      final currentUser = ref.read(currentUserProvider);
+      final type = data['type'];
 
-    switch (type) {
-      case 'message':
-        // Verify the message is actually addressed to the current user.
-        // The server should only send us messages where we are the recipient,
-        // but we double-check here to prevent leaking messages from other
-        // conversations (e.g. when roomId is used as a sender id).
-        final recipientId = data['recipient_id']?.toString();
-        if (currentUser == null || recipientId != currentUser.id) {
-          return; // Not for us; ignore.
-        }
+      switch (type) {
+        case 'message':
+          final recipientId = data['recipient_id']?.toString();
+          if (currentUser == null || recipientId != currentUser.id) {
+            return; // Not for us; ignore.
+          }
 
-        final senderId = data['sender_id'].toString();
-        final roomId = buildRoomId(senderId, currentUser.id);
+          final senderId = data['sender_id'].toString();
+          final roomId = buildRoomId(senderId, currentUser.id);
+          final rawTimestamp = data['timestamp'] as String?;
+          final parsedTimestamp = _parseServerTimestamp(rawTimestamp);
 
-        final msg = LocalMessage()
-          ..messageId = data['message_id'] as String
-          ..roomId = roomId
-          ..senderId = senderId
-          ..recipientId =
-              recipientId! // Safe: checked above (non-null guard)
-          ..textContent = data['content'] as String?
-          ..status = _statusFromString(data['status'] as String?)
-          ..timestamp = _parseServerTimestamp(data['timestamp'] as String?);
-        await isar.saveMessage(msg);
-        break;
-
-      case 'message_ack':
-      case 'message_status':
-        final tempId = data['temp_id'] as String?;
-        final realId = data['message_id'] as String?;
-        final status = _statusFromString(data['status'] as String?);
-        final serverTimestamp = data['timestamp'] != null
-            ? _parseServerTimestamp(data['timestamp'] as String?)
-            : null;
-        print(
-          '[ack] type=$type tempId=$tempId realId=$realId ts=$serverTimestamp',
-        );
-
-        if (tempId != null) {
-          await isar.updateMessageStatus(
-            tempId,
-            status,
-            newMessageId: realId,
-            newTimestamp: serverTimestamp,
+          _log(
+            'recv message_id=${data['message_id']} raw_ts=$rawTimestamp '
+            'parsed_ts=$parsedTimestamp content=${data['content']}',
           );
-        } else if (realId != null) {
-          await isar.updateMessageStatus(
-            realId,
-            status,
-            newTimestamp: serverTimestamp,
+
+          final msg = LocalMessage()
+            ..messageId = data['message_id'] as String
+            ..roomId = roomId
+            ..senderId = senderId
+            ..recipientId =
+                recipientId! // Safe: checked above
+            ..textContent = data['content'] as String?
+            ..status = _statusFromString(data['status'] as String?)
+            ..timestamp = parsedTimestamp;
+          await isar.saveMessage(msg);
+          break;
+
+        case 'message_ack':
+        case 'message_status':
+          final tempId = data['temp_id'] as String?;
+          final realId = data['message_id'] as String?;
+          final status = _statusFromString(data['status'] as String?);
+          final rawTimestamp = data['timestamp'] as String?;
+          final serverTimestamp = rawTimestamp != null
+              ? _parseServerTimestamp(rawTimestamp)
+              : null;
+
+          _log(
+            'ack type=$type tempId=$tempId realId=$realId '
+            'raw_ts=$rawTimestamp parsed_ts=$serverTimestamp',
           );
-        }
-        break;
 
-      case 'status':
-        final isConnectedNow = data['status'] == 'connected';
-        state = state.copyWith(isConnected: isConnectedNow);
+          bool updated = false;
+          if (tempId != null) {
+            updated = await isar.updateMessageStatus(
+              tempId,
+              status,
+              newMessageId: realId,
+              newTimestamp: serverTimestamp,
+            );
+          } else if (realId != null) {
+            updated = await isar.updateMessageStatus(
+              realId,
+              status,
+              newTimestamp: serverTimestamp,
+            );
+          }
 
-        // When connection is re-established, resend any queued/pending messages
-        if (isConnectedNow) {
-          await _resendPendingMessages();
-        }
-        break;
+          if (!updated) {
+            // The row this ack refers to wasn't found. This should never
+            // happen (the optimistic write is awaited before the socket
+            // send), but if it ever does, we want it loud instead of a
+            // silently stale timestamp.
+            _log(
+              'WARNING: ack for tempId=$tempId realId=$realId matched no '
+              'local row — timestamp/status correction was dropped.',
+            );
+          }
+          break;
+
+        case 'status':
+          final isConnectedNow = data['status'] == 'connected';
+          state = state.copyWith(isConnected: isConnectedNow);
+
+          if (isConnectedNow) {
+            await _resendPendingMessages();
+          }
+          break;
+      }
+    } catch (error, stackTrace) {
+      _log('Error persisting incoming event payload $data: $error\n$stackTrace');
     }
   }
 
@@ -108,17 +147,14 @@ class ChatViewModel extends Notifier<ChatState> {
     return userA.compareTo(userB) < 0 ? '${userA}_$userB' : '${userB}_$userA';
   }
 
-  /// Queries Isar for messages with 'sending' status and pushes them down the socket
   Future<void> _resendPendingMessages() async {
     final isar = ref.read(isarServiceProvider);
-
-    // Fetch pending messages saved in Isar
     final pendingMessages = await isar.getPendingMessages();
 
     for (final msg in pendingMessages) {
       ref.read(webSocketServiceProvider).sendMessage({
         "type": "message",
-        "temp_id": msg.messageId, // temp_id is stored in messageId before ack
+        "temp_id": msg.messageId,
         "recipient_id": msg.recipientId,
         "content": msg.textContent,
         "timestamp": msg.timestamp.toIso8601String(),
@@ -141,8 +177,6 @@ class ChatViewModel extends Notifier<ChatState> {
     }
   }
 
-  /// Send a chat message: write it locally first (instant UI update via
-  /// the Isar watch stream), then attempt to push it over the socket.
   Future<void> sendMessage({
     required String roomId,
     required String recipientId,
@@ -164,10 +198,10 @@ class ChatViewModel extends Notifier<ChatState> {
       ..status = MessageStatus.sending
       ..timestamp = timestamp;
 
+    // Awaited: guarantees the local row exists before we send over the
+    // socket, so a fast-returning ack can never race ahead of this write.
     await isar.saveMessage(localMsg);
 
-    // Try sending over socket; if offline, it remains saved in Isar as 'sending'
-    // and will automatically resend via _resendPendingMessages() on reconnect.
     ref.read(webSocketServiceProvider).sendMessage({
       "type": "message",
       "temp_id": tempId,
@@ -182,7 +216,10 @@ final chatViewModelProvider = NotifierProvider<ChatViewModel, ChatState>(
   ChatViewModel.new,
 );
 
-DateTime _parseServerTimestamp(String? raw) {
+DateTime _parseServerTimestamp(String? raw) => parseServerTimestamp(raw);
+
+@visibleForTesting
+DateTime parseServerTimestamp(String? raw) {
   if (raw == null || raw.isEmpty) return DateTime.now().toUtc();
   final hasOffset =
       raw.endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(raw);
