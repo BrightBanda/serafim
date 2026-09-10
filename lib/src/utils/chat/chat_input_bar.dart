@@ -30,22 +30,26 @@ class ChatInputBar extends StatelessWidget {
         border: Border(top: BorderSide(color: AppColors.line, width: 2)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
             child: Container(
-              height: 38,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.paperAlt,
                 border: Border.all(color: AppColors.lineSoft, width: 1.5),
               ),
               child: TextField(
                 controller: controller,
+                minLines: 1,
+                maxLines: 3,
+                keyboardType: TextInputType.multiline,
                 style: AppTextStyles.fieldInput.copyWith(fontSize: 11),
                 cursorColor: AppColors.primary,
                 decoration: InputDecoration(
                   border: InputBorder.none,
-                  isCollapsed: true,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
                   hintText: hintText,
                   hintStyle: AppTextStyles.fieldInput.copyWith(
                     color: AppColors.textDim,

@@ -85,6 +85,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   final ScrollController _scrollController = ScrollController();
 
   bool _initialScrollDone = false;
+  int _lastMessageCount = 0;
 
   @override
   void dispose() {
@@ -180,7 +181,14 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     final currentUser = ref.watch(currentUserProvider);
     final currentUserId = currentUser?.id;
 
-    final messagesProvider = roomMessagesStreamProvider(_roomId);
+    final roomId = currentUserId != null
+        ? ChatViewModel.buildRoomId(currentUserId, widget.recipientId)
+        : widget.recipientId;
+
+    final messagesProvider = roomMessagesStreamProvider(roomId);
+
+    // React to actual message additions instead of calling scroll
+    // from inside the widget's build process.
     ref.listen<AsyncValue<List<LocalMessage>>>(
       messagesProvider,
       _handleMessagesChanged,
@@ -246,6 +254,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                       );
                     });
                   }
+
+                  _lastMessageCount = orderedMessages.length;
 
                   return ListView.separated(
                     controller: _scrollController,

@@ -116,42 +116,6 @@ class _Splash extends StatelessWidget {
   }
 }
 
-class Home extends ConsumerWidget {
-  const Home();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider);
-    final auth = ref.watch(authViewModelProvider);
-
-    return Scaffold(
-      backgroundColor: AppColors.paper,
-      body: SafeArea(
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('Signed in', style: AppTextStyles.displayHeading),
-              const SizedBox(height: 8),
-              Text(
-                user?.email ?? 'no email on file',
-                style: AppTextStyles.body,
-              ),
-              const SizedBox(height: 24),
-              TextButton(
-                onPressed: auth.isBusy
-                    ? null
-                    : () => ref.read(authViewModelProvider.notifier).signOut(),
-                child: Text('Log out', style: AppTextStyles.linkText),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _Message extends StatelessWidget {
   const _Message({
     required this.title,
