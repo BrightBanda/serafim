@@ -13,6 +13,7 @@ class ChatRow extends StatelessWidget {
     required this.time,
     this.isGroup = false,
     this.unread = false,
+    this.imageProvider,
     this.onTap,
   });
 
@@ -21,6 +22,7 @@ class ChatRow extends StatelessWidget {
   final String time;
   final bool isGroup;
   final bool unread;
+  final ImageProvider? imageProvider;
   final VoidCallback? onTap;
 
   @override
@@ -42,7 +44,7 @@ class ChatRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            AvatarThumb(isGroup: isGroup),
+            AvatarThumb(isGroup: isGroup, imageProvider: imageProvider),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -61,7 +63,11 @@ class ChatRow extends StatelessWidget {
                     preview,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.body.copyWith(fontSize: 10),
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 10,
+                      color: unread ? AppColors.text : null,
+                      fontWeight: unread ? FontWeight.w700 : null,
+                    ),
                   ),
                 ],
               ),

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -13,12 +12,16 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
     this.title = 'SERAFIM',
     this.trailing,
     this.titleFontSize = 15,
+    this.titleWidget,
   });
 
   final VoidCallback? onBack;
   final String title;
   final Widget? trailing;
   final int titleFontSize;
+
+  /// Replaces the text [title] (e.g. avatar + username on the left).
+  final Widget? titleWidget;
 
   @override
   Widget build(BuildContext context) {
@@ -53,8 +56,12 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
               ),
             ),
-          Text(title, style: AppTextStyles.logo),
-          const Spacer(),
+          if (titleWidget != null)
+            Expanded(child: titleWidget!)
+          else ...[
+            Text(title, style: AppTextStyles.logo),
+            const Spacer(),
+          ],
           if (trailing != null) trailing!,
         ],
       ),

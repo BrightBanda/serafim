@@ -27,35 +27,40 @@ const LocalMessageSchema = CollectionSchema(
       name: r'messageId',
       type: IsarType.string,
     ),
-    r'recipientId': PropertySchema(
+    r'readAckPending': PropertySchema(
       id: 2,
+      name: r'readAckPending',
+      type: IsarType.bool,
+    ),
+    r'recipientId': PropertySchema(
+      id: 3,
       name: r'recipientId',
       type: IsarType.string,
     ),
-    r'roomId': PropertySchema(id: 3, name: r'roomId', type: IsarType.string),
+    r'roomId': PropertySchema(id: 4, name: r'roomId', type: IsarType.string),
     r'senderId': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'senderId',
       type: IsarType.string,
     ),
     r'status': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'status',
       type: IsarType.byte,
       enumMap: _LocalMessagestatusEnumValueMap,
     ),
     r'textContent': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'textContent',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 7,
+      id: 8,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'type': PropertySchema(
-      id: 8,
+      id: 9,
       name: r'type',
       type: IsarType.byte,
       enumMap: _LocalMessagetypeEnumValueMap,
@@ -150,13 +155,14 @@ void _localMessageSerialize(
 ) {
   writer.writeString(offsets[0], object.localMediaPath);
   writer.writeString(offsets[1], object.messageId);
-  writer.writeString(offsets[2], object.recipientId);
-  writer.writeString(offsets[3], object.roomId);
-  writer.writeString(offsets[4], object.senderId);
-  writer.writeByte(offsets[5], object.status.index);
-  writer.writeString(offsets[6], object.textContent);
-  writer.writeDateTime(offsets[7], object.timestamp);
-  writer.writeByte(offsets[8], object.type.index);
+  writer.writeBool(offsets[2], object.readAckPending);
+  writer.writeString(offsets[3], object.recipientId);
+  writer.writeString(offsets[4], object.roomId);
+  writer.writeString(offsets[5], object.senderId);
+  writer.writeByte(offsets[6], object.status.index);
+  writer.writeString(offsets[7], object.textContent);
+  writer.writeDateTime(offsets[8], object.timestamp);
+  writer.writeByte(offsets[9], object.type.index);
 }
 
 LocalMessage _localMessageDeserialize(
@@ -169,16 +175,17 @@ LocalMessage _localMessageDeserialize(
   object.id = id;
   object.localMediaPath = reader.readStringOrNull(offsets[0]);
   object.messageId = reader.readString(offsets[1]);
-  object.recipientId = reader.readString(offsets[2]);
-  object.roomId = reader.readString(offsets[3]);
-  object.senderId = reader.readString(offsets[4]);
+  object.readAckPending = reader.readBool(offsets[2]);
+  object.recipientId = reader.readString(offsets[3]);
+  object.roomId = reader.readString(offsets[4]);
+  object.senderId = reader.readString(offsets[5]);
   object.status =
-      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[5])] ??
+      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[6])] ??
       MessageStatus.sending;
-  object.textContent = reader.readStringOrNull(offsets[6]);
-  object.timestamp = reader.readDateTime(offsets[7]);
+  object.textContent = reader.readStringOrNull(offsets[7]);
+  object.timestamp = reader.readDateTime(offsets[8]);
   object.type =
-      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[8])] ??
+      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[9])] ??
       MessageType.text;
   return object;
 }
@@ -195,20 +202,22 @@ P _localMessageDeserializeProp<P>(
     case 1:
       return (reader.readString(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 3:
       return (reader.readString(offset)) as P;
     case 4:
       return (reader.readString(offset)) as P;
     case 5:
+      return (reader.readString(offset)) as P;
+    case 6:
       return (_LocalMessagestatusValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageStatus.sending)
           as P;
-    case 6:
-      return (reader.readStringOrNull(offset)) as P;
     case 7:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 8:
+      return (reader.readDateTime(offset)) as P;
+    case 9:
       return (_LocalMessagetypeValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageType.text)
           as P;
@@ -973,6 +982,15 @@ extension LocalMessageQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'messageId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  readAckPendingEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'readAckPending', value: value),
       );
     });
   }
@@ -1764,6 +1782,20 @@ extension LocalMessageQuerySortBy
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  sortByReadAckPending() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readAckPending', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  sortByReadAckPendingDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readAckPending', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByRecipientId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'recipientId', Sort.asc);
@@ -1891,6 +1923,20 @@ extension LocalMessageQuerySortThenBy
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  thenByReadAckPending() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readAckPending', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  thenByReadAckPendingDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'readAckPending', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByRecipientId() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'recipientId', Sort.asc);
@@ -1999,6 +2045,13 @@ extension LocalMessageQueryWhereDistinct
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct>
+  distinctByReadAckPending() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'readAckPending');
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByRecipientId({
     bool caseSensitive = true,
   }) {
@@ -2068,6 +2121,12 @@ extension LocalMessageQueryProperty
   QueryBuilder<LocalMessage, String, QQueryOperations> messageIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'messageId');
+    });
+  }
+
+  QueryBuilder<LocalMessage, bool, QQueryOperations> readAckPendingProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'readAckPending');
     });
   }
 

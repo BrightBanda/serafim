@@ -11,11 +11,15 @@ class ChatInputBar extends StatelessWidget {
     this.controller,
     this.hintText = 'Speak into the void…',
     this.onSend,
+    this.onAttach,
   });
 
   final TextEditingController? controller;
   final String hintText;
   final VoidCallback? onSend;
+
+  /// Shows an attach (image) button when non-null.
+  final VoidCallback? onAttach;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +36,25 @@ class ChatInputBar extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          if (onAttach != null) ...[
+            GestureDetector(
+              onTap: onAttach,
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.paperAlt,
+                  border: Border.all(color: AppColors.lineSoft, width: 1.5),
+                ),
+                child: const Icon(
+                  Icons.attach_file,
+                  size: 18,
+                  color: AppColors.textDim,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

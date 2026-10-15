@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
@@ -22,6 +24,7 @@ class OnboardingState {
     this.isSubmitting = false,
     this.errorMessage,
     this.completed = false,
+    this.avatarBytes,
   });
 
   final OnboardingStep step;
@@ -34,6 +37,10 @@ class OnboardingState {
   /// gate move on without re-prompting for the rest of the session.
   final bool completed;
 
+  /// Photo picked in step 2 (already shrunk). Uploaded once the profile
+  /// exists, since the avatar URL is stored on it.
+  final Uint8List? avatarBytes;
+
   OnboardingState copyWith({
     OnboardingStep? step,
     String? displayName,
@@ -41,6 +48,7 @@ class OnboardingState {
     bool? isSubmitting,
     Object? errorMessage = _unset,
     bool? completed,
+    Uint8List? avatarBytes,
   }) {
     return OnboardingState(
       step: step ?? this.step,
@@ -51,6 +59,7 @@ class OnboardingState {
           ? this.errorMessage
           : errorMessage as String?,
       completed: completed ?? this.completed,
+      avatarBytes: avatarBytes ?? this.avatarBytes,
     );
   }
 }
@@ -78,6 +87,8 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
       errorMessage: null,
     );
   }
+
+  void setAvatar(Uint8List bytes) => state = state.copyWith(avatarBytes: bytes);
 
   void backToPhotoName() {
     state = state.copyWith(step: OnboardingStep.photoName, errorMessage: null);
@@ -129,6 +140,13 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
           interests: interests.isEmpty ? null : interests.toList(),
         ),
       );
+    }
+
+    // The picture is a nicety: if the upload fails the account is still
+    // fully set up, and they can retry from the profile page.
+    final avatar = state.avatarBytes;
+    if (error == null && avatar != null) {
+      await profiles.uploadAvatar(avatar);
     }
 
     if (!ref.mounted) return;

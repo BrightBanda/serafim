@@ -31,6 +31,10 @@ class LocalMessage {
   @enumerated
   MessageStatus status = MessageStatus.sending;
 
+  /// Incoming messages only: the user has seen this message locally but the
+  /// server has not yet been told (socket was down). Flushed on reconnect.
+  bool readAckPending = false;
+
   @Index()
   late DateTime timestamp;
 }

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -19,7 +21,11 @@ class ChatBubble extends StatelessWidget {
     required this.message,
     required this.side,
     this.status,
+    this.imagePath,
   });
+
+  /// Local file path of an attached image, if any.
+  final String? imagePath;
 
   final String who;
   final String message;
@@ -72,14 +78,33 @@ class ChatBubble extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 3),
-            Text(
-              message,
-              style: AppTextStyles.body.copyWith(
-                color: isOut ? Colors.white : AppColors.text,
-                fontSize: 11,
-                height: 1.5,
+            if (imagePath != null) ...[
+              GestureDetector(
+                onTap: () => _openFullScreen(context, imagePath!),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 260),
+                  child: Image.file(
+                    File(imagePath!),
+                    fit: BoxFit.cover,
+                    cacheWidth: 800,
+                    errorBuilder: (_, __, ___) => const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(Icons.broken_image_outlined, size: 28),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              if (message.isNotEmpty) const SizedBox(height: 6),
+            ],
+            if (message.isNotEmpty)
+              Text(
+                message,
+                style: AppTextStyles.body.copyWith(
+                  color: isOut ? Colors.white : AppColors.text,
+                  fontSize: 11,
+                  height: 1.5,
+                ),
+              ),
             if (isOut && status != null) ...[
               const SizedBox(height: 4),
               _StatusRow(status: status!),
@@ -89,6 +114,20 @@ class ChatBubble extends StatelessWidget {
       ),
     );
   }
+}
+
+void _openFullScreen(BuildContext context, String path) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+        body: Center(
+          child: InteractiveViewer(child: Image.file(File(path))),
+        ),
+      ),
+    ),
+  );
 }
 
 class _StatusRow extends StatelessWidget {

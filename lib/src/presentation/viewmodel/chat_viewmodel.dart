@@ -1,11 +1,16 @@
 // lib/src/presentation/viewmodel/chat_viewmodel.dart
 
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/websocket_providers.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/providers/service_providers.dart';
 
 class ChatState {
   final bool isConnected;
@@ -75,6 +80,27 @@ class ChatViewModel extends Notifier<ChatState> {
             'parsed_ts=$parsedTimestamp content=${data['content']}',
           );
 
+          final attachment = data['attachment'] as String?;
+
+          final existing = await isar.getMessageById(messageId);
+          if (existing != null) {
+            // Redelivery of something we already stored (our earlier ack was
+            // lost). Never overwrite local state — a 'read' message must stay
+            // read — just re-confirm to the server.
+            _sendAck('delivery_ack', messageId);
+            if (existing.status == MessageStatus.read) {
+              await _flushReadAcks();
+            }
+            break;
+          }
+
+          String? mediaPath;
+          if (attachment != null && attachment.isNotEmpty) {
+            mediaPath = await ref
+                .read(chatMediaStoreProvider)
+                .save(messageId, base64Decode(attachment));
+          }
+
           final msg = LocalMessage()
             ..messageId = messageId
             ..roomId = roomId
@@ -82,6 +108,8 @@ class ChatViewModel extends Notifier<ChatState> {
             ..recipientId =
                 recipientId! // Safe: checked above
             ..textContent = data['content'] as String?
+            ..localMediaPath = mediaPath
+            ..type = mediaPath != null ? MessageType.image : MessageType.text
             ..status = _statusFromString(data['status'] as String?)
             ..timestamp = parsedTimestamp;
           await isar.saveMessage(msg);
@@ -92,10 +120,7 @@ class ChatViewModel extends Notifier<ChatState> {
           // recipient's app actually received and persisted it (the
           // "ghost socket" problem: a dead connection can look healthy
           // to the server until a write finally fails).
-          ref.read(webSocketServiceProvider).sendMessage({
-            "type": "delivery_ack",
-            "message_id": messageId,
-          });
+          _sendAck('delivery_ack', messageId);
           break;
 
         case 'message_ack':
@@ -147,6 +172,9 @@ class ChatViewModel extends Notifier<ChatState> {
 
           if (isConnectedNow) {
             await _resendPendingMessages();
+            // Anything that happened while we were offline.
+            await _flushReadAcks();
+            await _syncOutgoingStatuses();
           }
           break;
       }
@@ -163,19 +191,98 @@ class ChatViewModel extends Notifier<ChatState> {
     return userA.compareTo(userB) < 0 ? '${userA}_$userB' : '${userB}_$userA';
   }
 
+  void _sendAck(String type, String messageId) {
+    ref.read(webSocketServiceProvider).sendMessage({
+      "type": type,
+      "message_id": messageId,
+    });
+  }
+
   Future<void> _resendPendingMessages() async {
     final isar = ref.read(isarServiceProvider);
     final pendingMessages = await isar.getPendingMessages();
 
     for (final msg in pendingMessages) {
-      ref.read(webSocketServiceProvider).sendMessage({
-        "type": "message",
-        "temp_id": msg.messageId,
-        "recipient_id": msg.recipientId,
-        "content": msg.textContent,
-        "timestamp": msg.timestamp.toIso8601String(),
-      });
+      ref
+          .read(webSocketServiceProvider)
+          .sendMessage(await _outgoingPayload(msg));
     }
+  }
+
+  Future<Map<String, dynamic>> _outgoingPayload(LocalMessage msg) async {
+    String? attachment;
+    final path = msg.localMediaPath;
+    if (path != null) {
+      final file = File(path);
+      if (await file.exists()) {
+        attachment = base64Encode(await file.readAsBytes());
+      }
+    }
+    return {
+      "type": "message",
+      "temp_id": msg.messageId,
+      "recipient_id": msg.recipientId,
+      "content": msg.textContent ?? '',
+      if (attachment != null) "attachment": attachment,
+      if (attachment != null) "attachment_type": "image",
+      "timestamp": msg.timestamp.toIso8601String(),
+    };
+  }
+
+  /// Tells the server about messages read while the socket was down.
+  Future<void> _flushReadAcks() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+    final isar = ref.read(isarServiceProvider);
+
+    final pending = await isar.getPendingReadAcks(user.id);
+    final ids = pending
+        .map((m) => m.messageId)
+        .where(_looksLikeServerId)
+        .toList();
+    if (ids.isEmpty) return;
+
+    final sent = ref.read(webSocketServiceProvider).sendMessage({
+      "type": "read_ack",
+      "message_ids": ids,
+    });
+    if (sent) await isar.clearReadAckPending(ids);
+  }
+
+  /// While we were offline the server's 'delivered'/'read' pushes for our own
+  /// messages were dropped. Ask for the current status of everything we
+  /// still show as not-read.
+  Future<void> _syncOutgoingStatuses() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final ids =
+        (await ref.read(isarServiceProvider).getUnsettledOutgoingIds(user.id))
+            .where(_looksLikeServerId)
+            .toList();
+    if (ids.isEmpty) return;
+
+    ref.read(webSocketServiceProvider).sendMessage({
+      "type": "sync_status",
+      "message_ids": ids,
+    });
+  }
+
+  // Server ids are UUIDs; client temp ids are numeric and unknown to the server.
+  static final _uuid = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+  static bool _looksLikeServerId(String id) => _uuid.hasMatch(id);
+
+  /// Called while a conversation is on screen: marks everything incoming as
+  /// read locally and tells the server (or queues that until reconnect).
+  Future<void> markRoomRead(String roomId) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+    final isar = ref.read(isarServiceProvider);
+
+    await isar.markRoomRead(roomId, user.id);
+    if (state.isConnected) await _flushReadAcks();
   }
 
   MessageStatus _statusFromString(String? s) {
@@ -196,7 +303,8 @@ class ChatViewModel extends Notifier<ChatState> {
   Future<void> sendMessage({
     required String roomId,
     required String recipientId,
-    required String content,
+    String content = '',
+    Uint8List? imageBytes,
   }) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -205,12 +313,19 @@ class ChatViewModel extends Notifier<ChatState> {
     final timestamp = DateTime.now().toUtc();
     final isar = ref.read(isarServiceProvider);
 
+    // Image stays on this device; only a relay copy goes over the socket.
+    final mediaPath = imageBytes != null
+        ? await ref.read(chatMediaStoreProvider).save(tempId, imageBytes)
+        : null;
+
     final localMsg = LocalMessage()
       ..messageId = tempId
       ..roomId = roomId
       ..senderId = user.id
       ..recipientId = recipientId
       ..textContent = content
+      ..localMediaPath = mediaPath
+      ..type = mediaPath != null ? MessageType.image : MessageType.text
       ..status = MessageStatus.sending
       ..timestamp = timestamp;
 
@@ -218,13 +333,9 @@ class ChatViewModel extends Notifier<ChatState> {
     // socket, so a fast-returning ack can never race ahead of this write.
     await isar.saveMessage(localMsg);
 
-    ref.read(webSocketServiceProvider).sendMessage({
-      "type": "message",
-      "temp_id": tempId,
-      "recipient_id": recipientId,
-      "content": content,
-      "timestamp": timestamp.toIso8601String(),
-    });
+    ref
+        .read(webSocketServiceProvider)
+        .sendMessage(await _outgoingPayload(localMsg));
   }
 }
 

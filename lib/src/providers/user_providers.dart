@@ -4,11 +4,19 @@ import 'package:serafim/src/providers/network_providers.dart';
 
 /// Representation of a user item returned from the backend API.
 class ApiUser {
-  const ApiUser({required this.id, required this.email, this.displayName});
+  const ApiUser({
+    required this.id,
+    required this.email,
+    this.displayName,
+    this.username,
+    this.profilePic,
+  });
 
   final String id;
   final String email;
   final String? displayName;
+  final String? username;
+  final String? profilePic;
 
   factory ApiUser.fromJson(Map<String, dynamic> json) {
     final profile = json['profile'] as Map<String, dynamic>?;
@@ -16,6 +24,8 @@ class ApiUser {
       id: json['id'].toString(),
       email: json['email'] ?? '',
       displayName: profile?['display_name'] ?? profile?['username'],
+      username: profile?['username'] as String?,
+      profilePic: profile?['profile_pic'] as String?,
     );
   }
 }

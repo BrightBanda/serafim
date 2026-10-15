@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/data/models/profile.dart';
@@ -41,6 +43,22 @@ class ProfileViewModel extends AsyncNotifier<Profile?> {
   Future<String?> updateProfile(ProfileUpdateRequest request) {
     if (request.isEmpty) return Future.value(null);
     return _write(() => _profiles.update(request));
+  }
+
+  /// Uploads [jpegBytes] to the avatars bucket and saves the URL on the
+  /// profile. Same contract as [createProfile]: null on success, else a
+  /// message to show.
+  Future<String?> uploadAvatar(Uint8List jpegBytes) async {
+    final accountId = ref.read(currentAccountIdProvider);
+    if (accountId == null) return 'You are signed out.';
+    try {
+      final url = await ref
+          .read(avatarStorageServiceProvider)
+          .uploadAvatar(accountId, jpegBytes);
+      return updateProfile(ProfileUpdateRequest(profilePic: url));
+    } on ApiException catch (error) {
+      return error.message;
+    }
   }
 
   /// Re-reads `GET /profile/me`, showing a loading state while it runs.

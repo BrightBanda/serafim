@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/avatar_picker.dart';
@@ -22,7 +24,10 @@ class ProfilePhotoNamePage extends StatefulWidget {
     this.onUploadPhoto,
     this.onContinue,
     this.onSkip,
+    this.avatarBytes,
   });
+
+  final Uint8List? avatarBytes;
 
   final TextEditingController? nameController;
   final VoidCallback? onBack;
@@ -85,6 +90,9 @@ class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
                       child: AvatarPicker(
                         onEditTap: widget.onEditPhoto,
                         onUploadTap: widget.onUploadPhoto,
+                        imageProvider: widget.avatarBytes != null
+                            ? MemoryImage(widget.avatarBytes!)
+                            : null,
                       ),
                     ),
                     const SizedBox(height: 22),

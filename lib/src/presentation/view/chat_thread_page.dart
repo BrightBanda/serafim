@@ -9,19 +9,25 @@ import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/chat/chat_bubble.dart';
 import 'package:serafim/src/utils/chat/chat_input_bar.dart';
+import 'package:serafim/src/utils/image_picking.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 class ChatThreadPage extends ConsumerStatefulWidget {
   const ChatThreadPage({
     super.key,
     required this.contactName,
     required this.recipientId,
+    this.username,
+    this.profilePic,
     this.isGroup = false,
     this.onBack,
   });
 
   final String contactName;
   final String recipientId;
+  final String? username;
+  final String? profilePic;
   final bool isGroup;
   final VoidCallback? onBack;
 
@@ -85,7 +91,35 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   final ScrollController _scrollController = ScrollController();
 
   bool _initialScrollDone = false;
-  int _lastMessageCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Opening the conversation counts as reading what's already in it.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _markRead());
+  }
+
+  void _markRead() {
+    if (!mounted) return;
+    ref.read(chatViewModelProvider.notifier).markRoomRead(_roomId);
+  }
+
+  Future<void> _handleAttach() async {
+    final currentUser = ref.read(currentUserProvider);
+    if (currentUser == null) return;
+
+    final bytes = await pickShrunkImage(context);
+    if (bytes == null || !mounted) return;
+
+    await ref
+        .read(chatViewModelProvider.notifier)
+        .sendMessage(
+          roomId: _roomId,
+          recipientId: widget.recipientId,
+          imageBytes: bytes,
+        );
+    _scheduleScrollToBottom();
+  }
 
   @override
   void dispose() {
@@ -174,6 +208,13 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     if (currentCount > previousCount) {
       _scheduleScrollToBottom();
     }
+
+    // We're looking at this conversation, so anything incoming is read.
+    final myId = _currentUserId;
+    final hasUnread = currentMessages.any(
+      (m) => m.recipientId == myId && m.status != MessageStatus.read,
+    );
+    if (hasUnread) _markRead();
   }
 
   @override
@@ -203,8 +244,31 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
         appBar: AppTopBar(
           onBack: widget.onBack ?? () => Navigator.of(context).pop(),
           titleFontSize: 15,
-          title: widget.contactName,
-          trailing: AvatarThumb(size: 28, isGroup: widget.isGroup),
+          titleWidget: Row(
+            children: [
+              AvatarThumb(
+                size: 30,
+                isGroup: widget.isGroup,
+                imageProvider:
+                    (widget.profilePic != null && widget.profilePic!.isNotEmpty)
+                    ? NetworkImage(widget.profilePic!)
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  widget.username ?? widget.contactName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.body.copyWith(
+                    color: AppColors.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
 
         body: Column(
@@ -255,8 +319,6 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                     });
                   }
 
-                  _lastMessageCount = orderedMessages.length;
-
                   return ListView.separated(
                     controller: _scrollController,
 
@@ -287,6 +349,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                       return ChatBubble(
                         who: senderLabel,
                         message: message.textContent ?? '',
+                        imagePath: message.type == MessageType.image
+                            ? message.localMediaPath
+                            : null,
                         side: isOutgoing
                             ? ChatBubbleSide.outgoing
                             : ChatBubbleSide.incoming,
@@ -298,7 +363,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
               ),
             ),
 
-            ChatInputBar(controller: _messageController, onSend: _handleSend),
+            ChatInputBar(
+              controller: _messageController,
+              onSend: _handleSend,
+              onAttach: _handleAttach,
+            ),
           ],
         ),
       ),

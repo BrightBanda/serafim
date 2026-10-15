@@ -64,3 +64,27 @@ final apiDioProvider = Provider<Dio>((ref) {
   ref.onDispose(dio.close);
   return dio;
 });
+
+/// Dio client for Supabase Storage, authenticated as the signed-in user so
+/// the bucket's row-level-security policies apply to them.
+final storageDioProvider = Provider<Dio>((ref) {
+  final config = ref.watch(appConfigProvider);
+
+  final dio = Dio(
+    BaseOptions(
+      baseUrl: '${config.supabaseUrl.replaceAll(RegExp(r'/+$'), '')}/storage/v1',
+      connectTimeout: _timeouts.connect,
+      receiveTimeout: _timeouts.receive,
+      sendTimeout: _timeouts.send,
+      headers: {'apikey': config.supabasePublishableKey},
+    ),
+  );
+
+  AuthInterceptor(
+    store: ref.watch(sessionStoreProvider),
+    authService: ref.watch(authServiceProvider),
+  ).attachTo(dio);
+
+  ref.onDispose(dio.close);
+  return dio;
+});

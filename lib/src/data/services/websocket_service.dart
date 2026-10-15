@@ -46,15 +46,24 @@ class WebSocketService {
           }
         },
         onError: (error) {
+          _notifyDisconnected();
           _handleReconnect();
         },
         onDone: () {
+          _notifyDisconnected();
           _handleReconnect();
         },
       );
     } catch (_) {
       _handleReconnect();
     }
+  }
+
+  /// Lets listeners know the link dropped; the server only ever announces
+  /// 'connected', so without this the UI would claim to be online forever.
+  void _notifyDisconnected() {
+    if (_isExplicitDisconnect) return;
+    _controller?.add({'type': 'status', 'status': 'disconnected'});
   }
 
   /// Automatically tries to reconnect every 5 seconds when connection drops

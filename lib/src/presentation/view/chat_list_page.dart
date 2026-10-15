@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/presentation/view/chat_thread_page.dart';
+import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/user_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/chat/chat_row.dart';
+import 'package:serafim/src/utils/chat/chat_time.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -14,12 +18,16 @@ class ChatPreview {
     required this.name,
     required this.preview,
     required this.time,
+    this.username,
+    this.profilePic,
     this.isGroup = false,
     this.unread = false,
   });
 
   final String id;
   final String name;
+  final String? username;
+  final String? profilePic;
   final String preview;
   final String time;
   final bool isGroup;
@@ -89,6 +97,8 @@ class ChatListPage extends ConsumerWidget {
               return ChatPreview(
                 id: u.id,
                 name: nameToDisplay,
+                username: u.username,
+                profilePic: u.profilePic,
                 preview: 'Tap to start conversation',
                 time: '',
               );
@@ -106,26 +116,59 @@ class ChatListPage extends ConsumerWidget {
                   );
                 }
                 final chat = chats[index - 1];
-                return ChatRow(
-                  name: chat.name,
-                  preview: chat.preview,
-                  time: "12:00",
-                  isGroup: chat.isGroup,
-                  unread: chat.unread,
-                  //onTap: () => onOpenChat?.call(chat),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ChatThreadPage(
-                        contactName: chat.name,
-                        recipientId: chat.id,
-                      ),
-                    ),
-                  ),
-                );
+                return _ChatListItem(chat: chat, myId: currentUser!.id);
               },
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// One conversation row, fed by the latest local message in its room.
+class _ChatListItem extends ConsumerWidget {
+  const _ChatListItem({required this.chat, required this.myId});
+
+  final ChatPreview chat;
+  final String myId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final roomId = ChatViewModel.buildRoomId(myId, chat.id);
+    final summary = ref
+        .watch(roomSummaryProvider((roomId: roomId, myId: myId)))
+        .value;
+    final latest = summary?.latest;
+
+    var preview = chat.preview;
+    var time = '';
+    if (latest != null) {
+      final text = latest.textContent ?? '';
+      final body = latest.type == MessageType.image
+          ? (text.isEmpty ? '📷 Photo' : '📷 $text')
+          : text;
+      preview = latest.senderId == myId ? 'You: $body' : body;
+      time = formatChatListTime(context, latest.timestamp);
+    }
+
+    final pic = chat.profilePic;
+    return ChatRow(
+      name: chat.name,
+      preview: preview,
+      time: time,
+      isGroup: chat.isGroup,
+      unread: (summary?.unreadCount ?? 0) > 0,
+      imageProvider: pic != null && pic.isNotEmpty ? NetworkImage(pic) : null,
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChatThreadPage(
+            contactName: chat.name,
+            username: chat.username,
+            profilePic: chat.profilePic,
+            recipientId: chat.id,
+          ),
         ),
       ),
     );

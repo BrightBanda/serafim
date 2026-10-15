@@ -20,3 +20,12 @@ final chatRoomsStreamProvider = StreamProvider<List<LocalChatRoom>>((ref) {
   final isarService = ref.watch(isarServiceProvider);
   return isarService.watchAllChatRooms();
 });
+
+// Latest message + unread count for one conversation, keyed by
+// (roomId, current user id).
+final roomSummaryProvider = StreamProvider.family<RoomSummary, ({String roomId, String myId})>((
+  ref,
+  key,
+) {
+  return ref.watch(isarServiceProvider).watchRoomSummary(key.roomId, key.myId);
+});

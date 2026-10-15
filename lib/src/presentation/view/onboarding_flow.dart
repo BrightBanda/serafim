@@ -4,6 +4,7 @@ import 'package:serafim/src/presentation/view/profile_interests_page.dart';
 import 'package:serafim/src/presentation/view/profile_photo_name_page.dart';
 import 'package:serafim/src/presentation/viewmodel/onboarding_view_model.dart';
 import 'package:serafim/src/providers/onboarding_providers.dart';
+import 'package:serafim/src/utils/image_picking.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
 /// Profile setup, shown once the user is signed in but has no profile yet.
@@ -30,6 +31,11 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPhoto(OnboardingViewModel viewModel) async {
+    final bytes = await pickShrunkImage(context, maxSide: 512, quality: 80);
+    if (bytes != null) viewModel.setAvatar(bytes);
   }
 
   @override
@@ -59,6 +65,9 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     final page = switch (state.step) {
       OnboardingStep.photoName => ProfilePhotoNamePage(
         nameController: _nameController,
+        avatarBytes: state.avatarBytes,
+        onEditPhoto: () => _pickPhoto(viewModel),
+        onUploadPhoto: () => _pickPhoto(viewModel),
         onContinue: () => viewModel.continueToInterests(_nameController.text),
         // Skipping the name is allowed; finish() falls back to the email
         // local-part so the profile can still be created.

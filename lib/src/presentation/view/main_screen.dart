@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/chat_list_page.dart';
 import 'package:serafim/src/presentation/view/profile_page.dart';
 
+import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
@@ -20,6 +21,10 @@ class MainScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentIndex = ref.watch(navigationNotifierProvider);
+
+    // Keeps the websocket connected and receipts flowing on every tab, not
+    // only while a conversation is open.
+    ref.watch(chatViewModelProvider);
 
     return SafeArea(
       child: Scaffold(

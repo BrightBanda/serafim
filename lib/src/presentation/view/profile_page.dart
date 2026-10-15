@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
+import 'package:serafim/src/utils/avatar_picker.dart';
 import 'package:serafim/src/utils/chat/avatar_thumb.dart';
+import 'package:serafim/src/utils/image_picking.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/setting_tile.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -15,14 +17,28 @@ class ProfilePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProvider);
-    final auth = ref.watch(authViewModelProvider);
     final profileAsync = ref.watch(profileViewModelProvider);
+    final pic = profileAsync.value?.profilePic;
+    final avatar = pic != null && pic.isNotEmpty ? NetworkImage(pic) : null;
+
+    Future<void> changePhoto() async {
+      final bytes = await pickShrunkImage(context, maxSide: 512, quality: 80);
+      if (bytes == null) return;
+      final error = await ref
+          .read(profileViewModelProvider.notifier)
+          .uploadAvatar(bytes);
+      if (error != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppColors.rust),
+        );
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.paper,
-      appBar: const AppTopBar(
+      appBar: AppTopBar(
         title: 'USER PROFILE',
-        trailing: AvatarThumb(size: 26),
+        trailing: AvatarThumb(size: 26, imageProvider: avatar),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -46,7 +62,12 @@ class ProfilePage extends ConsumerWidget {
                 ),
                 child: Column(
                   children: [
-                    const AvatarThumb(size: 80),
+                    AvatarPicker(
+                      size: 80,
+                      imageProvider: avatar,
+                      onEditTap: changePhoto,
+                      onUploadTap: changePhoto,
+                    ),
                     const SizedBox(height: 14),
                     // Display Name
                     Text(
@@ -57,7 +78,7 @@ class ProfilePage extends ConsumerWidget {
                     const SizedBox(height: 2),
                     // Username
                     Text(
-                      '@${profileAsync.value?.displayName?.toLowerCase().replaceAll(' ', '') ?? 'operator'}',
+                      '@${profileAsync.value?.username ?? 'operator'}',
                       style: AppTextStyles.body.copyWith(
                         color: AppColors.primary,
                       ),
