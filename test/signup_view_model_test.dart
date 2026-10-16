@@ -23,11 +23,17 @@ void main() {
         passwordError: 'too short',
       );
 
-      expect(state.copyWith(email: 'a@b.co').emailError, 'bad email',
-          reason: 'an omitted error must survive an unrelated change');
+      expect(
+        state.copyWith(email: 'a@b.co').emailError,
+        'bad email',
+        reason: 'an omitted error must survive an unrelated change',
+      );
       expect(state.copyWith(emailError: null).emailError, isNull);
-      expect(state.copyWith(emailError: null).passwordError, 'too short',
-          reason: 'clearing one error must not clear the others');
+      expect(
+        state.copyWith(emailError: null).passwordError,
+        'too short',
+        reason: 'clearing one error must not clear the others',
+      );
     });
 
     test('an explicit error is not swallowed', () {
@@ -66,7 +72,10 @@ void main() {
       viewModel().passwordChanged('abc123');
 
       expect(await viewModel().submit(), isFalse);
-      expect(formState().passwordError, 'Use at least 8 characters (2 more to go).');
+      expect(
+        formState().passwordError,
+        'Use at least 8 characters (2 more to go).',
+      );
       expect(formState().emailError, isNull);
     });
 
@@ -83,8 +92,11 @@ void main() {
       viewModel().passwordChanged('short');
 
       expect(await viewModel().submit(), isFalse);
-      expect(formState().emailError, isNull,
-          reason: 'the email is valid once trimmed');
+      expect(
+        formState().emailError,
+        isNull,
+        reason: 'the email is valid once trimmed',
+      );
     });
   });
 
@@ -102,12 +114,18 @@ void main() {
       expect(formState().emailError, isNotNull);
 
       viewModel().emailChanged('you@sector76.com');
-      expect(formState().emailError, isNull,
-          reason: 'fixing the field should clear its message immediately');
+      expect(
+        formState().emailError,
+        isNull,
+        reason: 'fixing the field should clear its message immediately',
+      );
 
       viewModel().emailChanged('broken');
-      expect(formState().emailError, isNotNull,
-          reason: 'breaking it again should say so without another submit');
+      expect(
+        formState().emailError,
+        isNotNull,
+        reason: 'breaking it again should say so without another submit',
+      );
     });
 
     test('editing a field does not clear the other field error', () async {

@@ -34,7 +34,7 @@ class ChatRow extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.paperAlt,
           border: Border.all(color: AppColors.lineSoft, width: 1.5),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: AppColors.line,
               offset: Offset(2, 2),

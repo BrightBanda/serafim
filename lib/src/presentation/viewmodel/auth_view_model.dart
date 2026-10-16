@@ -5,9 +5,11 @@ import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/data/models/app_user.dart';
 import 'package:serafim/src/data/models/auth_session.dart';
 import 'package:serafim/src/data/services/auth_service.dart';
+import 'package:serafim/src/data/services/google_auth_service.dart';
 import 'package:serafim/src/data/services/session_store.dart';
 import 'package:serafim/src/data/services/user_service.dart';
 import 'package:serafim/src/providers/app_providers.dart';
+import 'package:serafim/src/providers/push_providers.dart';
 import 'package:serafim/src/providers/service_providers.dart';
 
 enum AuthStatus {
@@ -143,9 +145,34 @@ class AuthViewModel extends Notifier<AuthState> {
     }
   }
 
+  /// Signs in (or up — Google makes no distinction) with a Google account.
+  ///
+  /// Returns false if the user dismissed the account picker, true once
+  /// signed in. Throws [ApiException] on failure.
+  Future<bool> signInWithGoogle() async {
+    if (state.isBusy) return false;
+    state = state.copyWith(isBusy: true);
+    try {
+      final String idToken;
+      try {
+        idToken = await ref.read(googleAuthServiceProvider).signIn();
+      } on GoogleSignInCancelled {
+        return false;
+      }
+      await _establish(await _auth.signInWithGoogleIdToken(idToken));
+      return true;
+    } finally {
+      if (ref.mounted && state.isBusy) state = state.copyWith(isBusy: false);
+    }
+  }
+
   Future<void> signOut() async {
     final session = _store.current;
     state = state.copyWith(isBusy: true);
+
+    // Stop pushes to this phone while we can still authenticate the request.
+    await ref.read(pushRegistrarProvider).unregisterThisDevice();
+    await ref.read(googleAuthServiceProvider).signOut();
 
     if (session != null) {
       await _auth.signOut(session.accessToken);

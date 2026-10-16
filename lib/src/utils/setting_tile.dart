@@ -20,11 +20,10 @@ class SettingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.paperAlt,
-        border: Border.all(color: AppColors.lineSoft, width: 1.5),
-      ),
+    // A Material (not a coloured Container) so the tile's ink splash is visible.
+    return Material(
+      color: AppColors.paperAlt,
+      shape: Border.all(color: AppColors.lineSoft, width: 1.5),
       child: ListTile(
         onTap: onTap,
         leading: Icon(icon, color: AppColors.primary, size: 20),
@@ -35,7 +34,7 @@ class SettingTile extends StatelessWidget {
         subtitle: Text(subtitle, style: AppTextStyles.smallDim),
         trailing:
             trailing ??
-            const Icon(Icons.chevron_right, color: AppColors.textDim, size: 18),
+            Icon(Icons.chevron_right, color: AppColors.textDim, size: 18),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       ),
     );

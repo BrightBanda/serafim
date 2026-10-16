@@ -5,12 +5,19 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
+import 'package:flutter/material.dart' show NetworkImage;
+import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/websocket_providers.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/providers/push_providers.dart';
 import 'package:serafim/src/providers/service_providers.dart';
+import 'package:serafim/src/providers/settings_providers.dart';
+import 'package:serafim/src/data/models/public_user.dart';
+import 'package:serafim/src/providers/social_providers.dart';
+import 'package:serafim/src/utils/user_card.dart';
 
 class ChatState {
   final bool isConnected;
@@ -46,7 +53,95 @@ class ChatViewModel extends Notifier<ChatState> {
       });
     });
 
+    // Retention: clear old local messages at startup and whenever the choice
+    // changes.
+    ref.listen<int>(
+      settingsProvider.select((s) => s.retentionDays),
+      (_, days) => _applyRetention(days),
+      fireImmediately: true,
+    );
+
     return const ChatState();
+  }
+
+  Future<void> _applyRetention(int days) async {
+    if (days <= 0) return;
+    try {
+      final cutoff = DateTime.now().toUtc().subtract(Duration(days: days));
+      final removed = await ref
+          .read(isarServiceProvider)
+          .purgeOlderThan(cutoff);
+      if (removed > 0) _log('retention: removed $removed old messages');
+    } catch (error) {
+      _log('retention failed: $error');
+    }
+  }
+
+  /// Banner (and optional sound) for a new message in a conversation that is
+  /// not on screen. Respects the notification settings. Names who it is from.
+  Future<void> _alertNewMessage({
+    required String messageId,
+    required String roomId,
+    required String senderId,
+    required String? text,
+    required bool isImage,
+  }) async {
+    final settings = ref.read(settingsProvider);
+    if (!settings.inAppAlerts) return;
+    if (ref.read(activeRoomProvider) == roomId) return;
+
+    // The same message can also arrive as a push; announce it once.
+    final shown = ref.read(shownAlertIdsProvider);
+    if (!shown.add(messageId)) return;
+    if (shown.length > 100) shown.remove(shown.first);
+
+    final sender = await _senderProfile(senderId);
+    // The user may have opened that chat while we were looking them up.
+    if (!ref.mounted || ref.read(activeRoomProvider) == roomId) return;
+
+    final body = isImage
+        ? ((text ?? '').isEmpty ? '📷 Photo' : '📷 $text')
+        : (text ?? '');
+    final pic = sender?.profilePic;
+
+    ref
+        .read(inAppBannerProvider)
+        .show(
+          title: sender?.displayName ?? 'Someone',
+          body: body,
+          avatar: pic != null && pic.isNotEmpty ? NetworkImage(pic) : null,
+          onTap: () {
+            final navigator = ref.read(navigatorKeyProvider).currentState;
+            if (navigator == null) return;
+            openChatWithNavigator(
+              navigator,
+              sender ??
+                  PublicUser(
+                    id: senderId,
+                    username: '',
+                    displayName: 'Unknown user',
+                  ),
+            );
+          },
+        );
+    if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
+  }
+
+  /// Who sent it: from the friends list if possible, otherwise looked up by id
+  /// (briefly — an unreachable server must not delay the banner for long).
+  Future<PublicUser?> _senderProfile(String senderId) async {
+    final friends = ref.read(friendsProvider).value ?? const <PublicUser>[];
+    for (final f in friends) {
+      if (f.id == senderId) return f;
+    }
+    try {
+      return await ref
+          .read(socialServiceProvider)
+          .user(senderId)
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {
+      return null;
+    }
   }
 
   void _log(String message) {
@@ -109,7 +204,11 @@ class ChatViewModel extends Notifier<ChatState> {
                 recipientId! // Safe: checked above
             ..textContent = data['content'] as String?
             ..localMediaPath = mediaPath
+            ..replyToId = data['reply_to'] as String?
             ..type = mediaPath != null ? MessageType.image : MessageType.text
+            ..editedAt = data['edited_at'] != null
+                ? _parseServerTimestamp(data['edited_at'] as String?)
+                : null
             ..status = _statusFromString(data['status'] as String?)
             ..timestamp = parsedTimestamp;
           await isar.saveMessage(msg);
@@ -121,6 +220,14 @@ class ChatViewModel extends Notifier<ChatState> {
           // "ghost socket" problem: a dead connection can look healthy
           // to the server until a write finally fails).
           _sendAck('delivery_ack', messageId);
+
+          _alertNewMessage(
+            messageId: messageId,
+            roomId: roomId,
+            senderId: senderId,
+            text: msg.textContent,
+            isImage: mediaPath != null,
+          );
           break;
 
         case 'message_ack':
@@ -154,6 +261,20 @@ class ChatViewModel extends Notifier<ChatState> {
             );
           }
 
+          // Reconnect sync can also carry edits and deletions we missed.
+          final syncedId = realId ?? tempId;
+          if (syncedId != null) {
+            if (data['deleted'] == true) {
+              await isar.applyDelete(syncedId);
+            } else if (data['content'] is String && data['edited_at'] != null) {
+              await isar.applyEdit(
+                syncedId,
+                data['content'] as String,
+                _parseServerTimestamp(data['edited_at'] as String?),
+              );
+            }
+          }
+
           if (!updated) {
             // The row this ack refers to wasn't found. This should never
             // happen (the optimistic write is awaited before the socket
@@ -166,6 +287,41 @@ class ChatViewModel extends Notifier<ChatState> {
           }
           break;
 
+        case 'message_edited':
+          final id = data['message_id'] as String?;
+          final content = data['content'] as String?;
+          if (id != null && content != null) {
+            await isar.applyEdit(
+              id,
+              content,
+              _parseServerTimestamp(data['edited_at'] as String?),
+            );
+          }
+          break;
+
+        case 'message_deleted':
+          final id = data['message_id'] as String?;
+          if (id != null) await isar.applyDelete(id);
+          break;
+
+        case 'message_rejected':
+          // The server refused to accept this message (e.g. an attachment to
+          // a non-friend). It was never stored, so it can only be failed.
+          final tempId = data['temp_id'] as String?;
+          if (tempId != null) {
+            await isar.updateMessageStatus(tempId, MessageStatus.failed);
+          }
+          _log('message rejected: ${data['reason']}');
+          break;
+
+        case 'action_rejected':
+          _log('${data['action']} rejected: ${data['reason']}');
+          break;
+
+        case 'friend_update':
+          SocialActions.refreshAll(ref);
+          break;
+
         case 'status':
           final isConnectedNow = data['status'] == 'connected';
           state = state.copyWith(isConnected: isConnectedNow);
@@ -174,7 +330,7 @@ class ChatViewModel extends Notifier<ChatState> {
             await _resendPendingMessages();
             // Anything that happened while we were offline.
             await _flushReadAcks();
-            await _syncOutgoingStatuses();
+            await _syncMessageStates();
           }
           break;
       }
@@ -225,6 +381,7 @@ class ChatViewModel extends Notifier<ChatState> {
       "content": msg.textContent ?? '',
       if (attachment != null) "attachment": attachment,
       if (attachment != null) "attachment_type": "image",
+      if (msg.replyToId != null) "reply_to": msg.replyToId,
       "timestamp": msg.timestamp.toIso8601String(),
     };
   }
@@ -249,17 +406,16 @@ class ChatViewModel extends Notifier<ChatState> {
     if (sent) await isar.clearReadAckPending(ids);
   }
 
-  /// While we were offline the server's 'delivered'/'read' pushes for our own
-  /// messages were dropped. Ask for the current status of everything we
-  /// still show as not-read.
-  Future<void> _syncOutgoingStatuses() async {
+  /// While we were offline the server's pushes for our messages (delivered,
+  /// read, edited, deleted) were dropped. Send the ids of recent messages in
+  /// both directions so the server can report their current state.
+  Future<void> _syncMessageStates() async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
-    final ids =
-        (await ref.read(isarServiceProvider).getUnsettledOutgoingIds(user.id))
-            .where(_looksLikeServerId)
-            .toList();
+    final ids = (await ref.read(isarServiceProvider).getRecentSyncIds(user.id))
+        .where(_looksLikeServerId)
+        .toList();
     if (ids.isEmpty) return;
 
     ref.read(webSocketServiceProvider).sendMessage({
@@ -281,7 +437,13 @@ class ChatViewModel extends Notifier<ChatState> {
     if (user == null) return;
     final isar = ref.read(isarServiceProvider);
 
-    await isar.markRoomRead(roomId, user.id);
+    final ids = await isar.markRoomRead(roomId, user.id);
+
+    if (!ref.read(settingsProvider).sendReadReceipts) {
+      // Read locally (clears the unread badge) but tell no one.
+      await isar.clearReadAckPending(ids);
+      return;
+    }
     if (state.isConnected) await _flushReadAcks();
   }
 
@@ -300,11 +462,54 @@ class ChatViewModel extends Notifier<ChatState> {
     }
   }
 
+  /// Edits the text of one of our own, already-sent messages. Returns null on
+  /// success or a message to show. The change is applied locally when the
+  /// server echoes `message_edited`, so every device agrees.
+  Future<String?> editMessage(String messageId, String newText) async {
+    final text = newText.trim();
+    if (text.isEmpty) return 'A message cannot be empty.';
+    if (!_looksLikeServerId(messageId)) {
+      return 'Wait until the message has been sent.';
+    }
+    if (!state.isConnected) return 'You are offline. Try again when connected.';
+
+    final sent = ref.read(webSocketServiceProvider).sendMessage({
+      "type": "edit_message",
+      "message_id": messageId,
+      "content": text,
+    });
+    return sent ? null : 'Could not reach the server.';
+  }
+
+  /// "Delete for me": removes the message (and image file) from this device
+  /// only. Works for any message, ours or theirs.
+  Future<void> deleteForMe(String messageId) {
+    return ref.read(isarServiceProvider).hideMessageForMe(messageId);
+  }
+
+  /// Deletes one of our own messages for everyone.
+  Future<String?> deleteMessage(String messageId) async {
+    if (!_looksLikeServerId(messageId)) {
+      // Never reached the server (still sending, or failed): nobody else has
+      // it, so removing it locally is the whole job.
+      await ref.read(isarServiceProvider).deleteLocalMessage(messageId);
+      return null;
+    }
+    if (!state.isConnected) return 'You are offline. Try again when connected.';
+
+    final sent = ref.read(webSocketServiceProvider).sendMessage({
+      "type": "delete_message",
+      "message_id": messageId,
+    });
+    return sent ? null : 'Could not reach the server.';
+  }
+
   Future<void> sendMessage({
     required String roomId,
     required String recipientId,
     String content = '',
     Uint8List? imageBytes,
+    String? replyToId,
   }) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -325,6 +530,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ..recipientId = recipientId
       ..textContent = content
       ..localMediaPath = mediaPath
+      ..replyToId = replyToId
       ..type = mediaPath != null ? MessageType.image : MessageType.text
       ..status = MessageStatus.sending
       ..timestamp = timestamp;

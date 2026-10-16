@@ -58,6 +58,21 @@ class AuthService {
     return AuthSession.fromJson(json);
   }
 
+  /// `POST /auth/v1/token?grant_type=id_token` — trades a Google ID token for
+  /// a Supabase session. The Google provider must be enabled in the Supabase
+  /// dashboard with this app's web client id (and its secret) authorised.
+  ///
+  /// Creates the Supabase user on first use, and links to an existing
+  /// account that has the same verified email.
+  Future<AuthSession> signInWithGoogleIdToken(String idToken) async {
+    final json = await _post(
+      '/token',
+      {'provider': 'google', 'id_token': idToken},
+      query: {'grant_type': 'id_token'},
+    );
+    return AuthSession.fromJson(json);
+  }
+
   /// `POST /auth/v1/token?grant_type=refresh_token`
   ///
   /// Supabase rotates the refresh token on every use, so the returned session

@@ -42,16 +42,19 @@ void main() {
       expect(parsed.second, equals(16));
     });
 
-    test('parses ISO-8601 with non-UTC offset into equivalent UTC DateTime', () {
-      // 07:57 at UTC+2 is 05:57 UTC
-      const raw = '2026-09-08T07:57:57.312901+02:00';
-      final parsed = parseServerTimestamp(raw);
+    test(
+      'parses ISO-8601 with non-UTC offset into equivalent UTC DateTime',
+      () {
+        // 07:57 at UTC+2 is 05:57 UTC
+        const raw = '2026-09-08T07:57:57.312901+02:00';
+        final parsed = parseServerTimestamp(raw);
 
-      expect(parsed.isUtc, isTrue);
-      expect(parsed.hour, equals(5));
-      expect(parsed.minute, equals(57));
-      expect(parsed.second, equals(57));
-    });
+        expect(parsed.isUtc, isTrue);
+        expect(parsed.hour, equals(5));
+        expect(parsed.minute, equals(57));
+        expect(parsed.second, equals(57));
+      },
+    );
 
     test('normalizes naive ISO-8601 without offset as UTC', () {
       const raw = '2026-09-08T05:57:57.312901';
@@ -71,7 +74,10 @@ void main() {
 
       expect(fromNull.isUtc, isTrue);
       expect(fromEmpty.isUtc, isTrue);
-      expect(fromNull.isAfter(before.subtract(const Duration(seconds: 1))), isTrue);
+      expect(
+        fromNull.isAfter(before.subtract(const Duration(seconds: 1))),
+        isTrue,
+      );
       expect(fromNull.isBefore(after.add(const Duration(seconds: 1))), isTrue);
     });
   });
@@ -96,60 +102,69 @@ void main() {
       final unordered = [m3, m1, m2];
       final ordered = sortMessagesOldestFirst(unordered);
 
-      expect(ordered.map((m) => m.messageId).toList(), equals(['msg-1', 'msg-2', 'msg-3']));
+      expect(
+        ordered.map((m) => m.messageId).toList(),
+        equals(['msg-1', 'msg-2', 'msg-3']),
+      );
     });
 
-    test('resolves identical timestamps deterministically using Isar id tiebreaker', () {
-      final sharedTime = DateTime.utc(2026, 9, 8, 8, 30, 0);
+    test(
+      'resolves identical timestamps deterministically using Isar id tiebreaker',
+      () {
+        final sharedTime = DateTime.utc(2026, 9, 8, 8, 30, 0);
 
-      final m1 = LocalMessage()
-        ..id = 5
-        ..messageId = 'older-local-row'
-        ..timestamp = sharedTime;
+        final m1 = LocalMessage()
+          ..id = 5
+          ..messageId = 'older-local-row'
+          ..timestamp = sharedTime;
 
-      final m2 = LocalMessage()
-        ..id = 10
-        ..messageId = 'newer-local-row'
-        ..timestamp = sharedTime;
+        final m2 = LocalMessage()
+          ..id = 10
+          ..messageId = 'newer-local-row'
+          ..timestamp = sharedTime;
 
-      final unordered = [m2, m1];
-      final ordered = sortMessagesOldestFirst(unordered);
+        final unordered = [m2, m1];
+        final ordered = sortMessagesOldestFirst(unordered);
 
-      expect(ordered[0].id, equals(5));
-      expect(ordered[1].id, equals(10));
-    });
+        expect(ordered[0].id, equals(5));
+        expect(ordered[1].id, equals(10));
+      },
+    );
   });
 
   group('Event Queue Fault Tolerance and Serialization', () {
-    test('event queue continues processing subsequent events even if one throws', () async {
-      final processedEvents = <String>[];
-      Future<void> eventQueue = Future.value();
+    test(
+      'event queue continues processing subsequent events even if one throws',
+      () async {
+        final processedEvents = <String>[];
+        Future<void> eventQueue = Future.value();
 
-      void queueTask(String id, {bool shouldFail = false}) {
-        eventQueue = eventQueue
-            .then((_) async {
-              if (shouldFail) {
-                throw StateError('Simulated processing failure for $id');
-              }
-              await Future<void>.delayed(const Duration(milliseconds: 10));
-              processedEvents.add(id);
-            })
-            .catchError((Object error, StackTrace stackTrace) {
-              // Simulates logging and absorbing error without stalling queue
-            });
-      }
+        void queueTask(String id, {bool shouldFail = false}) {
+          eventQueue = eventQueue
+              .then((_) async {
+                if (shouldFail) {
+                  throw StateError('Simulated processing failure for $id');
+                }
+                await Future<void>.delayed(const Duration(milliseconds: 10));
+                processedEvents.add(id);
+              })
+              .catchError((Object error, StackTrace stackTrace) {
+                // Simulates logging and absorbing error without stalling queue
+              });
+        }
 
-      // Enqueue 3 tasks where the 2nd task throws an exception
-      queueTask('event-1');
-      queueTask('event-2', shouldFail: true);
-      queueTask('event-3');
+        // Enqueue 3 tasks where the 2nd task throws an exception
+        queueTask('event-1');
+        queueTask('event-2', shouldFail: true);
+        queueTask('event-3');
 
-      // Await queue draining
-      await eventQueue;
+        // Await queue draining
+        await eventQueue;
 
-      // Verify event-1 and event-3 completed in order despite event-2 failure
-      expect(processedEvents, equals(['event-1', 'event-3']));
-    });
+        // Verify event-1 and event-3 completed in order despite event-2 failure
+        expect(processedEvents, equals(['event-1', 'event-3']));
+      },
+    );
 
     test('event queue strictly preserves FIFO execution order', () async {
       final executionOrder = <int>[];

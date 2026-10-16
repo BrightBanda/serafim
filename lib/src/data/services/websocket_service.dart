@@ -4,6 +4,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+/// Supplies a currently valid access token, refreshing first if needed.
+/// Called on every (re)connect because tokens expire between reconnects.
+typedef TokenProvider = Future<String?> Function();
+
 class WebSocketService {
   WebSocketChannel? _channel;
   StreamController<Map<String, dynamic>>? _controller;
@@ -11,34 +15,66 @@ class WebSocketService {
 
   String? _lastBaseUrl;
   String? _lastUserId;
+  TokenProvider? _tokenProvider;
   bool _isExplicitDisconnect = false;
 
   /// Returns a stream of incoming WebSocket JSON messages
   Stream<Map<String, dynamic>>? get messageStream => _controller?.stream;
 
-  /// Connects to the FastAPI WebSocket endpoint
-  void connect(String baseUrl, String userId) {
+  /// Connects to the FastAPI WebSocket endpoint and authenticates.
+  ///
+  /// The server ignores the user id in the URL until the first frame proves it
+  /// with an access token.
+  void connect(String baseUrl, String userId, TokenProvider tokenProvider) {
     _lastBaseUrl = baseUrl;
     _lastUserId = userId;
+    _tokenProvider = tokenProvider;
     _isExplicitDisconnect = false;
 
     _controller ??= StreamController<Map<String, dynamic>>.broadcast();
+    _open();
+  }
+
+  Future<void> _open() async {
+    final baseUrl = _lastBaseUrl;
+    final userId = _lastUserId;
+    final tokenProvider = _tokenProvider;
+    if (baseUrl == null || userId == null || tokenProvider == null) return;
+
+    // Drop any previous channel without letting its onDone schedule a retry.
+    final previous = _channel;
+    _channel = null;
+    previous?.sink.close();
+
+    String? token;
+    try {
+      token = await tokenProvider();
+    } catch (_) {
+      token = null;
+    }
+    if (_isExplicitDisconnect) return;
+    if (token == null || token.isEmpty) {
+      _handleReconnect();
+      return;
+    }
 
     // Convert http(s) URL to ws(s) URL if needed
     final wsUrl = baseUrl
         .replaceFirst('http://', 'ws://')
         .replaceFirst('https://', 'wss://');
-
     final uri = Uri.parse('$wsUrl/ws/chat/$userId');
 
     try {
-      _channel = WebSocketChannel.connect(uri);
+      final channel = WebSocketChannel.connect(uri);
+      _channel = channel;
 
       // Cancel any existing reconnect timer if connection succeeded
       _reconnectTimer?.cancel();
 
+      channel.sink.add(jsonEncode({'type': 'auth', 'token': token}));
+
       // Listen to incoming messages from server
-      _channel!.stream.listen(
+      channel.stream.listen(
         (data) {
           if (data is String) {
             final decoded = jsonDecode(data) as Map<String, dynamic>;
@@ -46,10 +82,12 @@ class WebSocketService {
           }
         },
         onError: (error) {
+          if (!identical(_channel, channel)) return;
           _notifyDisconnected();
           _handleReconnect();
         },
         onDone: () {
+          if (!identical(_channel, channel)) return;
           _notifyDisconnected();
           _handleReconnect();
         },
@@ -71,11 +109,7 @@ class WebSocketService {
     if (_isExplicitDisconnect) return;
 
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 5), () {
-      if (_lastBaseUrl != null && _lastUserId != null) {
-        connect(_lastBaseUrl!, _lastUserId!);
-      }
-    });
+    _reconnectTimer = Timer(const Duration(seconds: 5), _open);
   }
 
   /// Sends a message payload to the server

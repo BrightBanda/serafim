@@ -32,7 +32,12 @@ void main() {
 
       expect(roomId1, equals(roomId2));
       // uuid2 comes first alphabetically (because '6' < '5')
-      expect(roomId1, equals('550e8400-e29b-41d4-a716-446655440000_6ba7b810-9dad-11d1-80b4-00c04fd430c8'));
+      expect(
+        roomId1,
+        equals(
+          '550e8400-e29b-41d4-a716-446655440000_6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        ),
+      );
     });
 
     test('room ID handles same user correctly', () {

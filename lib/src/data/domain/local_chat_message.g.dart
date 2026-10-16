@@ -17,50 +17,70 @@ const LocalMessageSchema = CollectionSchema(
   name: r'LocalMessage',
   id: 1045835317208282169,
   properties: {
-    r'localMediaPath': PropertySchema(
+    r'editedAt': PropertySchema(
       id: 0,
+      name: r'editedAt',
+      type: IsarType.dateTime,
+    ),
+    r'isDeleted': PropertySchema(
+      id: 1,
+      name: r'isDeleted',
+      type: IsarType.bool,
+    ),
+    r'isHiddenForMe': PropertySchema(
+      id: 2,
+      name: r'isHiddenForMe',
+      type: IsarType.bool,
+    ),
+    r'localMediaPath': PropertySchema(
+      id: 3,
       name: r'localMediaPath',
       type: IsarType.string,
     ),
     r'messageId': PropertySchema(
-      id: 1,
+      id: 4,
       name: r'messageId',
       type: IsarType.string,
     ),
     r'readAckPending': PropertySchema(
-      id: 2,
+      id: 5,
       name: r'readAckPending',
       type: IsarType.bool,
     ),
     r'recipientId': PropertySchema(
-      id: 3,
+      id: 6,
       name: r'recipientId',
       type: IsarType.string,
     ),
-    r'roomId': PropertySchema(id: 4, name: r'roomId', type: IsarType.string),
+    r'replyToId': PropertySchema(
+      id: 7,
+      name: r'replyToId',
+      type: IsarType.string,
+    ),
+    r'roomId': PropertySchema(id: 8, name: r'roomId', type: IsarType.string),
     r'senderId': PropertySchema(
-      id: 5,
+      id: 9,
       name: r'senderId',
       type: IsarType.string,
     ),
     r'status': PropertySchema(
-      id: 6,
+      id: 10,
       name: r'status',
       type: IsarType.byte,
       enumMap: _LocalMessagestatusEnumValueMap,
     ),
     r'textContent': PropertySchema(
-      id: 7,
+      id: 11,
       name: r'textContent',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 8,
+      id: 12,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'type': PropertySchema(
-      id: 9,
+      id: 13,
       name: r'type',
       type: IsarType.byte,
       enumMap: _LocalMessagetypeEnumValueMap,
@@ -136,6 +156,12 @@ int _localMessageEstimateSize(
   }
   bytesCount += 3 + object.messageId.length * 3;
   bytesCount += 3 + object.recipientId.length * 3;
+  {
+    final value = object.replyToId;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.roomId.length * 3;
   bytesCount += 3 + object.senderId.length * 3;
   {
@@ -153,16 +179,20 @@ void _localMessageSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeString(offsets[0], object.localMediaPath);
-  writer.writeString(offsets[1], object.messageId);
-  writer.writeBool(offsets[2], object.readAckPending);
-  writer.writeString(offsets[3], object.recipientId);
-  writer.writeString(offsets[4], object.roomId);
-  writer.writeString(offsets[5], object.senderId);
-  writer.writeByte(offsets[6], object.status.index);
-  writer.writeString(offsets[7], object.textContent);
-  writer.writeDateTime(offsets[8], object.timestamp);
-  writer.writeByte(offsets[9], object.type.index);
+  writer.writeDateTime(offsets[0], object.editedAt);
+  writer.writeBool(offsets[1], object.isDeleted);
+  writer.writeBool(offsets[2], object.isHiddenForMe);
+  writer.writeString(offsets[3], object.localMediaPath);
+  writer.writeString(offsets[4], object.messageId);
+  writer.writeBool(offsets[5], object.readAckPending);
+  writer.writeString(offsets[6], object.recipientId);
+  writer.writeString(offsets[7], object.replyToId);
+  writer.writeString(offsets[8], object.roomId);
+  writer.writeString(offsets[9], object.senderId);
+  writer.writeByte(offsets[10], object.status.index);
+  writer.writeString(offsets[11], object.textContent);
+  writer.writeDateTime(offsets[12], object.timestamp);
+  writer.writeByte(offsets[13], object.type.index);
 }
 
 LocalMessage _localMessageDeserialize(
@@ -172,20 +202,24 @@ LocalMessage _localMessageDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = LocalMessage();
+  object.editedAt = reader.readDateTimeOrNull(offsets[0]);
   object.id = id;
-  object.localMediaPath = reader.readStringOrNull(offsets[0]);
-  object.messageId = reader.readString(offsets[1]);
-  object.readAckPending = reader.readBool(offsets[2]);
-  object.recipientId = reader.readString(offsets[3]);
-  object.roomId = reader.readString(offsets[4]);
-  object.senderId = reader.readString(offsets[5]);
+  object.isDeleted = reader.readBool(offsets[1]);
+  object.isHiddenForMe = reader.readBool(offsets[2]);
+  object.localMediaPath = reader.readStringOrNull(offsets[3]);
+  object.messageId = reader.readString(offsets[4]);
+  object.readAckPending = reader.readBool(offsets[5]);
+  object.recipientId = reader.readString(offsets[6]);
+  object.replyToId = reader.readStringOrNull(offsets[7]);
+  object.roomId = reader.readString(offsets[8]);
+  object.senderId = reader.readString(offsets[9]);
   object.status =
-      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[6])] ??
+      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[10])] ??
       MessageStatus.sending;
-  object.textContent = reader.readStringOrNull(offsets[7]);
-  object.timestamp = reader.readDateTime(offsets[8]);
+  object.textContent = reader.readStringOrNull(offsets[11]);
+  object.timestamp = reader.readDateTime(offsets[12]);
   object.type =
-      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[9])] ??
+      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[13])] ??
       MessageType.text;
   return object;
 }
@@ -198,26 +232,34 @@ P _localMessageDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 1:
-      return (reader.readString(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 2:
       return (reader.readBool(offset)) as P;
     case 3:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 4:
       return (reader.readString(offset)) as P;
     case 5:
-      return (reader.readString(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 6:
-      return (_LocalMessagestatusValueEnumMap[reader.readByteOrNull(offset)] ??
-              MessageStatus.sending)
-          as P;
+      return (reader.readString(offset)) as P;
     case 7:
       return (reader.readStringOrNull(offset)) as P;
     case 8:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 9:
+      return (reader.readString(offset)) as P;
+    case 10:
+      return (_LocalMessagestatusValueEnumMap[reader.readByteOrNull(offset)] ??
+              MessageStatus.sending)
+          as P;
+    case 11:
+      return (reader.readStringOrNull(offset)) as P;
+    case 12:
+      return (reader.readDateTime(offset)) as P;
+    case 13:
       return (_LocalMessagetypeValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageType.text)
           as P;
@@ -627,6 +669,79 @@ extension LocalMessageQueryWhere
 
 extension LocalMessageQueryFilter
     on QueryBuilder<LocalMessage, LocalMessage, QFilterCondition> {
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  editedAtIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'editedAt'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  editedAtIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'editedAt'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  editedAtEqualTo(DateTime? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'editedAt', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  editedAtGreaterThan(DateTime? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'editedAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  editedAtLessThan(DateTime? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'editedAt',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  editedAtBetween(
+    DateTime? lower,
+    DateTime? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'editedAt',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition> idEqualTo(
     Id value,
   ) {
@@ -682,6 +797,24 @@ extension LocalMessageQueryFilter
           upper: upper,
           includeUpper: includeUpper,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  isDeletedEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'isDeleted', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  isHiddenForMeEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'isHiddenForMe', value: value),
       );
     });
   }
@@ -1132,6 +1265,165 @@ extension LocalMessageQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'recipientId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'replyToId'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'replyToId'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'replyToId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'replyToId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'replyToId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'replyToId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'replyToId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'replyToId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'replyToId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'replyToId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'replyToId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  replyToIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'replyToId', value: ''),
       );
     });
   }
@@ -1756,6 +2048,43 @@ extension LocalMessageQueryLinks
 
 extension LocalMessageQuerySortBy
     on QueryBuilder<LocalMessage, LocalMessage, QSortBy> {
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByEditedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'editedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByEditedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'editedAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByIsDeleted() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isDeleted', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByIsDeletedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isDeleted', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByIsHiddenForMe() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isHiddenForMe', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  sortByIsHiddenForMeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isHiddenForMe', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
   sortByLocalMediaPath() {
     return QueryBuilder.apply(this, (query) {
@@ -1806,6 +2135,18 @@ extension LocalMessageQuerySortBy
   sortByRecipientIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'recipientId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByReplyToId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'replyToId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByReplyToIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'replyToId', Sort.desc);
     });
   }
 
@@ -1885,6 +2226,18 @@ extension LocalMessageQuerySortBy
 
 extension LocalMessageQuerySortThenBy
     on QueryBuilder<LocalMessage, LocalMessage, QSortThenBy> {
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByEditedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'editedAt', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByEditedAtDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'editedAt', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenById() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.asc);
@@ -1894,6 +2247,31 @@ extension LocalMessageQuerySortThenBy
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'id', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByIsDeleted() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isDeleted', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByIsDeletedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isDeleted', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByIsHiddenForMe() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isHiddenForMe', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  thenByIsHiddenForMeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'isHiddenForMe', Sort.desc);
     });
   }
 
@@ -1947,6 +2325,18 @@ extension LocalMessageQuerySortThenBy
   thenByRecipientIdDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'recipientId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByReplyToId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'replyToId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByReplyToIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'replyToId', Sort.desc);
     });
   }
 
@@ -2026,6 +2416,25 @@ extension LocalMessageQuerySortThenBy
 
 extension LocalMessageQueryWhereDistinct
     on QueryBuilder<LocalMessage, LocalMessage, QDistinct> {
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByEditedAt() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'editedAt');
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByIsDeleted() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isDeleted');
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct>
+  distinctByIsHiddenForMe() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'isHiddenForMe');
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByLocalMediaPath({
     bool caseSensitive = true,
   }) {
@@ -2057,6 +2466,14 @@ extension LocalMessageQueryWhereDistinct
   }) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'recipientId', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByReplyToId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'replyToId', caseSensitive: caseSensitive);
     });
   }
 
@@ -2111,6 +2528,24 @@ extension LocalMessageQueryProperty
     });
   }
 
+  QueryBuilder<LocalMessage, DateTime?, QQueryOperations> editedAtProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'editedAt');
+    });
+  }
+
+  QueryBuilder<LocalMessage, bool, QQueryOperations> isDeletedProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isDeleted');
+    });
+  }
+
+  QueryBuilder<LocalMessage, bool, QQueryOperations> isHiddenForMeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'isHiddenForMe');
+    });
+  }
+
   QueryBuilder<LocalMessage, String?, QQueryOperations>
   localMediaPathProperty() {
     return QueryBuilder.apply(this, (query) {
@@ -2133,6 +2568,12 @@ extension LocalMessageQueryProperty
   QueryBuilder<LocalMessage, String, QQueryOperations> recipientIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'recipientId');
+    });
+  }
+
+  QueryBuilder<LocalMessage, String?, QQueryOperations> replyToIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'replyToId');
     });
   }
 

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:serafim/src/utils/google_button.dart';
+import 'package:serafim/src/utils/google_sign_in_button.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/serafim_divider.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -18,7 +18,6 @@ class LandingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-
       backgroundColor: AppColors.paper,
       body: SafeArea(
         child: Padding(
@@ -58,7 +57,7 @@ class LandingPage extends StatelessWidget {
               const SizedBox(height: 20),
 
               // Social Auth Option
-              GoogleButton(onPressed: null),
+              const GoogleSignInButton(),
               const SizedBox(height: 16),
             ],
           ),

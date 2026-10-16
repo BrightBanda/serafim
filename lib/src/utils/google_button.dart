@@ -27,7 +27,7 @@ class GoogleButton extends StatelessWidget {
           color: AppColors.paperAlt,
           border: Border.all(color: AppColors.lineSoft, width: 1.5),
           borderRadius: BorderRadius.zero,
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: AppColors.line,
               offset: Offset(3, 3),

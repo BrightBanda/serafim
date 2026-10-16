@@ -56,7 +56,7 @@ class UiTextField extends StatelessWidget {
                 color: AppColors.textDim,
               ),
               border: InputBorder.none,
-              focusedBorder: const OutlineInputBorder(
+              focusedBorder: OutlineInputBorder(
                 borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                 borderRadius: BorderRadius.zero,
               ),

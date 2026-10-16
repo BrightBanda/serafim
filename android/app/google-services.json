@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "38214413467",
+    "project_id": "serafim-chat-42421",
+    "storage_bucket": "serafim-chat-42421.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:38214413467:android:51bb077add2a1e9fddaa3e",
+        "android_client_info": {
+          "package_name": "com.example.serafim"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASoRUBa9stviQ9jQPqHg6w5fx4Nz6f0DE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

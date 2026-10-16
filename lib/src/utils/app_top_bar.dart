@@ -25,10 +25,11 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The Scaffold hands the app bar the status-bar height on top of 56px, and
+    // the app draws edge-to-edge, so the bar keeps its content below the status
+    // bar itself while its background extends underneath it.
     return Container(
-      height: preferredSize.height,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -36,34 +37,46 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
         ),
         border: Border(bottom: BorderSide(color: AppColors.line, width: 2)),
       ),
-      child: Row(
-        children: [
-          if (onBack != null)
-            GestureDetector(
-              onTap: onBack,
-              child: Container(
-                width: 26,
-                height: 26,
-                margin: const EdgeInsets.only(right: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.paper,
-                  border: Border.all(color: AppColors.lineSoft, width: 1.5),
-                ),
-                child: const Icon(
-                  Icons.arrow_back,
-                  size: 14,
-                  color: AppColors.text,
-                ),
-              ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SizedBox(
+            height: preferredSize.height - 2, // the 2px bottom border
+            child: Row(
+              children: [
+                if (onBack != null)
+                  GestureDetector(
+                    onTap: onBack,
+                    child: Container(
+                      width: 26,
+                      height: 26,
+                      margin: const EdgeInsets.only(right: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.paper,
+                        border: Border.all(
+                          color: AppColors.lineSoft,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.arrow_back,
+                        size: 14,
+                        color: AppColors.text,
+                      ),
+                    ),
+                  ),
+                if (titleWidget != null)
+                  Expanded(child: titleWidget!)
+                else ...[
+                  Text(title, style: AppTextStyles.logo),
+                  const Spacer(),
+                ],
+                if (trailing != null) trailing!,
+              ],
             ),
-          if (titleWidget != null)
-            Expanded(child: titleWidget!)
-          else ...[
-            Text(title, style: AppTextStyles.logo),
-            const Spacer(),
-          ],
-          if (trailing != null) trailing!,
-        ],
+          ),
+        ),
       ),
     );
   }

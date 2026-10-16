@@ -21,19 +21,25 @@ class AppConfig {
     required this.supabaseUrl,
     required this.supabasePublishableKey,
     required this.apiBaseUrl,
+    this.googleWebClientId = '',
+    this.googleIosClientId = '',
   });
 
   /// Reads the values baked in at build time.
   factory AppConfig.fromEnvironment() {
     return const AppConfig(
       supabaseUrl: String.fromEnvironment('SUPABASE_URL'),
-      supabasePublishableKey: String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY'),
+      supabasePublishableKey: String.fromEnvironment(
+        'SUPABASE_PUBLISHABLE_KEY',
+      ),
       apiBaseUrl: String.fromEnvironment(
         'API_BASE_URL',
         // Android emulators reach the host machine on 10.0.2.2, never on
         // localhost. Override this define for a device or a deployed API.
         defaultValue: 'http://10.0.2.2:8000',
       ),
+      googleWebClientId: String.fromEnvironment('GOOGLE_WEB_CLIENT_ID'),
+      googleIosClientId: String.fromEnvironment('GOOGLE_IOS_CLIENT_ID'),
     );
   }
 
@@ -52,8 +58,24 @@ class AppConfig {
   /// Base URL of the Serafim FastAPI backend.
   final String apiBaseUrl;
 
+  /// The *Web application* OAuth client id from the Firebase / Google Cloud
+  /// project. On Android it is what makes Google issue an ID token that
+  /// Supabase can verify, so Google sign-in is unavailable without it. It is a
+  /// public identifier, not a secret (the client *secret* lives only in the
+  /// Supabase dashboard).
+  final String googleWebClientId;
+
+  /// iOS OAuth client id (`CLIENT_ID` in GoogleService-Info.plist). Optional
+  /// on Android.
+  final String googleIosClientId;
+
+  /// Google sign-in needs the web client id; without it the button explains
+  /// that rather than failing obscurely.
+  bool get googleSignInConfigured => googleWebClientId.isNotEmpty;
+
   /// GoTrue lives under `/auth/v1` on the project URL.
-  String get supabaseAuthUrl => '${supabaseUrl.replaceAll(RegExp(r'/+$'), '')}/auth/v1';
+  String get supabaseAuthUrl =>
+      '${supabaseUrl.replaceAll(RegExp(r'/+$'), '')}/auth/v1';
 
   bool get isConfigured =>
       supabaseUrl.isNotEmpty && supabasePublishableKey.isNotEmpty;

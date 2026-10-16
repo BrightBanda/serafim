@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save photos from chats to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose photos to send in chat and set as your profile picture.</string>
 	<key>NSCameraUsageDescription</key>

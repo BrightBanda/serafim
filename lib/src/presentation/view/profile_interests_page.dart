@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
-import 'package:serafim/src/utils/category_section.dart';
+import 'package:serafim/src/utils/interest_picker.dart';
 import 'package:serafim/src/utils/progress_bar.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
-import 'package:serafim/src/utils/serafim_chip.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -36,41 +35,7 @@ class ProfileInterestsPage extends StatefulWidget {
 }
 
 class _ProfileInterestsPageState extends State<ProfileInterestsPage> {
-  final Set<String> _selected = {};
-
-  static const _categories = <String, List<String>>{
-    'Sports': [
-      'Soccer',
-      'Basketball',
-      'Running',
-      'Cycling',
-      'Swimming',
-      'Tennis',
-    ],
-    'Hobbies': [
-      'Gaming',
-      'Cooking',
-      'Photography',
-      'Reading',
-      'Stargazing',
-      'Gardening',
-    ],
-    'Entertainment': ['Movies', 'Music', 'Anime', 'Podcasts', 'Comics'],
-  };
-
-  static const _categoryIcons = <String, IconData>{
-    'Sports': Icons.sports_soccer_outlined,
-    'Hobbies': Icons.auto_awesome_outlined,
-    'Entertainment': Icons.movie_outlined,
-  };
-
-  void _toggle(String label) {
-    setState(() {
-      _selected.contains(label)
-          ? _selected.remove(label)
-          : _selected.add(label);
-    });
-  }
+  Set<String> _selected = {};
 
   @override
   Widget build(BuildContext context) {
@@ -105,32 +70,8 @@ class _ProfileInterestsPageState extends State<ProfileInterestsPage> {
                     ),
                     const SizedBox(height: 10),
 
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        '${_selected.length} selected',
-                        style: AppTextStyles.fieldLabel.copyWith(
-                          color: AppColors.primaryPale,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    for (final entry in _categories.entries) ...[
-                      CategorySection(
-                        title: entry.key,
-                        icon: _categoryIcons[entry.key]!,
-                        children: [
-                          for (final label in entry.value)
-                            SerafimChip(
-                              label: label,
-                              selected: _selected.contains(label),
-                              onTap: () => _toggle(label),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                    ],
+                    InterestPicker(onChanged: (value) => _selected = value),
+                    const SizedBox(height: 18),
 
                     SerafimButton(
                       label: 'Finish setup',

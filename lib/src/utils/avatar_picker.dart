@@ -39,7 +39,7 @@ class AvatarPicker extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.primary, width: 3),
-                  boxShadow: const [
+                  boxShadow: [
                     BoxShadow(
                       color: AppColors.line,
                       offset: Offset(3, 3),
@@ -53,7 +53,7 @@ class AvatarPicker extends StatelessWidget {
                         )
                       : null,
                   gradient: imageProvider == null
-                      ? const SweepGradient(
+                      ? SweepGradient(
                           colors: [
                             AppColors.rust,
                             AppColors.paperAlt,

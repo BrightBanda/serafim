@@ -12,14 +12,14 @@ class SerafimDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Expanded(
+        Expanded(
           child: Divider(color: AppColors.lineSoft, thickness: 1.5, height: 1),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Text(label.toUpperCase(), style: AppTextStyles.fieldLabel),
         ),
-        const Expanded(
+        Expanded(
           child: Divider(color: AppColors.lineSoft, thickness: 1.5, height: 1),
         ),
       ],

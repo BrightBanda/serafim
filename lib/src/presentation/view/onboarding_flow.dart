@@ -86,7 +86,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
         // Blocks input as well as dimming, so a double tap on "Finish setup"
         // cannot fire a second create while the first is in flight.
         if (state.isSubmitting)
-          const Positioned.fill(
+          Positioned.fill(
             child: ColoredBox(
               color: Color(0x99000000),
               child: Center(

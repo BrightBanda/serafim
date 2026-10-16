@@ -33,16 +33,8 @@ class AvatarThumb extends StatelessWidget {
         gradient: imageProvider == null
             ? SweepGradient(
                 colors: isGroup
-                    ? const [
-                        AppColors.teal,
-                        AppColors.paper,
-                        AppColors.primaryDeep,
-                      ]
-                    : const [
-                        AppColors.rust,
-                        AppColors.paper,
-                        AppColors.primary,
-                      ],
+                    ? [AppColors.teal, AppColors.paper, AppColors.primaryDeep]
+                    : [AppColors.rust, AppColors.paper, AppColors.primary],
               )
             : null,
       ),

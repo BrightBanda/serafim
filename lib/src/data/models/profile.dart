@@ -8,9 +8,13 @@ class Profile {
     required this.updatedAt,
     this.profilePic,
     this.interests = const [],
+    this.allowFriendRequests = true,
   });
 
   final String userId;
+
+  /// Privacy: when false, nobody can send this user a friend request.
+  final bool allowFriendRequests;
   final String displayName;
   final String username;
   final String? profilePic;
@@ -28,6 +32,7 @@ class Profile {
       interests: interests is List
           ? interests.map((e) => e.toString()).toList(growable: false)
           : const [],
+      allowFriendRequests: json['allow_friend_requests'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -67,18 +72,22 @@ class ProfileUpdateRequest {
     this.username,
     this.profilePic,
     this.interests,
+    this.allowFriendRequests,
   });
 
   final String? displayName;
   final String? username;
   final String? profilePic;
   final List<String>? interests;
+  final bool? allowFriendRequests;
 
   Map<String, dynamic> toJson() => {
     if (displayName != null) 'display_name': displayName,
     if (username != null) 'username': username,
     if (profilePic != null) 'profile_pic': profilePic,
     if (interests != null) 'interests': interests,
+    if (allowFriendRequests != null)
+      'allow_friend_requests': allowFriendRequests,
   };
 
   bool get isEmpty => toJson().isEmpty;

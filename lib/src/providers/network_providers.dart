@@ -72,7 +72,8 @@ final storageDioProvider = Provider<Dio>((ref) {
 
   final dio = Dio(
     BaseOptions(
-      baseUrl: '${config.supabaseUrl.replaceAll(RegExp(r'/+$'), '')}/storage/v1',
+      baseUrl:
+          '${config.supabaseUrl.replaceAll(RegExp(r'/+$'), '')}/storage/v1',
       connectTimeout: _timeouts.connect,
       receiveTimeout: _timeouts.receive,
       sendTimeout: _timeouts.send,

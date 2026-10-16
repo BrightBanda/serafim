@@ -22,7 +22,27 @@ class ChatBubble extends StatelessWidget {
     required this.side,
     this.status,
     this.imagePath,
+    this.deleted = false,
+    this.onLongPress,
+    this.onSaveImage,
+    this.onDeleteImage,
+    this.quote,
   });
+
+  /// The message this one replies to, shown above the content.
+  final ReplyQuoteData? quote;
+
+  /// Adds a Delete button to the full-screen image viewer.
+  final Future<void> Function()? onDeleteImage;
+
+  /// Deleted for everyone: shows a placeholder instead of the content.
+  final bool deleted;
+
+  /// Press-and-hold on the bubble (message actions).
+  final VoidCallback? onLongPress;
+
+  /// Adds a Download button to the full-screen image viewer.
+  final Future<void> Function()? onSaveImage;
 
   /// Local file path of an attached image, if any.
   final String? imagePath;
@@ -40,91 +60,137 @@ class ChatBubble extends StatelessWidget {
     final isOut = side == ChatBubbleSide.outgoing;
     return Align(
       alignment: isOut ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.78,
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
-        decoration: BoxDecoration(
-          gradient: isOut
-              ? const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.primary, AppColors.primaryDeep],
-                )
-              : null,
-          color: isOut ? null : AppColors.paperRaised,
-          border: Border.all(
-            color: isOut ? AppColors.line : AppColors.lineSoft,
-            width: 1.5,
+      child: GestureDetector(
+        onLongPress: onLongPress,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.78,
           ),
-          boxShadow: const [
-            BoxShadow(
-              color: AppColors.line,
-              offset: Offset(2, 2),
-              blurRadius: 0,
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+          decoration: BoxDecoration(
+            gradient: isOut
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.primary, AppColors.primaryDeep],
+                  )
+                : null,
+            color: isOut ? null : AppColors.paperRaised,
+            border: Border.all(
+              color: isOut ? AppColors.line : AppColors.lineSoft,
+              width: 1.5,
             ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              who,
-              style: AppTextStyles.fieldLabel.copyWith(
-                fontSize: 8,
-                color: isOut ? const Color(0xFFDBE4FB) : AppColors.tealPale,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.line,
+                offset: Offset(2, 2),
+                blurRadius: 0,
               ),
-            ),
-            const SizedBox(height: 3),
-            if (imagePath != null) ...[
-              GestureDetector(
-                onTap: () => _openFullScreen(context, imagePath!),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 260),
-                  child: Image.file(
-                    File(imagePath!),
-                    fit: BoxFit.cover,
-                    cacheWidth: 800,
-                    errorBuilder: (_, __, ___) => const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Icon(Icons.broken_image_outlined, size: 28),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                who,
+                style: AppTextStyles.fieldLabel.copyWith(
+                  fontSize: 8,
+                  color: isOut ? const Color(0xFFDBE4FB) : AppColors.tealPale,
+                ),
+              ),
+              const SizedBox(height: 3),
+              if (quote != null && !deleted) ...[
+                _ReplyQuote(data: quote!, outgoing: isOut),
+                const SizedBox(height: 6),
+              ],
+              if (deleted)
+                Text(
+                  'This message was deleted',
+                  style: AppTextStyles.body.copyWith(
+                    fontStyle: FontStyle.italic,
+                    fontSize: 11,
+                    color: isOut ? const Color(0xFFDBE4FB) : AppColors.textDim,
+                  ),
+                )
+              else ...[
+                if (imagePath != null) ...[
+                  GestureDetector(
+                    onTap: () => _openFullScreen(
+                      context,
+                      imagePath!,
+                      onSaveImage,
+                      onDeleteImage,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 260),
+                      child: Image.file(
+                        File(imagePath!),
+                        fit: BoxFit.cover,
+                        cacheWidth: 800,
+                        errorBuilder: (_, __, ___) => const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Icon(Icons.broken_image_outlined, size: 28),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              if (message.isNotEmpty) const SizedBox(height: 6),
+                  if (message.isNotEmpty) const SizedBox(height: 6),
+                ],
+                if (message.isNotEmpty)
+                  Text(
+                    message,
+                    style: AppTextStyles.body.copyWith(
+                      color: isOut ? Colors.white : AppColors.text,
+                      fontSize: 11,
+                      height: 1.5,
+                    ),
+                  ),
+              ],
+              if (isOut && status != null && !deleted) ...[
+                const SizedBox(height: 4),
+                _StatusRow(status: status!),
+              ],
             ],
-            if (message.isNotEmpty)
-              Text(
-                message,
-                style: AppTextStyles.body.copyWith(
-                  color: isOut ? Colors.white : AppColors.text,
-                  fontSize: 11,
-                  height: 1.5,
-                ),
-              ),
-            if (isOut && status != null) ...[
-              const SizedBox(height: 4),
-              _StatusRow(status: status!),
-            ],
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-void _openFullScreen(BuildContext context, String path) {
+void _openFullScreen(
+  BuildContext context,
+  String path,
+  Future<void> Function()? onSave,
+  Future<void> Function()? onDelete,
+) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => Scaffold(
         backgroundColor: Colors.black,
-        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
-        body: Center(
-          child: InteractiveViewer(child: Image.file(File(path))),
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          actions: [
+            if (onDelete != null)
+              IconButton(
+                tooltip: 'Delete',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  onDelete();
+                },
+              ),
+            if (onSave != null)
+              IconButton(
+                tooltip: 'Download',
+                icon: const Icon(Icons.download_outlined),
+                onPressed: onSave,
+              ),
+          ],
         ),
+        body: Center(child: InteractiveViewer(child: Image.file(File(path)))),
       ),
     ),
   );
@@ -201,5 +267,76 @@ class _StatusIcon extends StatelessWidget {
           color: Colors.red.shade300,
         );
     }
+  }
+}
+
+/// What a reply quotes: who wrote the original and a short snippet. Built by
+/// the thread page from the local message list.
+class ReplyQuoteData {
+  const ReplyQuoteData({
+    required this.author,
+    required this.snippet,
+    this.available = true,
+    this.onTap,
+  });
+
+  final String author;
+  final String snippet;
+
+  /// False when the original was deleted/removed; shown muted.
+  final bool available;
+  final VoidCallback? onTap;
+}
+
+class _ReplyQuote extends StatelessWidget {
+  const _ReplyQuote({required this.data, required this.outgoing});
+
+  final ReplyQuoteData data;
+  final bool outgoing;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = outgoing ? Colors.white : AppColors.text;
+
+    return GestureDetector(
+      onTap: data.available ? data.onTap : null,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: outgoing ? 0.18 : 0.25),
+          border: Border(
+            left: BorderSide(
+              color: outgoing ? AppColors.primaryPale : AppColors.tealPale,
+              width: 3,
+            ),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              data.author,
+              style: AppTextStyles.fieldLabel.copyWith(
+                fontSize: 8.5,
+                color: outgoing ? AppColors.primaryPale : AppColors.tealPale,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              data.snippet,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.body.copyWith(
+                fontSize: 10.5,
+                height: 1.35,
+                fontStyle: data.available ? null : FontStyle.italic,
+                color: fg.withValues(alpha: data.available ? 0.9 : 0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

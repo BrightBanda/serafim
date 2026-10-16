@@ -22,8 +22,7 @@ void main() {
   OnboardingViewModel viewModel() =>
       container.read(onboardingViewModelProvider.notifier);
   OnboardingState state() => container.read(onboardingViewModelProvider);
-  void signInAs(String? id) =>
-      container.read(_account.notifier).signInAs(id);
+  void signInAs(String? id) => container.read(_account.notifier).signInAs(id);
 
   setUp(() {
     container = ProviderContainer(
@@ -52,8 +51,11 @@ void main() {
       viewModel().backToPhotoName();
 
       expect(state().step, OnboardingStep.photoName);
-      expect(state().displayName, 'Bright',
-          reason: 'stepping back must not discard the name');
+      expect(
+        state().displayName,
+        'Bright',
+        reason: 'stepping back must not discard the name',
+      );
     });
   });
 

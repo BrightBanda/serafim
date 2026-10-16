@@ -44,7 +44,7 @@ class SerafimButton extends StatelessWidget {
                 ),
           border: Border.all(color: AppColors.line, width: 2),
           borderRadius: BorderRadius.zero,
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
               color: AppColors.line,
               offset: Offset(3, 3),

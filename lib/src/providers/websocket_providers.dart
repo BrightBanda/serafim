@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/services/websocket_service.dart';
 import 'package:serafim/src/providers/app_providers.dart'; // Contains appConfigProvider
 import 'package:serafim/src/providers/auth_providers.dart'; // Contains currentUserProvider
+import 'package:serafim/src/providers/network_providers.dart';
 
 /// Singleton instance of the WebSocketService
 final webSocketServiceProvider = Provider<WebSocketService>((ref) {
@@ -28,7 +29,22 @@ final webSocketStreamProvider = StreamProvider<Map<String, dynamic>>((ref) {
   }
 
   // Connect using backend URL and current user ID
-  wsService.connect(config.apiBaseUrl, currentUser.id);
+  final store = ref.read(sessionStoreProvider);
+  final dio = ref.read(apiDioProvider);
+
+  // A fresh token for every (re)connect. When the stored one has expired, a
+  // cheap authenticated call makes the API interceptor refresh it (it
+  // single-flights refreshes, which a second refresh path here would break).
+  Future<String?> freshToken() async {
+    if (store.current == null || store.current!.isExpired) {
+      try {
+        await dio.get<dynamic>('/auth/me');
+      } catch (_) {}
+    }
+    return store.current?.accessToken;
+  }
+
+  wsService.connect(config.apiBaseUrl, currentUser.id, freshToken);
 
   return wsService.messageStream ?? const Stream.empty();
 });

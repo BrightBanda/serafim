@@ -5,7 +5,7 @@ import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
-import 'package:serafim/src/utils/google_button.dart';
+import 'package:serafim/src/utils/google_sign_in_button.dart';
 import 'package:serafim/src/utils/password_field.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/serafim_divider.dart';
@@ -114,9 +114,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               const SerafimDivider(),
               const SizedBox(height: 18),
 
-              // Not wired yet: Google sign-in goes through Supabase OAuth,
-              // which needs a redirect the app does not handle.
-              GoogleButton(onPressed: null),
+              const GoogleSignInButton(),
               const SizedBox(height: 18),
 
               Text(

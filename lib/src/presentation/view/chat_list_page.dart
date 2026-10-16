@@ -1,55 +1,97 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
-import 'package:serafim/src/presentation/view/chat_thread_page.dart';
+import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
+import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
-import 'package:serafim/src/providers/user_providers.dart';
+import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/chat/chat_row.dart';
 import 'package:serafim/src/utils/chat/chat_time.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
+import 'package:serafim/src/utils/user_card.dart';
 
-class ChatPreview {
-  const ChatPreview({
-    required this.id,
-    required this.name,
-    required this.preview,
-    required this.time,
-    this.username,
-    this.profilePic,
-    this.isGroup = false,
-    this.unread = false,
-  });
-
-  final String id;
-  final String name;
-  final String? username;
-  final String? profilePic;
-  final String preview;
-  final String time;
-  final bool isGroup;
-  final bool unread;
-}
-
+/// Conversations: your friends, plus anyone you have exchanged messages with.
+/// New people are found in Discover.
 class ChatListPage extends ConsumerWidget {
-  const ChatListPage({super.key, this.onSearch, this.onOpenChat});
+  const ChatListPage({super.key, this.onSearch});
 
+  /// Overrides what the search button does; by default it opens Discover.
   final VoidCallback? onSearch;
-  final ValueChanged<ChatPreview>? onOpenChat;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final usersAsync = ref.watch(registeredUsersProvider);
     final currentUser = ref.watch(currentUserProvider);
+    final friendsAsync = ref.watch(friendsProvider);
+    final peersAsync = ref.watch(conversationPeerIdsProvider);
+
+    void openDiscover() =>
+        ref.read(navigationNotifierProvider.notifier).setIndex(1);
+
+    final friends = friendsAsync.value ?? const <PublicUser>[];
+    final friendIds = {for (final f in friends) f.id};
+    final strangers = (peersAsync.value ?? const <String>[])
+        .where((id) => !friendIds.contains(id))
+        .toList();
+
+    final stillLoading =
+        (friendsAsync.isLoading && !friendsAsync.hasValue) ||
+        (peersAsync.isLoading && !peersAsync.hasValue);
+
+    Widget body;
+    if (currentUser == null || stillLoading) {
+      body = Center(child: CircularProgressIndicator(color: AppColors.primary));
+    } else if (friendsAsync.hasError && friends.isEmpty && strangers.isEmpty) {
+      body = _CenteredMessage(
+        text: 'Failed to load chats: ${friendsAsync.error}',
+        actionLabel: 'Try again',
+        onAction: () => ref.invalidate(friendsProvider),
+      );
+    } else if (friends.isEmpty && strangers.isEmpty) {
+      body = _CenteredMessage(
+        text: 'No conversations yet.\nFind people in Discover to start one.',
+        actionLabel: 'Open Discover',
+        onAction: openDiscover,
+      );
+    } else {
+      body = RefreshIndicator(
+        color: AppColors.primary,
+        backgroundColor: AppColors.paperRaised,
+        onRefresh: () async {
+          ref.invalidate(friendsProvider);
+          try {
+            await ref.read(friendsProvider.future);
+          } catch (_) {}
+        },
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(14),
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text('CHAT', style: AppTextStyles.eyebrow),
+            ),
+            for (final user in friends) ...[
+              _ChatListItem(user: user, myId: currentUser.id),
+              const SizedBox(height: 10),
+            ],
+            for (final id in strangers) ...[
+              _PeerChatItem(peerId: id, myId: currentUser.id),
+              const SizedBox(height: 10),
+            ],
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.paper,
       appBar: AppTopBar(
         trailing: GestureDetector(
-          onTap: onSearch,
+          onTap: onSearch ?? openDiscover,
           child: Container(
             width: 26,
             height: 26,
@@ -57,69 +99,80 @@ class ChatListPage extends ConsumerWidget {
               color: AppColors.paper,
               border: Border.all(color: AppColors.lineSoft, width: 1.5),
             ),
-            child: const Icon(Icons.search, size: 14, color: AppColors.textDim),
+            child: Icon(Icons.search, size: 14, color: AppColors.textDim),
           ),
         ),
       ),
-      body: SafeArea(
-        child: usersAsync.when(
-          loading: () => const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          ),
-          error: (error, stack) => Center(
-            child: Text(
-              'Failed to load users: $error',
-              style: AppTextStyles.body.copyWith(color: Colors.red.shade300),
-              textAlign: TextAlign.center,
+      body: SafeArea(child: body),
+    );
+  }
+}
+
+class _CenteredMessage extends StatelessWidget {
+  const _CenteredMessage({
+    required this.text,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  final String text;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(text, textAlign: TextAlign.center, style: AppTextStyles.body),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: onAction,
+              child: Text(actionLabel, style: AppTextStyles.linkText),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Someone you have messaged who is not (or is no longer) a friend: their
+/// profile is fetched by id.
+class _PeerChatItem extends ConsumerWidget {
+  const _PeerChatItem({required this.peerId, required this.myId});
+
+  final String peerId;
+  final String myId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(publicUserProvider(peerId));
+    return user.when(
+      data: (u) => _ChatListItem(user: u, myId: myId),
+      // Keep the row so the conversation is never hidden by a failed lookup.
+      error: (_, __) => _ChatListItem(
+        user: PublicUser(
+          id: peerId,
+          username: 'unknown',
+          displayName: 'Unknown user',
+        ),
+        myId: myId,
+      ),
+      loading: () => SizedBox(
+        height: 60,
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppColors.primary,
             ),
           ),
-          data: (users) {
-            // Filter out the currently logged-in user
-            final otherUsers = users
-                .where((u) => u.id != currentUser?.id.toString())
-                .toList();
-
-            if (otherUsers.isEmpty) {
-              return Center(
-                child: Text(
-                  'No other registered users found.',
-                  style: AppTextStyles.body,
-                ),
-              );
-            }
-
-            final chats = otherUsers.map((u) {
-              final nameToDisplay =
-                  (u.displayName != null && u.displayName!.isNotEmpty)
-                  ? u.displayName!
-                  : u.email;
-
-              return ChatPreview(
-                id: u.id,
-                name: nameToDisplay,
-                username: u.username,
-                profilePic: u.profilePic,
-                preview: 'Tap to start conversation',
-                time: '',
-              );
-            }).toList();
-
-            return ListView.separated(
-              padding: const EdgeInsets.all(14),
-              itemCount: chats.length + 1,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: Text('CHAT', style: AppTextStyles.eyebrow),
-                  );
-                }
-                final chat = chats[index - 1];
-                return _ChatListItem(chat: chat, myId: currentUser!.id);
-              },
-            );
-          },
         ),
       ),
     );
@@ -128,49 +181,39 @@ class ChatListPage extends ConsumerWidget {
 
 /// One conversation row, fed by the latest local message in its room.
 class _ChatListItem extends ConsumerWidget {
-  const _ChatListItem({required this.chat, required this.myId});
+  const _ChatListItem({required this.user, required this.myId});
 
-  final ChatPreview chat;
+  final PublicUser user;
   final String myId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final roomId = ChatViewModel.buildRoomId(myId, chat.id);
+    final roomId = ChatViewModel.buildRoomId(myId, user.id);
     final summary = ref
         .watch(roomSummaryProvider((roomId: roomId, myId: myId)))
         .value;
     final latest = summary?.latest;
 
-    var preview = chat.preview;
+    var preview = 'Tap to start conversation';
     var time = '';
     if (latest != null) {
       final text = latest.textContent ?? '';
-      final body = latest.type == MessageType.image
+      final body = latest.isDeleted
+          ? 'Message deleted'
+          : latest.type == MessageType.image
           ? (text.isEmpty ? '📷 Photo' : '📷 $text')
           : text;
       preview = latest.senderId == myId ? 'You: $body' : body;
       time = formatChatListTime(context, latest.timestamp);
     }
 
-    final pic = chat.profilePic;
     return ChatRow(
-      name: chat.name,
+      name: user.displayName,
       preview: preview,
       time: time,
-      isGroup: chat.isGroup,
       unread: (summary?.unreadCount ?? 0) > 0,
-      imageProvider: pic != null && pic.isNotEmpty ? NetworkImage(pic) : null,
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatThreadPage(
-            contactName: chat.name,
-            username: chat.username,
-            profilePic: chat.profilePic,
-            recipientId: chat.id,
-          ),
-        ),
-      ),
+      imageProvider: avatarImage(user.profilePic),
+      onTap: () => openChatWith(context, user),
     );
   }
 }
