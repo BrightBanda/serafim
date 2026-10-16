@@ -1,3 +1,5 @@
+import 'package:serafim/src/core/platform/google_support.dart';
+
 /// Switches for features that are built but deliberately not offered yet.
 class FeatureFlags {
   FeatureFlags._();
@@ -11,4 +13,9 @@ class FeatureFlags {
   /// switched on in Supabase (Authentication → Providers → Email → "Confirm
   /// email").
   static const bool emailSignIn = false;
+
+  /// Whether to offer email sign-in on this device: when the flag is on, or
+  /// when Google sign-in can't work here (Linux and Windows desktop), because
+  /// otherwise nobody could sign in at all.
+  static bool get emailSignInAvailable => emailSignIn || !googleSignInSupported;
 }

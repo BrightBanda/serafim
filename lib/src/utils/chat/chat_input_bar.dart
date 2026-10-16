@@ -13,6 +13,7 @@ class ChatInputBar extends StatelessWidget {
     this.onSend,
     this.onAttach,
     this.attachDisabledReason,
+    this.attachBusy = false,
     this.replyPreview,
   });
 
@@ -30,10 +31,15 @@ class ChatInputBar extends StatelessWidget {
   /// reason instead of picking a file. (The server enforces the rule too.)
   final String? attachDisabledReason;
 
+  /// A photo is being prepared or sent: the attach button shows a spinner and
+  /// ignores taps.
+  final bool attachBusy;
+
   @override
   Widget build(BuildContext context) {
     final bar = Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      // The extra bottom padding lifts the bar clear of the screen edge.
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
@@ -49,7 +55,9 @@ class ChatInputBar extends StatelessWidget {
           children: [
             if (onAttach != null) ...[
               GestureDetector(
-                onTap: attachDisabledReason == null
+                onTap: attachBusy
+                    ? null
+                    : attachDisabledReason == null
                     ? onAttach
                     : () => ScaffoldMessenger.of(context)
                         ..clearSnackBars()
@@ -63,13 +71,24 @@ class ChatInputBar extends StatelessWidget {
                     color: AppColors.paperAlt,
                     border: Border.all(color: AppColors.lineSoft, width: 1.5),
                   ),
-                  child: Icon(
-                    Icons.attach_file,
-                    size: 18,
-                    color: attachDisabledReason == null
-                        ? AppColors.textDim
-                        : AppColors.lineSoft,
-                  ),
+                  child: attachBusy
+                      ? Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          Icons.attach_file,
+                          size: 18,
+                          color: attachDisabledReason == null
+                              ? AppColors.textDim
+                              : AppColors.lineSoft,
+                        ),
                 ),
               ),
               const SizedBox(width: 8),

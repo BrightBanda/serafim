@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:serafim/src/core/errors/human_error.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -177,7 +178,7 @@ class _Suggestions extends ConsumerWidget {
         const SizedBox(height: 60),
         _Message(
           icon: Icons.cloud_off_outlined,
-          text: error.toString(),
+          text: humanError(error),
           actionLabel: 'Try again',
           onAction: onRefresh,
         ),
@@ -233,7 +234,7 @@ class _SearchResults extends ConsumerWidget {
           const SizedBox(height: 60),
           _Message(
             icon: Icons.cloud_off_outlined,
-            text: error.toString(),
+            text: humanError(error),
             actionLabel: 'Try again',
             onAction: () async => ref.invalidate(userSearchProvider(query)),
           ),

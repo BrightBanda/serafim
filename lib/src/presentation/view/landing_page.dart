@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:serafim/src/core/config/feature_flags.dart';
+import 'package:serafim/src/core/platform/google_support.dart';
 import 'package:serafim/src/utils/google_sign_in_button.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
@@ -49,12 +50,17 @@ class LandingPage extends StatelessWidget {
               // Google comes first. It only accepts accounts Google has
               // already verified, which is why it is the one sign-in on offer
               // while email addresses are not confirmed.
-              const GoogleSignInButton(),
-              const SizedBox(height: 16),
-
-              if (FeatureFlags.emailSignIn) ...[
-                const SerafimDivider(),
+              if (googleSignInSupported) ...[
+                const GoogleSignInButton(),
                 const SizedBox(height: 16),
+              ],
+
+              if (FeatureFlags.emailSignInAvailable) ...[
+                // The divider only makes sense between two options.
+                if (googleSignInSupported) ...[
+                  const SerafimDivider(),
+                  const SizedBox(height: 16),
+                ],
 
                 SerafimButton(label: 'Create Account', onPressed: onSignUpTap),
                 const SizedBox(height: 12),

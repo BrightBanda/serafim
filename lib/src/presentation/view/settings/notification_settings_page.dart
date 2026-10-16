@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/providers/push_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/utils/small_action_button.dart';
@@ -91,8 +91,8 @@ class _PushStatusCardState extends ConsumerState<_PushStatusCard> {
           ? 'Sent. A notification should appear in a moment. Put the app in '
                 'the background to see it.'
           : result.reason ?? 'The test notification could not be sent.';
-    } on ApiException catch (error) {
-      message = error.message;
+    } catch (error) {
+      message = humanError(error);
     }
     if (!mounted) return;
     setState(() {

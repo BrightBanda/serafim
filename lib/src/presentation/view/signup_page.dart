@@ -5,6 +5,7 @@ import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
+import 'package:serafim/src/core/platform/google_support.dart';
 import 'package:serafim/src/utils/google_sign_in_button.dart';
 import 'package:serafim/src/utils/password_field.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
@@ -111,11 +112,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               ),
               const SizedBox(height: 18),
 
-              const SerafimDivider(),
-              const SizedBox(height: 18),
+              if (googleSignInSupported) ...[
+                const SerafimDivider(),
+                const SizedBox(height: 18),
 
-              const GoogleSignInButton(),
-              const SizedBox(height: 18),
+                const GoogleSignInButton(),
+                const SizedBox(height: 18),
+              ],
 
               Text(
                 "By signing up you agree to Serafim's Terms and Privacy Policy.",

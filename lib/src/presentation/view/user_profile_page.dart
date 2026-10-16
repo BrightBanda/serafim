@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
@@ -38,10 +39,10 @@ class UserProfilePage extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    error.toString(),
+                    humanError(error),
                     textAlign: TextAlign.center,
                     style: AppTextStyles.body.copyWith(
-                      color: Colors.red.shade300,
+                      color: AppColors.rustPale,
                     ),
                   ),
                   const SizedBox(height: 12),

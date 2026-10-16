@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
@@ -49,10 +50,10 @@ class FollowListPage extends ConsumerWidget {
               children: [
                 const SizedBox(height: 60),
                 Text(
-                  error.toString(),
+                  humanError(error),
                   textAlign: TextAlign.center,
                   style: AppTextStyles.body.copyWith(
-                    color: Colors.red.shade300,
+                    color: AppColors.rustPale,
                   ),
                 ),
               ],

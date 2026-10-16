@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:serafim/src/core/network/api_exception.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/data/services/profile_service.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
@@ -55,9 +55,9 @@ class ProfileViewModel extends AsyncNotifier<Profile?> {
       final url = await ref
           .read(avatarStorageServiceProvider)
           .uploadAvatar(accountId, jpegBytes);
-      return updateProfile(ProfileUpdateRequest(profilePic: url));
-    } on ApiException catch (error) {
-      return error.message;
+      return await updateProfile(ProfileUpdateRequest(profilePic: url));
+    } catch (error) {
+      return humanError(error, fallback: "Couldn't upload your photo.");
     }
   }
 
@@ -71,8 +71,8 @@ class ProfileViewModel extends AsyncNotifier<Profile?> {
     try {
       state = AsyncValue<Profile?>.data(await action());
       return null;
-    } on ApiException catch (error) {
-      return error.message;
+    } catch (error) {
+      return humanError(error);
     }
   }
 }

@@ -45,19 +45,23 @@ class AppBottomNav extends StatelessWidget {
       // buttons stay above it.
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: 58,
-          child: Row(
-            children: [
-              for (var i = 0; i < items.length; i++)
-                Expanded(
-                  child: _NavButton(
-                    item: items[i],
-                    selected: i == currentIndex,
-                    onTap: () => onTap(i),
+        // Extra bottom padding lifts the buttons clear of the screen edge.
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: SizedBox(
+            height: 58,
+            child: Row(
+              children: [
+                for (var i = 0; i < items.length; i++)
+                  Expanded(
+                    child: _NavButton(
+                      item: items[i],
+                      selected: i == currentIndex,
+                      onTap: () => onTap(i),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

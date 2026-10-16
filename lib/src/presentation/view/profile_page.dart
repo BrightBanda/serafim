@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/presentation/view/edit_profile_page.dart';
@@ -36,19 +37,6 @@ class ProfilePage extends ConsumerWidget {
     final pic = profileAsync.value?.profilePic;
     final avatar = pic != null && pic.isNotEmpty ? NetworkImage(pic) : null;
 
-    Future<void> changePhoto() async {
-      final bytes = await pickShrunkImage(context, maxSide: 512, quality: 80);
-      if (bytes == null) return;
-      final error = await ref
-          .read(profileViewModelProvider.notifier)
-          .uploadAvatar(bytes);
-      if (error != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: AppColors.rust),
-        );
-      }
-    }
-
     return Scaffold(
       backgroundColor: AppColors.paper,
       appBar: AppTopBar(
@@ -77,12 +65,7 @@ class ProfilePage extends ConsumerWidget {
                 ),
                 child: Column(
                   children: [
-                    AvatarPicker(
-                      size: 80,
-                      imageProvider: avatar,
-                      onEditTap: changePhoto,
-                      onUploadTap: changePhoto,
-                    ),
+                    _ProfileAvatar(imageProvider: avatar),
                     const SizedBox(height: 14),
                     // Display Name
                     Text(
@@ -261,9 +244,9 @@ class _FriendsSection extends ConsumerWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Could not load friends: $error',
+                    humanError(error, fallback: "Couldn't load your friends."),
                     style: AppTextStyles.body.copyWith(
-                      color: Colors.red.shade300,
+                      color: AppColors.rustPale,
                     ),
                   ),
                 ),
@@ -453,6 +436,65 @@ class _FollowCounts extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The profile picture with its change-photo controls. Shows a spinner from the
+/// moment a photo is chosen until it has been shrunk and uploaded.
+class _ProfileAvatar extends ConsumerStatefulWidget {
+  const _ProfileAvatar({required this.imageProvider});
+
+  final ImageProvider? imageProvider;
+
+  @override
+  ConsumerState<_ProfileAvatar> createState() => _ProfileAvatarState();
+}
+
+class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
+  bool _busy = false;
+
+  void _tell(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: AppColors.rust),
+      );
+  }
+
+  Future<void> _change() async {
+    if (_busy) return;
+    try {
+      final bytes = await pickShrunkImage(
+        context,
+        maxSide: 512,
+        quality: 80,
+        onPicked: () {
+          if (mounted) setState(() => _busy = true);
+        },
+      );
+      if (bytes == null) return; // cancelled
+      final error = await ref
+          .read(profileViewModelProvider.notifier)
+          .uploadAvatar(bytes);
+      if (error != null) _tell(error);
+    } catch (error) {
+      _tell(humanError(error, fallback: "Couldn't update your photo."));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AvatarPicker(
+      size: 80,
+      imageProvider: widget.imageProvider,
+      busy: _busy,
+      busyLabel: 'Uploading…',
+      onEditTap: _change,
+      onUploadTap: _change,
     );
   }
 }

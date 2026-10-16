@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -100,6 +101,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
 
   bool _initialScrollDone = false;
 
+  /// A photo is being prepared and sent.
+  bool _attaching = false;
+
   /// The message being replied to, while composing.
   LocalMessage? _replyingTo;
 
@@ -132,24 +136,38 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     final currentUser = ref.read(currentUserProvider);
     if (currentUser == null) return;
 
+    if (_attaching) return;
     final quality = ref.read(settingsProvider).imageQuality;
-    final bytes = await pickShrunkImage(
-      context,
-      maxSide: quality.maxSide,
-      quality: quality.jpegQuality,
-    );
-    if (bytes == null || !mounted) return;
+    try {
+      final bytes = await pickShrunkImage(
+        context,
+        maxSide: quality.maxSide,
+        quality: quality.jpegQuality,
+        // From here until the message is saved, show a spinner.
+        onPicked: () {
+          if (mounted) setState(() => _attaching = true);
+        },
+      );
+      if (bytes == null || !mounted) return;
 
-    await ref
-        .read(chatViewModelProvider.notifier)
-        .sendMessage(
-          roomId: _roomId,
-          recipientId: widget.recipientId,
-          imageBytes: bytes,
-          replyToId: _replyingTo?.messageId,
-        );
-    if (mounted) setState(() => _replyingTo = null);
-    _scheduleScrollToBottom();
+      await ref
+          .read(chatViewModelProvider.notifier)
+          .sendMessage(
+            roomId: _roomId,
+            recipientId: widget.recipientId,
+            imageBytes: bytes,
+            replyToId: _replyingTo?.messageId,
+          );
+      if (mounted) setState(() => _replyingTo = null);
+      _scheduleScrollToBottom();
+    } catch (error) {
+      _toast(
+        humanError(error, fallback: "Couldn't send that photo."),
+        error: true,
+      );
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
   }
 
   @override
@@ -636,9 +654,12 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                   error: (error, stack) {
                     return Center(
                       child: Text(
-                        'Failed to load messages: $error',
+                        humanError(
+                          error,
+                          fallback: "Couldn't load this conversation.",
+                        ),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.red),
+                        style: TextStyle(color: AppColors.rustPale),
                       ),
                     );
                   },
@@ -752,6 +773,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                 onSend: _handleSend,
                 onAttach: _handleAttach,
                 attachDisabledReason: attachDisabledReason,
+                attachBusy: _attaching,
                 replyPreview: _replyingTo == null
                     ? null
                     : (

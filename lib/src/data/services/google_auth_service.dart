@@ -1,5 +1,6 @@
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:serafim/src/core/network/api_exception.dart';
+import 'package:serafim/src/core/platform/google_support.dart';
 
 /// The user closed the Google account picker. Not an error worth showing.
 class GoogleSignInCancelled implements Exception {
@@ -32,6 +33,11 @@ class GoogleAuthService {
   /// Throws [GoogleSignInCancelled] if the user backs out and [ApiException]
   /// for anything else, with a message fit for the screen.
   Future<String> signIn() async {
+    if (!googleSignInSupported) {
+      throw const ApiException(
+        "Google sign-in isn't available on this device. Use email instead.",
+      );
+    }
     if (webClientId.isEmpty) {
       throw const ApiException(
         'Google sign-in is not set up yet. Add GOOGLE_WEB_CLIENT_ID to the '

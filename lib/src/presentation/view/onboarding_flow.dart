@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/profile_interests_page.dart';
 import 'package:serafim/src/presentation/view/profile_photo_name_page.dart';
@@ -33,9 +34,33 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     super.dispose();
   }
 
+  bool _preparingPhoto = false;
+
   Future<void> _pickPhoto(OnboardingViewModel viewModel) async {
-    final bytes = await pickShrunkImage(context, maxSide: 512, quality: 80);
-    if (bytes != null) viewModel.setAvatar(bytes);
+    if (_preparingPhoto) return;
+    try {
+      final bytes = await pickShrunkImage(
+        context,
+        maxSide: 512,
+        quality: 80,
+        onPicked: () {
+          if (mounted) setState(() => _preparingPhoto = true);
+        },
+      );
+      if (bytes != null) viewModel.setAvatar(bytes);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            humanError(error, fallback: "Couldn't use that photo."),
+          ),
+          backgroundColor: AppColors.rust,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _preparingPhoto = false);
+    }
   }
 
   @override
@@ -66,6 +91,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
       OnboardingStep.photoName => ProfilePhotoNamePage(
         nameController: _nameController,
         avatarBytes: state.avatarBytes,
+        avatarBusy: _preparingPhoto,
         onEditPhoto: () => _pickPhoto(viewModel),
         onUploadPhoto: () => _pickPhoto(viewModel),
         onContinue: () => viewModel.continueToInterests(_nameController.text),

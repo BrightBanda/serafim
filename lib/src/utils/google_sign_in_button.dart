@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:serafim/src/core/network/api_exception.dart';
+import 'package:serafim/src/core/platform/google_support.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/utils/google_button.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -24,13 +25,13 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
     try {
       await ref.read(authViewModelProvider.notifier).signInWithGoogle();
       // Success: the auth gate swaps this screen out by itself.
-    } on ApiException catch (error) {
+    } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..clearSnackBars()
         ..showSnackBar(
           SnackBar(
-            content: Text(error.message),
+            content: Text(humanError(error)),
             backgroundColor: AppColors.rust,
           ),
         );
@@ -41,6 +42,7 @@ class _GoogleSignInButtonState extends ConsumerState<GoogleSignInButton> {
 
   @override
   Widget build(BuildContext context) {
+    if (!googleSignInSupported) return const SizedBox.shrink();
     return GoogleButton(
       label: _working ? 'Signing in…' : 'Continue with Google',
       onPressed: _working ? null : _signIn,

@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/firebase_options.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
+
 import 'package:serafim/src/data/services/push_service.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
@@ -90,7 +92,9 @@ class PushRegistrar {
       _firebaseReady = true;
     } catch (error) {
       // Unsupported platform or broken config: the app works, minus push.
-      _status('Firebase could not start: $error');
+      _status(
+        "Push notifications couldn't start on this device. ${humanError(error)}",
+      );
     }
     return _firebaseReady;
   }
@@ -129,7 +133,7 @@ class PushRegistrar {
         }
       }
     } catch (error) {
-      _status('Could not set up push: $error');
+      _status("Couldn't set up push notifications. ${humanError(error)}");
     }
 
     if (_started) return;
@@ -171,7 +175,9 @@ class PushRegistrar {
           );
       return true;
     } catch (error) {
-      _status('The server did not accept this phone: $error');
+      _status(
+        "The server didn't accept this phone for notifications. ${humanError(error)}",
+      );
       return false;
     }
   }

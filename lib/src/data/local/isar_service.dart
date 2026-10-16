@@ -202,6 +202,27 @@ class IsarService {
     }
   }
 
+  /// Messages whose text contains [query] (any case), newest first, from the
+  /// conversations of [myId]. Deleted and hidden messages are never returned.
+  Future<List<LocalMessage>> searchMessages(
+    String query,
+    String myId, {
+    int limit = 40,
+  }) async {
+    final text = query.trim();
+    if (text.isEmpty) return const [];
+    final isar = await db;
+    return isar.localMessages
+        .filter()
+        .group((q) => q.senderIdEqualTo(myId).or().recipientIdEqualTo(myId))
+        .isDeletedEqualTo(false)
+        .isHiddenForMeEqualTo(false)
+        .textContentContains(text, caseSensitive: false)
+        .sortByTimestampDesc()
+        .limit(limit)
+        .findAll();
+  }
+
   /// "Delete for me": clear the message from this device (text and image file)
   /// but keep a hidden tombstone so it can't reappear.
   Future<void> hideMessageForMe(String messageId) async {

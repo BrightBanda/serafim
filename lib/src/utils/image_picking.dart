@@ -16,6 +16,10 @@ Future<Uint8List?> pickShrunkImage(
   BuildContext context, {
   int maxSide = 1280,
   int quality = 75,
+
+  /// Called as soon as a photo has been chosen, before it is shrunk — the cue
+  /// to show a spinner for the slow part.
+  VoidCallback? onPicked,
 }) async {
   var source = ImageSource.gallery;
 
@@ -55,6 +59,7 @@ Future<Uint8List?> pickShrunkImage(
     imageQuality: quality,
   );
   if (file == null) return null;
+  onPicked?.call();
 
   return shrinkImage(
     await file.readAsBytes(),

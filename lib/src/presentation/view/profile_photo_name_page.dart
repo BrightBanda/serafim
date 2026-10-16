@@ -25,9 +25,13 @@ class ProfilePhotoNamePage extends StatefulWidget {
     this.onContinue,
     this.onSkip,
     this.avatarBytes,
+    this.avatarBusy = false,
   });
 
   final Uint8List? avatarBytes;
+
+  /// A chosen photo is still being prepared.
+  final bool avatarBusy;
 
   final TextEditingController? nameController;
   final VoidCallback? onBack;
@@ -90,6 +94,7 @@ class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
                       child: AvatarPicker(
                         onEditTap: widget.onEditPhoto,
                         onUploadTap: widget.onUploadPhoto,
+                        busy: widget.avatarBusy,
                         imageProvider: widget.avatarBytes != null
                             ? MemoryImage(widget.avatarBytes!)
                             : null,

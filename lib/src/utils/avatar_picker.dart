@@ -12,6 +12,8 @@ class AvatarPicker extends StatelessWidget {
     this.onUploadTap,
     this.size = 88,
     this.imageProvider,
+    this.busy = false,
+    this.busyLabel = 'Please wait…',
   });
 
   final VoidCallback? onEditTap;
@@ -22,6 +24,11 @@ class AvatarPicker extends StatelessWidget {
   /// placeholder gradient circle. Passing the image in is still just UI;
   /// picking/cropping it is the caller's job.
   final ImageProvider? imageProvider;
+
+  /// True while a photo is being prepared or uploaded: dims the avatar, shows
+  /// a spinner and ignores taps so it can't be started twice.
+  final bool busy;
+  final String busyLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -65,11 +72,30 @@ class AvatarPicker extends StatelessWidget {
                       : null,
                 ),
               ),
+              if (busy)
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.black.withValues(alpha: 0.45),
+                    ),
+                    child: Center(
+                      child: SizedBox(
+                        width: size * 0.32,
+                        height: size * 0.32,
+                        child: const CircularProgressIndicator(
+                          strokeWidth: 3,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 bottom: -2,
                 right: -2,
                 child: GestureDetector(
-                  onTap: onEditTap,
+                  onTap: busy ? null : onEditTap,
                   child: Container(
                     width: 28,
                     height: 28,
@@ -90,13 +116,16 @@ class AvatarPicker extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         TextButton(
-          onPressed: onUploadTap,
+          onPressed: busy ? null : onUploadTap,
           style: TextButton.styleFrom(
             padding: EdgeInsets.zero,
             minimumSize: Size.zero,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          child: Text('Upload photo', style: AppTextStyles.linkText),
+          child: Text(
+            busy ? busyLabel : 'Upload photo',
+            style: AppTextStyles.linkText,
+          ),
         ),
       ],
     );

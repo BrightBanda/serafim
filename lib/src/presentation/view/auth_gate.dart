@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/chat_list_page.dart';
@@ -92,7 +93,7 @@ class _AuthedApp extends ConsumerWidget {
       loading: () => const _Splash(),
       error: (error, _) => _Message(
         title: 'Could not load your profile',
-        body: '$error',
+        body: humanError(error),
         onRetry: ref.read(profileViewModelProvider.notifier).reload,
       ),
       data: (profile) {

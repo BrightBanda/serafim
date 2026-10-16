@@ -1,11 +1,13 @@
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/app_settings.dart';
 import 'package:serafim/src/presentation/view/auth_gate.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
+import 'package:serafim/src/utils/friendly_error_box.dart';
 import 'package:serafim/src/utils/rebuild_all.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,6 +19,12 @@ Future<void> main() async {
   // Draw behind the status/navigation bars; every screen keeps its content in
   // the safe area itself.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+  // If a widget ever crashes while drawing, show a plain message instead of
+  // Flutter's grey box. (Debug builds keep the technical screen for developers.)
+  if (kReleaseMode) {
+    ErrorWidget.builder = (details) => const FriendlyErrorBox();
+  }
 
   // The very first frame already uses the saved theme.
   AppColors.apply(

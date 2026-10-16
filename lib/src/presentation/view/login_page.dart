@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
+import 'package:serafim/src/core/platform/google_support.dart';
 import 'package:serafim/src/utils/google_sign_in_button.dart';
 import 'package:serafim/src/utils/password_field.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
@@ -136,11 +137,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
               const SizedBox(height: 18),
 
-              const SerafimDivider(),
-              const SizedBox(height: 18),
+              if (googleSignInSupported) ...[
+                const SerafimDivider(),
+                const SizedBox(height: 18),
 
-              const GoogleSignInButton(),
-              const SizedBox(height: 22),
+                const GoogleSignInButton(),
+                const SizedBox(height: 22),
+              ],
 
               Center(
                 child: GestureDetector(
