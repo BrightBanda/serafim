@@ -109,26 +109,101 @@ void main() {
       expect(hasInterest(['Chess'], 'go'), isFalse);
     });
 
-    testWidgets('picker toggles catalog chips and adds custom ones', (
-      tester,
-    ) async {
-      Set<String> result = {};
-      await tester.pumpWidget(
+    Future<void> pumpPicker(
+      WidgetTester tester, {
+      Set<String> initial = const {},
+      required ValueChanged<Set<String>> onChanged,
+    }) {
+      return tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: SingleChildScrollView(
-              child: InterestPicker(
-                initial: const {'Chess'},
-                onChanged: (v) => result = v,
-              ),
+              child: InterestPicker(initial: initial, onChanged: onChanged),
             ),
           ),
         ),
       );
+    }
 
-      // An earlier custom interest is shown and can be removed.
+    testWidgets('categories start collapsed so the long list stays short', (
+      tester,
+    ) async {
+      await pumpPicker(tester, onChanged: (_) {});
+
+      // Every category header is there, but none of the chips are.
+      for (final category in interestCatalog.keys) {
+        expect(find.text(category.toUpperCase()), findsOneWidget);
+      }
+      expect(find.text('Gaming'), findsNothing);
+      expect(find.text('Soccer'), findsNothing);
+    });
+
+    testWidgets('tapping a header opens and closes just that category', (
+      tester,
+    ) async {
+      await pumpPicker(tester, onChanged: (_) {});
+
+      await tester.tap(find.text('HOBBIES'));
+      await tester.pumpAndSettle();
+      expect(find.text('Gaming'), findsOneWidget);
+      expect(find.text('Soccer'), findsNothing); // Sports still closed.
+
+      await tester.tap(find.text('HOBBIES'));
+      await tester.pumpAndSettle();
+      expect(find.text('Gaming'), findsNothing);
+    });
+
+    testWidgets('expand all / collapse all', (tester) async {
+      await pumpPicker(tester, onChanged: (_) {});
+
+      await tester.tap(find.text('Expand all'));
+      await tester.pumpAndSettle();
+      expect(find.text('Gaming'), findsOneWidget);
+      expect(find.text('Soccer'), findsOneWidget);
+      expect(find.text('Collapse all'), findsOneWidget);
+
+      await tester.tap(find.text('Collapse all'));
+      await tester.pumpAndSettle();
+      expect(find.text('Gaming'), findsNothing);
+      expect(find.text('Expand all'), findsOneWidget);
+    });
+
+    testWidgets('a closed category still shows how many you picked', (
+      tester,
+    ) async {
+      await pumpPicker(
+        tester,
+        initial: const {'Gaming', 'Cooking', 'Soccer'},
+        onChanged: (_) {},
+      );
+      // Hobbies (2) and Sports (1) open because they hold selections.
+      expect(find.text('Gaming'), findsOneWidget);
+      expect(find.text('Soccer'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
+
+      await tester.tap(find.text('HOBBIES'));
+      await tester.pumpAndSettle();
+      expect(find.text('Gaming'), findsNothing); // closed...
+      expect(find.text('2'), findsOneWidget); // ...but the count remains
+    });
+
+    testWidgets('picker toggles catalog chips and adds custom ones', (
+      tester,
+    ) async {
+      Set<String> result = {};
+      await pumpPicker(
+        tester,
+        initial: const {'Chess'},
+        onChanged: (v) => result = v,
+      );
+
+      // An earlier custom interest is shown (its group opens by itself) and
+      // can be removed.
       expect(find.text('Chess'), findsOneWidget);
 
+      await tester.tap(find.text('HOBBIES'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Gaming'));
       await tester.pump();
       expect(result, {'Chess', 'Gaming'});
@@ -141,8 +216,9 @@ void main() {
       await tester.pump();
       await tester.enterText(find.byType(TextField), '  Falconry ');
       await tester.tap(find.byIcon(Icons.add));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(result, {'Chess', 'Falconry'});
+      expect(find.text('Falconry'), findsOneWidget); // its group is open
 
       // Duplicates (any case) are refused.
       await tester.enterText(find.byType(TextField), 'falconry');

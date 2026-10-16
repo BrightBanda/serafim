@@ -12,6 +12,7 @@ import 'package:serafim/src/data/services/auth_service.dart';
 import 'package:serafim/src/data/services/google_auth_service.dart';
 import 'package:serafim/src/data/services/push_service.dart';
 import 'package:serafim/src/presentation/view/settings/notification_settings_page.dart';
+import 'package:serafim/src/providers/push_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -231,6 +232,119 @@ void main() {
       expect(c.read(settingsProvider).pushNotifications, isFalse);
       // Previews make no sense with push off, so that switch is disabled.
       expect(switchFor('Show message previews').onChanged, isNull);
+    });
+  });
+
+  group('push status + test notification', () {
+    Future<ProviderContainer> pumpPage(
+      WidgetTester tester, {
+      required Map<String, dynamic> serverReply,
+      PushStatus? status,
+    }) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final adapter = _FakeAdapter((_) => _json(200, serverReply));
+      final c = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          pushServiceProvider.overrideWithValue(
+            PushService(
+              Dio(BaseOptions(baseUrl: 'http://api'))
+                ..httpClientAdapter = adapter,
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      if (status != null) c.read(pushStatusProvider.notifier).set(status);
+
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: const MaterialApp(home: NotificationSettingsPage()),
+        ),
+      );
+      return c;
+    }
+
+    test('PushTestResult reads the server reply, with safe defaults', () {
+      final ok = PushTestResult.fromJson({
+        'ok': true,
+        'devices': 2,
+        'accepted': 2,
+      });
+      expect(ok.ok, isTrue);
+      expect(ok.reason, isNull);
+      final bad = PushTestResult.fromJson({});
+      expect(bad.ok, isFalse);
+      expect(bad.devices, 0);
+    });
+
+    testWidgets('shows what is wrong with this phone in plain words', (
+      tester,
+    ) async {
+      await pumpPage(
+        tester,
+        serverReply: const {},
+        status: const PushStatus('Notifications are blocked for Serafim.'),
+      );
+      expect(find.text('THIS PHONE'), findsOneWidget);
+      expect(
+        find.text('Notifications are blocked for Serafim.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a successful test tells you to look for the notification', (
+      tester,
+    ) async {
+      await pumpPage(
+        tester,
+        serverReply: const {
+          'ok': true,
+          'devices': 1,
+          'accepted': 1,
+          'reason': null,
+        },
+        status: const PushStatus('Registered with the server.', ok: true),
+      );
+      await tester.tap(find.text('Send test notification'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('A notification should appear'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets("a failed test shows the server's reason", (tester) async {
+      await pumpPage(
+        tester,
+        serverReply: const {
+          'ok': false,
+          'devices': 0,
+          'accepted': 0,
+          'reason':
+              'Push is switched off on the server: FIREBASE_CREDENTIALS_JSON is not set.',
+        },
+      );
+      await tester.tap(find.text('Send test notification'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('switched off on the server'), findsOneWidget);
+    });
+
+    testWidgets('the test button is disabled when push is turned off', (
+      tester,
+    ) async {
+      final c = await pumpPage(tester, serverReply: const {});
+      c.read(settingsProvider.notifier).setPushNotifications(false);
+      await tester.pump();
+      expect(find.text('Push notifications are turned off.'), findsOneWidget);
+      await tester.tap(find.text('Send test notification'));
+      await tester.pump();
+      expect(find.textContaining('should appear'), findsNothing);
     });
   });
 }

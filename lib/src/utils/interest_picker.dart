@@ -28,6 +28,41 @@ class _InterestPickerState extends State<InterestPicker> {
   final TextEditingController _custom = TextEditingController();
   String? _error;
 
+  static const _ownTitle = 'Your own';
+
+  /// Categories currently open. Starts with the ones that already contain a
+  /// selection, so an existing profile shows what was picked; a fresh one
+  /// starts fully collapsed.
+  late final Set<String> _expanded = {
+    for (final entry in interestCatalog.entries)
+      if (entry.value.any((label) => hasInterest(widget.initial, label)))
+        entry.key,
+    if (widget.initial.any((s) => !_isCatalog(s))) _ownTitle,
+  };
+
+  bool _isCatalog(String label) =>
+      _catalogLabels.map((e) => e.toLowerCase()).contains(label.toLowerCase());
+
+  void _toggleSection(String title) {
+    setState(() {
+      _expanded.contains(title)
+          ? _expanded.remove(title)
+          : _expanded.add(title);
+    });
+  }
+
+  bool get _allExpanded => interestCatalog.keys.every(_expanded.contains);
+
+  void _toggleAll() {
+    setState(() {
+      if (_allExpanded) {
+        _expanded.clear();
+      } else {
+        _expanded.addAll(interestCatalog.keys);
+      }
+    });
+  }
+
   @override
   void dispose() {
     _custom.dispose();
@@ -70,6 +105,7 @@ class _InterestPickerState extends State<InterestPicker> {
       _selected.add(cleaned);
       _error = null;
       _custom.clear();
+      _expanded.add(_ownTitle); // Show the one just added.
     });
     widget.onChanged({..._selected});
   }
@@ -84,20 +120,34 @@ class _InterestPickerState extends State<InterestPicker> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: Text(
-            '${_selected.length} / $maxInterests selected',
-            style: AppTextStyles.fieldLabel.copyWith(
-              color: AppColors.primaryPale,
+        Row(
+          children: [
+            GestureDetector(
+              onTap: _toggleAll,
+              child: Text(
+                _allExpanded ? 'Collapse all' : 'Expand all',
+                style: AppTextStyles.linkText.copyWith(fontSize: 11),
+              ),
             ),
-          ),
+            const Spacer(),
+            Text(
+              '${_selected.length} / $maxInterests selected',
+              style: AppTextStyles.fieldLabel.copyWith(
+                color: AppColors.primaryPale,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         for (final entry in interestCatalog.entries) ...[
           CategorySection(
             title: entry.key,
             icon: interestCategoryIcons[entry.key] ?? Icons.label_outline,
+            expanded: _expanded.contains(entry.key),
+            onToggle: () => _toggleSection(entry.key),
+            selectedCount: entry.value
+                .where((label) => hasInterest(_selected, label))
+                .length,
             children: [
               for (final label in entry.value)
                 SerafimChip(
@@ -107,21 +157,29 @@ class _InterestPickerState extends State<InterestPicker> {
                 ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 10),
         ],
-        CategorySection(
-          title: 'Your own',
-          icon: Icons.add_circle_outline,
-          children: [
-            for (final label in custom)
-              SerafimChip(
-                label: label,
-                selected: true,
-                onTap: () => _toggle(label),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
+        if (custom.isNotEmpty) ...[
+          CategorySection(
+            title: _ownTitle,
+            icon: Icons.add_circle_outline,
+            expanded: _expanded.contains(_ownTitle),
+            onToggle: () => _toggleSection(_ownTitle),
+            selectedCount: custom.length,
+            children: [
+              for (final label in custom)
+                SerafimChip(
+                  label: label,
+                  selected: true,
+                  onTap: () => _toggle(label),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
+        const SizedBox(height: 6),
+        Text('ADD YOUR OWN', style: AppTextStyles.fieldLabel),
+        const SizedBox(height: 6),
         Row(
           children: [
             Expanded(

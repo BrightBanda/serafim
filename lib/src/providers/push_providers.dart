@@ -19,6 +19,28 @@ final pushServiceProvider = Provider<PushService>((ref) {
   return PushService(ref.watch(apiDioProvider));
 });
 
+/// How push registration on this phone is going, in words for the settings
+/// screen. [ok] is true only once the server has this phone's token.
+class PushStatus {
+  const PushStatus(this.message, {this.ok = false});
+
+  final String message;
+  final bool ok;
+
+  static const unknown = PushStatus('Not started yet.');
+}
+
+class PushStatusNotifier extends Notifier<PushStatus> {
+  @override
+  PushStatus build() => PushStatus.unknown;
+
+  void set(PushStatus status) => state = status;
+}
+
+final pushStatusProvider = NotifierProvider<PushStatusNotifier, PushStatus>(
+  PushStatusNotifier.new,
+);
+
 /// Message ids a banner has already been shown for, so a message that arrives
 /// both over the socket and as a push is announced once.
 final shownAlertIdsProvider = Provider<Set<String>>((ref) => <String>{});
@@ -48,8 +70,16 @@ class PushRegistrar {
     }
   }
 
+  void _status(String message, {bool ok = false}) {
+    _log(message);
+    _ref.read(pushStatusProvider.notifier).set(PushStatus(message, ok: ok));
+  }
+
   Future<bool> _ensureFirebase() async {
-    if (!_supported) return false;
+    if (!_supported) {
+      _status('Push notifications are not available on this device.');
+      return false;
+    }
     if (_firebaseReady) return true;
     try {
       if (Firebase.apps.isEmpty) {
@@ -60,7 +90,7 @@ class PushRegistrar {
       _firebaseReady = true;
     } catch (error) {
       // Unsupported platform or broken config: the app works, minus push.
-      _log('Firebase unavailable: $error');
+      _status('Firebase could not start: $error');
     }
     return _firebaseReady;
   }
@@ -76,13 +106,30 @@ class PushRegistrar {
       // Android 13+ and iOS show the system prompt; elsewhere this is a no-op.
       final settings = await messaging.requestPermission();
       if (settings.authorizationStatus == AuthorizationStatus.denied) {
-        _log('notifications are blocked in system settings');
+        _status(
+          'Notifications are blocked for Serafim. Turn them on in your '
+          "phone's settings (App info → Notifications).",
+        );
       }
 
       final token = await messaging.getToken();
-      if (token != null) await _register(token, showPreview);
+      if (token == null) {
+        _status(
+          'Google did not give this phone a notification token. Check that '
+          'Google Play services is installed and up to date.',
+        );
+      } else {
+        final registered = await _register(token, showPreview);
+        if (registered &&
+            settings.authorizationStatus != AuthorizationStatus.denied) {
+          _status(
+            'Registered with the server. This phone can receive pushes.',
+            ok: true,
+          );
+        }
+      }
     } catch (error) {
-      _log('could not register for push: $error');
+      _status('Could not set up push: $error');
     }
 
     if (_started) return;
@@ -112,7 +159,8 @@ class PushRegistrar {
     _started = false;
   }
 
-  Future<void> _register(String token, bool showPreview) async {
+  /// Returns whether the server now has this token.
+  Future<bool> _register(String token, bool showPreview) async {
     try {
       await _ref
           .read(pushServiceProvider)
@@ -121,8 +169,10 @@ class PushRegistrar {
             platform: Platform.isIOS ? 'ios' : 'android',
             showPreview: showPreview,
           );
+      return true;
     } catch (error) {
-      _log('backend registration failed: $error');
+      _status('The server did not accept this phone: $error');
+      return false;
     }
   }
 
