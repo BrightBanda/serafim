@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/chat_list_page.dart';
 import 'package:serafim/src/presentation/view/chat_thread_page.dart';
@@ -111,7 +112,23 @@ class _Splash extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.paper,
-      body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SerafimMark(size: 96),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: AppColors.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -64,6 +64,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   isar_community_generator: ^3.3.2
   build_runner: ^2.15.1
+  flutter_launcher_icons: ^0.14.4
 
 
 # For information on the generic Dart part of this file, see the
@@ -107,3 +108,28 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# App icons are generated from assets/icon/*.png (made from the approved logo).
+# Regenerate with:  dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon_full.png"
+  android: true
+  adaptive_icon_background: "assets/icon/icon_background.png"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  adaptive_icon_monochrome: "assets/icon/icon_monochrome.png"
+  # The foreground images already include their own safe-zone padding.
+  adaptive_icon_foreground_inset: 0
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon_full.png"
+    background_color: "#4D44B6"
+    theme_color: "#4D44B6"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon_full.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon_full.png"

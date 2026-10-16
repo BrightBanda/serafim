@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Monochrome status-bar icon (Android requires white-on-transparent):
-     a boxy speech bubble with a halo. -->
+<!-- Status-bar icon for push notifications. Android requires white on
+     transparent; this is the Serafim "S" silhouette (same geometry as the
+     launcher icon, see assets/icon/). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
@@ -8,9 +9,5 @@
     android:viewportHeight="24">
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M4,6h16v10h-8l-5,4v-4H4z" />
-    <path
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="1.6"
-        android:pathData="M8,3.2h8" />
+        android:pathData="M9.28,4.71 L20.17,2.00 L16.54,8.04 L5.65,10.76 Z M5.65,10.76 L11.70,9.25 L18.35,13.24 L12.30,14.75 Z M14.72,19.29 L3.83,22.00 L7.46,15.96 L18.35,13.24 Z" />
 </vector>

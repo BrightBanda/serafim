@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:serafim/src/utils/chat/chat_background.dart';
+import 'package:serafim/src/utils/chat/doodle_packing.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
 void main() {
@@ -8,18 +9,16 @@ void main() {
 
   for (final brightness in Brightness.values) {
     testWidgets(
-      'paints without errors in ${brightness.name} mode, even at odd sizes',
+      'the chat background paints in ${brightness.name} mode, even at odd sizes',
       (tester) async {
         AppColors.apply(brightness);
         for (final size in const [
           Size(390, 750),
           Size(1024, 400),
           Size(50, 50),
-          Size.zero,
+          Size(1, 1),
         ]) {
-          tester.view.physicalSize = size == Size.zero
-              ? const Size(1, 1)
-              : size;
+          tester.view.physicalSize = size;
           tester.view.devicePixelRatio = 1;
           await tester.pumpWidget(
             const Directionality(
@@ -34,19 +33,7 @@ void main() {
     );
   }
 
-  test('repaints only when the palette changes', () {
-    const dark = ChatBackgroundPainter(AppPalette.dark);
-    expect(
-      dark.shouldRepaint(const ChatBackgroundPainter(AppPalette.dark)),
-      isFalse,
-    );
-    expect(
-      dark.shouldRepaint(const ChatBackgroundPainter(AppPalette.light)),
-      isTrue,
-    );
-  });
-
-  testWidgets('is cached as its own layer so scrolling never repaints it', (
+  testWidgets('it draws the doodle wallpaper, cached as its own layer', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -55,6 +42,15 @@ void main() {
         child: ChatBackground(),
       ),
     );
+    final paint = tester.widget<CustomPaint>(
+      find
+          .descendant(
+            of: find.byType(ChatBackground),
+            matching: find.byType(CustomPaint),
+          )
+          .first,
+    );
+    expect(paint.painter, isA<ChatDoodlePainter>());
     expect(
       find.descendant(
         of: find.byType(ChatBackground),
@@ -63,4 +59,14 @@ void main() {
       findsWidgets,
     );
   });
+
+  test(
+    'the shipped layout is instant: it is read from data, not packed at runtime',
+    () {
+      final sw = Stopwatch()..start();
+      final layout = DoodleLayout.standard();
+      expect(layout.items.length, greaterThan(150));
+      expect(sw.elapsedMilliseconds, lessThan(100));
+    },
+  );
 }

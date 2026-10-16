@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -69,6 +70,11 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
                 if (titleWidget != null)
                   Expanded(child: titleWidget!)
                 else ...[
+                  // The default title is the brand: show the logo with it.
+                  if (title == 'SERAFIM') ...[
+                    const SerafimMark(size: 30),
+                    const SizedBox(width: 10),
+                  ],
                   Text(title, style: AppTextStyles.logo),
                   const Spacer(),
                 ],

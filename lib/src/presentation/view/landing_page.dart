@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:serafim/src/core/config/feature_flags.dart';
 import 'package:serafim/src/utils/google_sign_in_button.dart';
+import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/serafim_divider.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -29,6 +30,8 @@ class LandingPage extends StatelessWidget {
               const Spacer(),
 
               // Branding & Tagline
+              const SerafimMark(size: 84),
+              const SizedBox(height: 22),
               Text('SERAFIM', style: AppTextStyles.eyebrow),
               const SizedBox(height: 8),
               Text(
