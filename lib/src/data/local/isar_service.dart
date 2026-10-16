@@ -5,15 +5,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/data/domain/local_chat_room.dart';
 
-class RoomSummary {
-  const RoomSummary({this.latest, this.unreadCount = 0});
-
-  final LocalMessage? latest;
-  final int unreadCount;
-}
-
 class IsarService {
   late Future<Isar> db;
+
+  /// Whose phone this is. Unread counts are about *this* person's inbox, and a
+  /// conversation only gets a summary row if they are part of it. Set when
+  /// someone signs in; without it the summary rows are left alone.
+  String? accountId;
 
   IsarService() {
     db = _initDB();
@@ -45,18 +43,55 @@ class IsarService {
     final isar = await db;
     await isar.writeTxn(() async {
       await isar.localMessages.put(message);
+      await _syncRoom(isar, message.roomId);
     });
   }
 
-  /// Watch real-time message stream for a specific chat room
-  Stream<List<LocalMessage>> watchMessagesForRoom(String roomId) async* {
+  /// Watch a chat room's messages, newest first. With [limit] only that many of
+  /// the newest are loaded (and watched), so opening a long conversation does
+  /// not read its whole history; ask for a larger window to go further back.
+  Stream<List<LocalMessage>> watchMessagesForRoom(
+    String roomId, {
+    int? limit,
+  }) async* {
     final isar = await db;
-    yield* isar.localMessages
+    final newestFirst = isar.localMessages
         .filter()
         .roomIdEqualTo(roomId)
         .isHiddenForMeEqualTo(false)
-        .sortByTimestampDesc()
-        .watch(fireImmediately: true);
+        .sortByTimestampDesc();
+    yield* limit == null
+        ? newestFirst.watch(fireImmediately: true)
+        : newestFirst.limit(limit).watch(fireImmediately: true);
+  }
+
+  /// A few specific messages by id (e.g. the originals that replies quote,
+  /// which may be older than the window being shown).
+  Future<Map<String, LocalMessage>> getMessagesByIds(
+    Iterable<String> ids,
+  ) async {
+    final isar = await db;
+    final found = <String, LocalMessage>{};
+    for (final id in ids.toSet()) {
+      final m = await isar.localMessages
+          .filter()
+          .messageIdEqualTo(id)
+          .findFirst();
+      if (m != null) found[id] = m;
+    }
+    return found;
+  }
+
+  /// How many visible messages in [roomId] are as new as [at] or newer — i.e.
+  /// how big the window must be to include the message sent at [at].
+  Future<int> countMessagesAtOrAfter(String roomId, DateTime at) async {
+    final isar = await db;
+    return isar.localMessages
+        .filter()
+        .roomIdEqualTo(roomId)
+        .isHiddenForMeEqualTo(false)
+        .timestampGreaterThan(at, include: true)
+        .count();
   }
 
   /// Update the delivery/read status and timestamp of a message locally
@@ -95,6 +130,7 @@ class IsarService {
           msg.timestamp = newTimestamp;
         }
         await isar.localMessages.put(msg);
+        await _syncRoom(isar, msg.roomId);
       }
     });
     return found;
@@ -124,6 +160,7 @@ class IsarService {
       }
       await isar.localMessages.putAll(unread);
       ids = unread.map((m) => m.messageId).toList();
+      if (unread.isNotEmpty) await _syncRoom(isar, roomId);
     });
     return ids;
   }
@@ -173,6 +210,7 @@ class IsarService {
       msg.textContent = content;
       msg.editedAt = editedAt;
       await isar.localMessages.put(msg);
+      await _syncRoom(isar, msg.roomId);
     });
   }
 
@@ -193,6 +231,7 @@ class IsarService {
       msg.localMediaPath = null;
       msg.type = MessageType.text;
       await isar.localMessages.put(msg);
+      await _syncRoom(isar, msg.roomId);
     });
     if (mediaPath != null) {
       try {
@@ -200,27 +239,6 @@ class IsarService {
         if (await file.exists()) await file.delete();
       } catch (_) {}
     }
-  }
-
-  /// Messages whose text contains [query] (any case), newest first, from the
-  /// conversations of [myId]. Deleted and hidden messages are never returned.
-  Future<List<LocalMessage>> searchMessages(
-    String query,
-    String myId, {
-    int limit = 40,
-  }) async {
-    final text = query.trim();
-    if (text.isEmpty) return const [];
-    final isar = await db;
-    return isar.localMessages
-        .filter()
-        .group((q) => q.senderIdEqualTo(myId).or().recipientIdEqualTo(myId))
-        .isDeletedEqualTo(false)
-        .isHiddenForMeEqualTo(false)
-        .textContentContains(text, caseSensitive: false)
-        .sortByTimestampDesc()
-        .limit(limit)
-        .findAll();
   }
 
   /// "Delete for me": clear the message from this device (text and image file)
@@ -240,6 +258,7 @@ class IsarService {
       msg.localMediaPath = null;
       msg.type = MessageType.text;
       await isar.localMessages.put(msg);
+      await _syncRoom(isar, msg.roomId);
     });
     await _deleteFile(mediaPath);
   }
@@ -259,7 +278,12 @@ class IsarService {
         final path = m.localMediaPath;
         if (path != null) paths.add(path);
       }
-      removed = await isar.localMessages.deleteAll(old.map((m) => m.id).toList());
+      removed = await isar.localMessages.deleteAll(
+        old.map((m) => m.id).toList(),
+      );
+      for (final roomId in old.map((m) => m.roomId).toSet()) {
+        await _syncRoom(isar, roomId);
+      }
     });
     for (final path in paths) {
       await _deleteFile(path);
@@ -287,6 +311,7 @@ class IsarService {
       if (msg == null) return;
       mediaPath = msg.localMediaPath;
       await isar.localMessages.delete(msg.id);
+      await _syncRoom(isar, msg.roomId);
     });
     if (mediaPath != null) {
       try {
@@ -329,35 +354,75 @@ class IsarService {
     );
   }
 
-  /// Newest message in a room plus how many incoming messages are unread.
-  Stream<RoomSummary> watchRoomSummary(String roomId, String myId) async* {
-    final isar = await db;
-    yield* isar.localMessages
-        .filter()
-        .roomIdEqualTo(roomId)
-        .watchLazy(fireImmediately: true)
-        .asyncMap((_) async {
-          final latest = await isar.localMessages
-              .filter()
-              .roomIdEqualTo(roomId)
-              .isHiddenForMeEqualTo(false)
-              .sortByTimestampDesc()
-              .findFirst();
-          final unread = await isar.localMessages
-              .filter()
-              .roomIdEqualTo(roomId)
-              .isHiddenForMeEqualTo(false)
-              .recipientIdEqualTo(myId)
-              .not()
-              .statusEqualTo(MessageStatus.read)
-              .count();
-          return RoomSummary(latest: latest, unreadCount: unread);
-        });
-  }
-
   // ==========================================
   // CHAT ROOMS MANAGEMENT
   // ==========================================
+
+  /// Brings one conversation's summary row up to date with its messages: the
+  /// newest visible message and how many incoming ones are unread. Must run
+  /// inside a write transaction, right after the change that made it stale.
+  Future<void> _syncRoom(Isar isar, String roomId) async {
+    final me = accountId;
+    if (me == null) return;
+
+    final latest = await isar.localMessages
+        .filter()
+        .roomIdEqualTo(roomId)
+        .isHiddenForMeEqualTo(false)
+        .sortByTimestampDesc()
+        .findFirst();
+
+    // No visible messages left, or a conversation this account isn't part of
+    // (the database is shared by everyone who has signed in on this phone).
+    if (latest == null || (latest.senderId != me && latest.recipientId != me)) {
+      await isar.localChatRooms.deleteByRoomId(roomId);
+      return;
+    }
+
+    final unread = await isar.localMessages
+        .filter()
+        .roomIdEqualTo(roomId)
+        .isHiddenForMeEqualTo(false)
+        .recipientIdEqualTo(me)
+        .not()
+        .statusEqualTo(MessageStatus.read)
+        .count();
+
+    final room =
+        await isar.localChatRooms.getByRoomId(roomId) ?? LocalChatRoom()
+          ..roomId = roomId;
+    room
+      ..peerUserId = latest.senderId == me
+          ? latest.recipientId
+          : latest.senderId
+      ..lastMessageText = latest.isDeleted ? null : latest.textContent
+      ..lastMessageSenderId = latest.senderId
+      ..lastMessageIsImage =
+          latest.type == MessageType.image && !latest.isDeleted
+      ..lastMessageDeleted = latest.isDeleted
+      ..lastMessageTimestamp = latest.timestamp
+      ..unreadCount = unread;
+    await isar.localChatRooms.putByRoomId(room);
+  }
+
+  /// Rebuilds every conversation's summary row from the messages. Run when
+  /// someone signs in: it fills in conversations that existed before summary
+  /// rows did, repairs anything that drifted, and drops rows that belong to a
+  /// previous account on this phone.
+  Future<void> rebuildRooms() async {
+    final isar = await db;
+    if (accountId == null) return;
+    await isar.writeTxn(() async {
+      await isar.localChatRooms.clear();
+      final rooms = await isar.localMessages
+          .where()
+          .distinctByRoomId()
+          .findAll();
+      for (final m in rooms) {
+        await _syncRoom(isar, m.roomId);
+      }
+    });
+  }
 
   /// Save/Update a chat room preview
   Future<void> saveChatRoom(LocalChatRoom room) async {

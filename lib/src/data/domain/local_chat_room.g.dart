@@ -17,34 +17,49 @@ const LocalChatRoomSchema = CollectionSchema(
   name: r'LocalChatRoom',
   id: -7383583500428748710,
   properties: {
-    r'lastMessageText': PropertySchema(
+    r'lastMessageDeleted': PropertySchema(
       id: 0,
+      name: r'lastMessageDeleted',
+      type: IsarType.bool,
+    ),
+    r'lastMessageIsImage': PropertySchema(
+      id: 1,
+      name: r'lastMessageIsImage',
+      type: IsarType.bool,
+    ),
+    r'lastMessageSenderId': PropertySchema(
+      id: 2,
+      name: r'lastMessageSenderId',
+      type: IsarType.string,
+    ),
+    r'lastMessageText': PropertySchema(
+      id: 3,
       name: r'lastMessageText',
       type: IsarType.string,
     ),
     r'lastMessageTimestamp': PropertySchema(
-      id: 1,
+      id: 4,
       name: r'lastMessageTimestamp',
       type: IsarType.dateTime,
     ),
     r'peerAvatarUrl': PropertySchema(
-      id: 2,
+      id: 5,
       name: r'peerAvatarUrl',
       type: IsarType.string,
     ),
     r'peerDisplayName': PropertySchema(
-      id: 3,
+      id: 6,
       name: r'peerDisplayName',
       type: IsarType.string,
     ),
     r'peerUserId': PropertySchema(
-      id: 4,
+      id: 7,
       name: r'peerUserId',
       type: IsarType.string,
     ),
-    r'roomId': PropertySchema(id: 5, name: r'roomId', type: IsarType.string),
+    r'roomId': PropertySchema(id: 8, name: r'roomId', type: IsarType.string),
     r'unreadCount': PropertySchema(
-      id: 6,
+      id: 9,
       name: r'unreadCount',
       type: IsarType.long,
     ),
@@ -85,6 +100,7 @@ int _localChatRoomEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  bytesCount += 3 + object.lastMessageSenderId.length * 3;
   {
     final value = object.lastMessageText;
     if (value != null) {
@@ -109,13 +125,16 @@ void _localChatRoomSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeString(offsets[0], object.lastMessageText);
-  writer.writeDateTime(offsets[1], object.lastMessageTimestamp);
-  writer.writeString(offsets[2], object.peerAvatarUrl);
-  writer.writeString(offsets[3], object.peerDisplayName);
-  writer.writeString(offsets[4], object.peerUserId);
-  writer.writeString(offsets[5], object.roomId);
-  writer.writeLong(offsets[6], object.unreadCount);
+  writer.writeBool(offsets[0], object.lastMessageDeleted);
+  writer.writeBool(offsets[1], object.lastMessageIsImage);
+  writer.writeString(offsets[2], object.lastMessageSenderId);
+  writer.writeString(offsets[3], object.lastMessageText);
+  writer.writeDateTime(offsets[4], object.lastMessageTimestamp);
+  writer.writeString(offsets[5], object.peerAvatarUrl);
+  writer.writeString(offsets[6], object.peerDisplayName);
+  writer.writeString(offsets[7], object.peerUserId);
+  writer.writeString(offsets[8], object.roomId);
+  writer.writeLong(offsets[9], object.unreadCount);
 }
 
 LocalChatRoom _localChatRoomDeserialize(
@@ -126,13 +145,16 @@ LocalChatRoom _localChatRoomDeserialize(
 ) {
   final object = LocalChatRoom();
   object.id = id;
-  object.lastMessageText = reader.readStringOrNull(offsets[0]);
-  object.lastMessageTimestamp = reader.readDateTime(offsets[1]);
-  object.peerAvatarUrl = reader.readStringOrNull(offsets[2]);
-  object.peerDisplayName = reader.readString(offsets[3]);
-  object.peerUserId = reader.readString(offsets[4]);
-  object.roomId = reader.readString(offsets[5]);
-  object.unreadCount = reader.readLong(offsets[6]);
+  object.lastMessageDeleted = reader.readBool(offsets[0]);
+  object.lastMessageIsImage = reader.readBool(offsets[1]);
+  object.lastMessageSenderId = reader.readString(offsets[2]);
+  object.lastMessageText = reader.readStringOrNull(offsets[3]);
+  object.lastMessageTimestamp = reader.readDateTime(offsets[4]);
+  object.peerAvatarUrl = reader.readStringOrNull(offsets[5]);
+  object.peerDisplayName = reader.readString(offsets[6]);
+  object.peerUserId = reader.readString(offsets[7]);
+  object.roomId = reader.readString(offsets[8]);
+  object.unreadCount = reader.readLong(offsets[9]);
   return object;
 }
 
@@ -144,18 +166,24 @@ P _localChatRoomDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 1:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 2:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readString(offset)) as P;
     case 3:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 4:
-      return (reader.readString(offset)) as P;
+      return (reader.readDateTime(offset)) as P;
     case 5:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 6:
+      return (reader.readString(offset)) as P;
+    case 7:
+      return (reader.readString(offset)) as P;
+    case 8:
+      return (reader.readString(offset)) as P;
+    case 9:
       return (reader.readLong(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -426,6 +454,168 @@ extension LocalChatRoomQueryFilter
           includeLower: includeLower,
           upper: upper,
           includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageDeletedEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'lastMessageDeleted', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageIsImageEqualTo(bool value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'lastMessageIsImage', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'lastMessageSenderId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'lastMessageSenderId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'lastMessageSenderId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'lastMessageSenderId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'lastMessageSenderId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'lastMessageSenderId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'lastMessageSenderId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'lastMessageSenderId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'lastMessageSenderId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterFilterCondition>
+  lastMessageSenderIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          property: r'lastMessageSenderId',
+          value: '',
         ),
       );
     });
@@ -1295,6 +1485,48 @@ extension LocalChatRoomQueryLinks
 extension LocalChatRoomQuerySortBy
     on QueryBuilder<LocalChatRoom, LocalChatRoom, QSortBy> {
   QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  sortByLastMessageDeleted() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageDeleted', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  sortByLastMessageDeletedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageDeleted', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  sortByLastMessageIsImage() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageIsImage', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  sortByLastMessageIsImageDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageIsImage', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  sortByLastMessageSenderId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageSenderId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  sortByLastMessageSenderIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageSenderId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
   sortByLastMessageText() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lastMessageText', Sort.asc);
@@ -1404,6 +1636,48 @@ extension LocalChatRoomQuerySortThenBy
   }
 
   QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  thenByLastMessageDeleted() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageDeleted', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  thenByLastMessageDeletedDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageDeleted', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  thenByLastMessageIsImage() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageIsImage', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  thenByLastMessageIsImageDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageIsImage', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  thenByLastMessageSenderId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageSenderId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
+  thenByLastMessageSenderIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'lastMessageSenderId', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QAfterSortBy>
   thenByLastMessageText() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'lastMessageText', Sort.asc);
@@ -1501,6 +1775,30 @@ extension LocalChatRoomQuerySortThenBy
 extension LocalChatRoomQueryWhereDistinct
     on QueryBuilder<LocalChatRoom, LocalChatRoom, QDistinct> {
   QueryBuilder<LocalChatRoom, LocalChatRoom, QDistinct>
+  distinctByLastMessageDeleted() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'lastMessageDeleted');
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QDistinct>
+  distinctByLastMessageIsImage() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'lastMessageIsImage');
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QDistinct>
+  distinctByLastMessageSenderId({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'lastMessageSenderId',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, LocalChatRoom, QDistinct>
   distinctByLastMessageText({bool caseSensitive = true}) {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(
@@ -1566,6 +1864,27 @@ extension LocalChatRoomQueryProperty
   QueryBuilder<LocalChatRoom, int, QQueryOperations> idProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'id');
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, bool, QQueryOperations>
+  lastMessageDeletedProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'lastMessageDeleted');
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, bool, QQueryOperations>
+  lastMessageIsImageProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'lastMessageIsImage');
+    });
+  }
+
+  QueryBuilder<LocalChatRoom, String, QQueryOperations>
+  lastMessageSenderIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'lastMessageSenderId');
     });
   }
 

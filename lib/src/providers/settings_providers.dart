@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/data/local/local_cache.dart';
 import 'package:serafim/src/data/models/app_settings.dart';
 import 'package:serafim/src/utils/in_app_banner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,12 +22,17 @@ class ActiveRoomNotifier extends Notifier<String?> {
   @override
   String? build() => null;
 
-  void set(String? roomId) => state = roomId;
+  // A chat page reports itself from a delayed callback, which can land after
+  // the whole app state has been torn down (closing the app, switching
+  // accounts). Touching a disposed notifier throws, so check first.
+  void set(String? roomId) {
+    if (ref.mounted) state = roomId;
+  }
 
   /// Clears only if [roomId] is still the active one (a newer page may have
   /// already taken over).
   void clear(String roomId) {
-    if (state == roomId) state = null;
+    if (ref.mounted && state == roomId) state = null;
   }
 }
 
@@ -117,3 +123,16 @@ final settingsProvider = NotifierProvider<SettingsNotifier, AppSettings>(
 final inAppBannerProvider = Provider<InAppBannerService>(
   (ref) => InAppBannerService(ref.watch(navigatorKeyProvider)),
 );
+
+/// The on-device copy of your profile, friends and the people you chat with.
+final localCacheProvider = Provider<LocalCache>(
+  (ref) => LocalCache(ref.watch(sharedPreferencesProvider)),
+);
+
+/// Riverpod's built-in behaviour is to silently retry a provider that throws —
+/// up to 10 times, with growing delays — while reporting it as "loading". For
+/// this app that meant a failed request (an unreachable server, a deleted
+/// account) showed a spinner for minutes instead of the error and Retry button
+/// every screen already has. So automatic retries are off: a failure is shown
+/// at once, and the person decides whether to try again.
+Duration? noAutoRetry(int retryCount, Object error) => null;

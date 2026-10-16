@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -29,7 +30,7 @@ void openChatWithNavigator(NavigatorState navigator, PublicUser user) {
 }
 
 ImageProvider? avatarImage(String? url) =>
-    url != null && url.isNotEmpty ? NetworkImage(url) : null;
+    url != null && url.isNotEmpty ? CachedNetworkImageProvider(url) : null;
 
 /// A person in Discover / search results / requests: who they are, why they
 /// are shown (only when real shared interests exist), and what you can do.
@@ -123,12 +124,16 @@ class FriendActionRow extends ConsumerStatefulWidget {
     super.key,
     required this.user,
     this.showUnfriend = false,
+    this.showMessage = true,
   });
 
   final PublicUser user;
 
   /// Profile pages offer unfriending; list cards stay uncluttered.
   final bool showUnfriend;
+
+  /// Hidden when you got here from the conversation itself.
+  final bool showMessage;
 
   @override
   ConsumerState<FriendActionRow> createState() => _FriendActionRowState();
@@ -190,11 +195,12 @@ class _FriendActionRowState extends ConsumerState<FriendActionRow> {
     final busy = _busyAction;
 
     final buttons = <Widget>[
-      SmallActionButton(
-        label: 'Message',
-        icon: Icons.chat_bubble_outline,
-        onPressed: () => openChatWith(context, user),
-      ),
+      if (widget.showMessage)
+        SmallActionButton(
+          label: 'Message',
+          icon: Icons.chat_bubble_outline,
+          onPressed: () => openChatWith(context, user),
+        ),
       ...switch (user.friendStatus) {
         FriendStatus.none => [
           if (user.acceptsFriendRequests)

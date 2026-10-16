@@ -6,6 +6,14 @@ enum FriendStatus {
   requestSent,
   requestReceived;
 
+  /// The wire name the backend uses (and the cache stores).
+  String get wire => switch (this) {
+    FriendStatus.none => 'none',
+    FriendStatus.friends => 'friends',
+    FriendStatus.requestSent => 'request_sent',
+    FriendStatus.requestReceived => 'request_received',
+  };
+
   static FriendStatus parse(String? raw) => switch (raw) {
     'friends' => FriendStatus.friends,
     'request_sent' => FriendStatus.requestSent,
@@ -55,6 +63,21 @@ class PublicUser {
   final int? followingCount;
 
   bool get isFriend => friendStatus == FriendStatus.friends;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'username': username,
+    'display_name': displayName,
+    'profile_pic': profilePic,
+    'interests': interests,
+    'shared_interests': sharedInterests,
+    'friend_status': friendStatus.wire,
+    'is_following': isFollowing,
+    'follows_you': followsYou,
+    'accepts_friend_requests': acceptsFriendRequests,
+    'follower_count': followerCount,
+    'following_count': followingCount,
+  };
 
   factory PublicUser.fromJson(Map<String, dynamic> json) {
     List<String> strings(Object? value) => value is List

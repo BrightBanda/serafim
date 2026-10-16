@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 // lib/src/presentation/viewmodel/chat_viewmodel.dart
 
 import 'dart:convert';
@@ -109,7 +110,7 @@ class ChatViewModel extends Notifier<ChatState> {
         .show(
           title: sender?.displayName ?? 'Someone',
           body: body,
-          avatar: pic != null && pic.isNotEmpty ? NetworkImage(pic) : null,
+          avatar: pic != null && pic.isNotEmpty ? CachedNetworkImageProvider(pic) : null,
           onTap: () {
             final navigator = ref.read(navigatorKeyProvider).currentState;
             if (navigator == null) return;
@@ -130,7 +131,7 @@ class ChatViewModel extends Notifier<ChatState> {
   /// Who sent it: from the friends list if possible, otherwise looked up by id
   /// (briefly — an unreachable server must not delay the banner for long).
   Future<PublicUser?> _senderProfile(String senderId) async {
-    final friends = ref.read(friendsProvider).value ?? const <PublicUser>[];
+    final friends = ref.read(friendsViewProvider).friends;
     for (final f in friends) {
       if (f.id == senderId) return f;
     }

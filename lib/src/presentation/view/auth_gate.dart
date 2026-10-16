@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
@@ -40,6 +41,15 @@ class _AuthGateState extends ConsumerState<AuthGate> {
 
     final status = ref.watch(authStatusProvider);
 
+    // "Your session ended" and the like: tell the person once, then forget it.
+    ref.listen(authViewModelProvider.select((s) => s.notice), (_, notice) {
+      if (notice == null) return;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(notice)));
+      ref.read(authViewModelProvider.notifier).clearNotice();
+    });
+
     return switch (status) {
       AuthStatus.unknown => const _Splash(),
 
@@ -67,11 +77,11 @@ class _AuthGateState extends ConsumerState<AuthGate> {
       ),
 
       AuthStatus.backendUnavailable => _Message(
-        title: 'Server unreachable',
+        title: "Can't reach the server",
         body:
-            "You're signed in, but the Serafim backend at "
-            '${ref.watch(appConfigProvider).apiBaseUrl} did not respond. '
-            'Start it, then retry.',
+            "You're signed in, but Serafim couldn't reach its server. Check "
+            'your internet connection and try again.'
+            '${kDebugMode ? "\n\n(${ref.watch(appConfigProvider).apiBaseUrl})" : ""}',
         onRetry: ref.read(authViewModelProvider.notifier).retryBackendSync,
         isRetrying: ref.watch(authViewModelProvider).isBusy,
       ),

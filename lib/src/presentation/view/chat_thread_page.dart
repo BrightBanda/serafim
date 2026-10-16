@@ -1,9 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:serafim/src/data/domain/local_chat_message.dart';
+import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/data/services/attachment_download_service.dart';
@@ -65,24 +67,17 @@ ChatMessageStatus _mapStatus(MessageStatus status) {
   }
 }
 
-/// Sorts messages chronologically.
+/// Orders messages newest first. The list is anchored to the bottom, so the
+/// newest message is index 0 and older ones continue upwards.
 ///
-/// We do not depend on the ordering of the Isar query/stream.
-/// The timestamp is the primary ordering key and the local Isar ID is
-/// used as a deterministic tie-breaker.
-List<LocalMessage> _sortMessagesOldestFirst(List<LocalMessage> messages) {
+/// The timestamp is the primary key and the local Isar ID the deterministic
+/// tie-breaker, so we do not depend on the order the query returns.
+List<LocalMessage> _sortMessagesNewestFirst(List<LocalMessage> messages) {
   final sorted = [...messages];
-
   sorted.sort((a, b) {
-    final timestampComparison = a.timestamp.compareTo(b.timestamp);
-
-    if (timestampComparison != 0) {
-      return timestampComparison;
-    }
-
-    return a.id.compareTo(b.id);
+    final byTime = b.timestamp.compareTo(a.timestamp);
+    return byTime != 0 ? byTime : b.id.compareTo(a.id);
   });
-
   return sorted;
 }
 
@@ -99,10 +94,21 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
-  bool _initialScrollDone = false;
-
   /// A photo is being prepared and sent.
   bool _attaching = false;
+
+  /// Whether older messages exist beyond the window (the last load came back
+  /// full). Updated whenever messages arrive.
+  bool _hasMoreHistory = false;
+
+  /// Message ids in list order (newest first), for jumping to a quoted message.
+  List<String> _orderedIds = const [];
+
+  /// Rough height of one message plus its gap, to estimate where an old message
+  /// is before it has been built.
+  static const _estimatedItemExtent = 92.0;
+
+  String? _pendingReveal;
 
   /// The message being replied to, while composing.
   LocalMessage? _replyingTo;
@@ -116,6 +122,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_loadOlderNearTop);
     _activeRoom = ref.read(activeRoomProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -196,6 +203,18 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     }
 
     return ChatViewModel.buildRoomId(userId, widget.recipientId);
+  }
+
+  /// Opens the other person's profile. It shows straight away from the copy
+  /// saved on the phone, then refreshes. (Its Message button is hidden: you are
+  /// already in the conversation.)
+  void _openProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            UserProfilePage(userId: widget.recipientId, fromChat: true),
+      ),
+    );
   }
 
   void _toast(String message, {bool error = false}) {
@@ -474,20 +493,6 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     );
   }
 
-  void _scrollToMessage(String messageId) {
-    final context = _itemKeys[messageId]?.currentContext;
-    if (context == null) {
-      _toast('Scroll up to find the original message.');
-      return;
-    }
-    Scrollable.ensureVisible(
-      context,
-      alignment: 0.3,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
-  }
-
   void _handleSend() {
     final content = _messageController.text.trim();
 
@@ -518,23 +523,86 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     _scheduleScrollToBottom();
   }
 
+  /// The list is anchored to the bottom, so "the bottom" is scroll offset 0.
   void _scheduleScrollToBottom({bool animated = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) {
-        return;
-      }
-
-      final maxScroll = _scrollController.position.maxScrollExtent;
-
+      if (!mounted || !_scrollController.hasClients) return;
       if (animated) {
         _scrollController.animateTo(
-          maxScroll,
+          0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
       } else {
-        _scrollController.jumpTo(maxScroll);
+        _scrollController.jumpTo(0);
       }
+    });
+  }
+
+  bool get _nearBottom =>
+      !_scrollController.hasClients || _scrollController.position.pixels < 240;
+
+  /// Near the top (the oldest loaded message), load the next page of history.
+  void _loadOlderNearTop() {
+    if (!_hasMoreHistory || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 400) {
+      _hasMoreHistory = false; // One request per page; the next arrival re-arms it.
+      ref.read(messageWindowProvider(_roomId).notifier).loadMore();
+    }
+  }
+
+  /// Scrolls to a message, first loading older history if it is beyond the
+  /// window. Used when you tap a reply's quote.
+  Future<void> _scrollToMessage(String messageId) async {
+    final isar = ref.read(isarServiceProvider);
+    final target = await isar.getMessageById(messageId);
+    if (!mounted) return;
+    if (target == null || target.isHiddenForMe) {
+      _toast('That message is no longer on this device.');
+      return;
+    }
+    final needed = await isar.countMessagesAtOrAfter(_roomId, target.timestamp);
+    if (!mounted) return;
+    ref.read(messageWindowProvider(_roomId).notifier).ensureAtLeast(needed);
+    _pendingReveal = messageId;
+    _tryReveal(attempts: 8);
+  }
+
+  /// Brings [_pendingReveal] into view. A long list only builds what is on
+  /// screen, so if the message has not been built yet, jump to roughly where
+  /// it is and try again once the frame has built.
+  void _tryReveal({required int attempts}) {
+    final id = _pendingReveal;
+    if (id == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pendingReveal != id || !_scrollController.hasClients) return;
+
+      final built = _itemKeys[id]?.currentContext;
+      if (built != null && built.mounted) {
+        _pendingReveal = null;
+        Scrollable.ensureVisible(
+          built,
+          alignment: 0.3,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+        return;
+      }
+
+      final index = _orderedIds.indexOf(id);
+      if (attempts <= 0) {
+        _pendingReveal = null;
+        if (index < 0) _toast("Couldn't jump to that message.");
+        return;
+      }
+      if (index >= 0) {
+        final position = _scrollController.position;
+        _scrollController.jumpTo(
+          (index * _estimatedItemExtent).clamp(0.0, position.maxScrollExtent),
+        );
+      }
+      _tryReveal(attempts: attempts - 1);
     });
   }
 
@@ -545,15 +613,21 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     final previousMessages = previous?.value;
     final currentMessages = next.value;
 
-    if (currentMessages == null) {
-      return;
-    }
+    if (currentMessages == null || next.isLoading) return;
 
-    final previousCount = previousMessages?.length ?? 0;
-    final currentCount = currentMessages.length;
+    // A full window means there is probably more history above it. (The window
+    // is read now, so it is the one this result was loaded for.)
+    _hasMoreHistory =
+        currentMessages.length >= ref.read(messageWindowProvider(_roomId));
 
-    // A message was added.
-    if (currentCount > previousCount) {
+    // The newest message changed: a message was sent or arrived. (Loading older
+    // history changes the *oldest* end, and must not move the view.)
+    final newest = currentMessages.isEmpty ? null : _sortMessagesNewestFirst(currentMessages).first;
+    final previousNewest = (previousMessages == null || previousMessages.isEmpty)
+        ? null
+        : _sortMessagesNewestFirst(previousMessages).first;
+    final isNew = newest != null && previousNewest != null && newest.messageId != previousNewest.messageId;
+    if (isNew && (newest.senderId == _currentUserId || _nearBottom)) {
       _scheduleScrollToBottom();
     }
 
@@ -587,11 +661,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
 
     // Attachments are friends-only. The button explains why it is off; the
     // server refuses them regardless.
-    final friendsAsync = ref.watch(friendsProvider);
+    final friendsView = ref.watch(friendsViewProvider);
     final isFriend = ref.watch(friendIdsProvider).contains(widget.recipientId);
     final attachDisabledReason = isFriend
         ? null
-        : friendsAsync.isLoading
+        : !friendsView.hasData && friendsView.isRefreshing
         ? 'Checking whether you are friends…'
         : 'Attachments are only available between friends. '
               'Add ${widget.contactName} as a friend to share images.';
@@ -602,30 +676,35 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
       appBar: AppTopBar(
         onBack: widget.onBack ?? () => Navigator.of(context).pop(),
         titleFontSize: 15,
-        titleWidget: Row(
-          children: [
-            AvatarThumb(
-              size: 30,
-              isGroup: widget.isGroup,
-              imageProvider:
-                  (widget.profilePic != null && widget.profilePic!.isNotEmpty)
-                  ? NetworkImage(widget.profilePic!)
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                widget.username ?? widget.contactName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.body.copyWith(
-                  color: AppColors.text,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+        // Tapping the photo or name opens that person's profile.
+        titleWidget: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _openProfile,
+          child: Row(
+            children: [
+              AvatarThumb(
+                size: 30,
+                isGroup: widget.isGroup,
+                imageProvider:
+                    (widget.profilePic != null && widget.profilePic!.isNotEmpty)
+                    ? CachedNetworkImageProvider(widget.profilePic!)
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  widget.username ?? widget.contactName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.body.copyWith(
+                    color: AppColors.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
 
@@ -643,6 +722,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
 
               Expanded(
                 child: messagesAsync.when(
+                  skipLoadingOnReload: true,
                   loading: () {
                     return Center(
                       child: CircularProgressIndicator(
@@ -669,29 +749,29 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
                       return const _EmptyChat();
                     }
 
-                    final orderedMessages = _sortMessagesOldestFirst(messages);
+                    final orderedMessages = _sortMessagesNewestFirst(messages);
+                    _orderedIds = [for (final m in orderedMessages) m.messageId];
                     final byId = {
                       for (final m in orderedMessages) m.messageId: m,
                     };
 
-                    // Scroll to the bottom only once when the conversation
-                    // is initially loaded.
-                    if (!_initialScrollDone) {
-                      _initialScrollDone = true;
-
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (!mounted || !_scrollController.hasClients) {
-                          return;
-                        }
-
-                        _scrollController.jumpTo(
-                          _scrollController.position.maxScrollExtent,
-                        );
-                      });
+                    // Replies whose original is older than the window.
+                    final missing = <String>{
+                      for (final m in orderedMessages)
+                        if (m.replyToId != null && !byId.containsKey(m.replyToId))
+                          m.replyToId!,
+                    };
+                    if (missing.isNotEmpty) {
+                      final ids = (missing.toList()..sort()).join(',');
+                      byId.addAll(
+                        ref.watch(quotedMessagesProvider(ids)).value ??
+                            const {},
+                      );
                     }
 
                     return ListView.separated(
                       controller: _scrollController,
+                      reverse: true,
 
                       padding: const EdgeInsets.all(14),
 

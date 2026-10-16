@@ -22,6 +22,17 @@ class Profile {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  Map<String, dynamic> toJson() => {
+    'user_id': userId,
+    'display_name': displayName,
+    'username': username,
+    'profile_pic': profilePic,
+    'interests': interests,
+    'allow_friend_requests': allowFriendRequests,
+    'created_at': createdAt.toUtc().toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+  };
+
   factory Profile.fromJson(Map<String, dynamic> json) {
     final interests = json['interests'];
     return Profile(

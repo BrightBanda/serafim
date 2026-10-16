@@ -23,6 +23,14 @@ class AppUser {
   /// Only populated by `GET /auth/me`; `POST /auth/sync` omits it.
   final Profile? profile;
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'email': email,
+    'is_active': isActive,
+    'created_at': createdAt.toUtc().toIso8601String(),
+    if (profile != null) 'profile': profile!.toJson(),
+  };
+
   factory AppUser.fromJson(Map<String, dynamic> json) {
     final profile = json['profile'];
     return AppUser(
@@ -30,7 +38,9 @@ class AppUser {
       email: json['email'] as String?,
       isActive: json['is_active'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
-      profile: profile is Map<String, dynamic> ? Profile.fromJson(profile) : null,
+      profile: profile is Map<String, dynamic>
+          ? Profile.fromJson(profile)
+          : null,
     );
   }
 }

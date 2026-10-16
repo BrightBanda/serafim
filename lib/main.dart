@@ -35,6 +35,8 @@ Future<void> main() async {
 
   runApp(
     ProviderScope(
+      // Failures show at once with a Retry button, not as minutes of "loading".
+      retry: noAutoRetry,
       overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
       child: const SerafimApp(),
     ),

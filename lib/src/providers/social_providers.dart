@@ -5,6 +5,7 @@ import 'package:serafim/src/data/services/social_service.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/network_providers.dart';
+import 'package:serafim/src/providers/settings_providers.dart';
 
 final socialServiceProvider = Provider<SocialService>((ref) {
   return SocialService(ref.watch(apiDioProvider));
@@ -13,10 +14,59 @@ final socialServiceProvider = Provider<SocialService>((ref) {
 // Everything below is keyed on the account id so a different person signing
 // in never sees the previous account's friends.
 
-/// People you are friends with.
-final friendsProvider = FutureProvider<List<PublicUser>>((ref) {
-  if (ref.watch(currentAccountIdProvider) == null) return const [];
-  return ref.watch(socialServiceProvider).friends();
+/// People you are friends with, fetched from the server. A copy is saved on
+/// the phone each time, so the next launch can show it before this finishes —
+/// screens should read [friendsViewProvider], which does that.
+final friendsProvider = FutureProvider<List<PublicUser>>((ref) async {
+  final account = ref.watch(currentAccountIdProvider);
+  if (account == null) return const [];
+  final friends = await ref.watch(socialServiceProvider).friends();
+
+  final cache = ref.read(localCacheProvider);
+  await cache.saveFriends(account, friends);
+  for (final f in friends) {
+    await cache.savePerson(account, f); // So their profile opens instantly too.
+  }
+  return friends;
+});
+
+/// What to show for the friends list *right now*: the server's answer once it
+/// has arrived, otherwise the copy saved on this phone. This is why the chat
+/// list appears instantly on launch instead of after a spinner.
+class FriendsView {
+  const FriendsView({
+    required this.friends,
+    required this.hasData,
+    required this.isRefreshing,
+    this.error,
+  });
+
+  final List<PublicUser> friends;
+
+  /// There is something to show (fresh or saved), even if it may be a moment old.
+  final bool hasData;
+
+  /// A request is in flight (the list on screen may be the saved copy).
+  final bool isRefreshing;
+
+  /// Why loading failed, only when there is nothing at all to show.
+  final Object? error;
+}
+
+final friendsViewProvider = Provider<FriendsView>((ref) {
+  final account = ref.watch(currentAccountIdProvider);
+  final fresh = ref.watch(friendsProvider);
+  final saved = account == null
+      ? null
+      : ref.read(localCacheProvider).friends(account);
+
+  final friends = fresh.value ?? saved;
+  return FriendsView(
+    friends: friends ?? const [],
+    hasData: friends != null,
+    isRefreshing: fresh.isLoading,
+    error: friends == null && fresh.hasError ? fresh.error : null,
+  );
 });
 
 /// Pending requests, both directions.
@@ -50,15 +100,33 @@ final userSearchProvider = FutureProvider.autoDispose
       return ref.watch(socialServiceProvider).search(query);
     });
 
-/// One person's public profile, including their relationship to you.
+/// One person's public profile, including their relationship to you, from the
+/// server (and saved on the phone for next time).
 final publicUserProvider = FutureProvider.autoDispose
-    .family<PublicUser, String>((ref, id) {
-      return ref.watch(socialServiceProvider).user(id);
+    .family<PublicUser, String>((ref, id) async {
+      final user = await ref.watch(socialServiceProvider).user(id);
+      final account = ref.read(currentAccountIdProvider);
+      if (account != null)
+        await ref.read(localCacheProvider).savePerson(account, user);
+      return user;
     });
 
-/// Ids of confirmed friends. Empty until [friendsProvider] has loaded.
+/// Someone you know about, instantly and without the network: a friend, else
+/// the copy saved on this phone, else null. Screens show this immediately and
+/// let [publicUserProvider] bring in anything fresher.
+final knownPersonProvider = Provider.family<PublicUser?, String>((ref, id) {
+  final account = ref.watch(currentAccountIdProvider);
+  if (account == null) return null;
+  final friends = ref.watch(friendsViewProvider).friends;
+  for (final f in friends) {
+    if (f.id == id) return f;
+  }
+  return ref.read(localCacheProvider).person(account, id);
+});
+
+/// Ids of confirmed friends. Empty until a friends list (fresh or saved) exists.
 final friendIdsProvider = Provider<Set<String>>((ref) {
-  final friends = ref.watch(friendsProvider).value ?? const [];
+  final friends = ref.watch(friendsViewProvider).friends;
   return {for (final f in friends) f.id};
 });
 

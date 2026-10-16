@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,7 +36,7 @@ class ProfilePage extends ConsumerWidget {
     final user = ref.watch(currentUserProvider);
     final profileAsync = ref.watch(profileViewModelProvider);
     final pic = profileAsync.value?.profilePic;
-    final avatar = pic != null && pic.isNotEmpty ? NetworkImage(pic) : null;
+    final avatar = pic != null && pic.isNotEmpty ? CachedNetworkImageProvider(pic) : null;
 
     return Scaffold(
       backgroundColor: AppColors.paper,
@@ -214,8 +215,8 @@ class _FriendsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final friendsAsync = ref.watch(friendsProvider);
-    final count = friendsAsync.value?.length;
+    final view = ref.watch(friendsViewProvider);
+    final count = view.hasData ? view.friends.length : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,9 +226,9 @@ class _FriendsSection extends ConsumerWidget {
           style: AppTextStyles.eyebrow,
         ),
         const SizedBox(height: 8),
-        friendsAsync.when(
-          loading: () => Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
+        if (!view.hasData && view.error == null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
             child: Center(
               child: SizedBox(
                 width: 20,
@@ -238,13 +239,17 @@ class _FriendsSection extends ConsumerWidget {
                 ),
               ),
             ),
-          ),
-          error: (error, _) => _FriendsBox(
+          )
+        else if (!view.hasData)
+          _FriendsBox(
             child: Row(
               children: [
                 Expanded(
                   child: Text(
-                    humanError(error, fallback: "Couldn't load your friends."),
+                    humanError(
+                      view.error,
+                      fallback: "Couldn't load your friends.",
+                    ),
                     style: AppTextStyles.body.copyWith(
                       color: AppColors.rustPale,
                     ),
@@ -256,38 +261,34 @@ class _FriendsSection extends ConsumerWidget {
                 ),
               ],
             ),
-          ),
-          data: (friends) {
-            if (friends.isEmpty) {
-              return _FriendsBox(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'No friends yet. Find people in Discover.',
-                        style: AppTextStyles.body,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => ref
-                          .read(navigationNotifierProvider.notifier)
-                          .setIndex(1),
-                      child: Text('Discover', style: AppTextStyles.linkText),
-                    ),
-                  ],
-                ),
-              );
-            }
-            return Column(
+          )
+        else if (view.friends.isEmpty)
+          _FriendsBox(
+            child: Row(
               children: [
-                for (final friend in friends) ...[
-                  _FriendRow(friend: friend),
-                  const SizedBox(height: 8),
-                ],
+                Expanded(
+                  child: Text(
+                    'No friends yet. Find people in Discover.',
+                    style: AppTextStyles.body,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      ref.read(navigationNotifierProvider.notifier).setIndex(1),
+                  child: Text('Discover', style: AppTextStyles.linkText),
+                ),
               ],
-            );
-          },
-        ),
+            ),
+          )
+        else
+          Column(
+            children: [
+              for (final friend in view.friends) ...[
+                _FriendRow(friend: friend),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
       ],
     );
   }

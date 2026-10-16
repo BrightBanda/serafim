@@ -1,11 +1,14 @@
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/data/services/profile_service.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/service_providers.dart';
+import 'package:serafim/src/providers/settings_providers.dart';
 
 /// The signed-in user's profile, or null when they have not made one.
 ///
@@ -24,9 +27,40 @@ class ProfileViewModel extends AsyncNotifier<Profile?> {
     // the previous account's profile on screen. Watching the id also avoids
     // refetching when an unrelated field such as `isBusy` toggles.
     final accountId = ref.watch(currentAccountIdProvider);
-
     if (accountId == null) return null;
-    return _profiles.getMine();
+
+    final cache = ref.read(localCacheProvider);
+
+    // A saved copy exists from the last time the app was open: show it right
+    // away and check the server behind it, rather than making startup wait.
+    final saved = cache.profile(accountId);
+    if (saved != null) {
+      Future.microtask(() => _revalidate(accountId));
+      return saved.profile;
+    }
+
+    final fresh = await _profiles.getMine().timeout(loadTimeout);
+    await cache.saveProfile(accountId, fresh);
+    return fresh;
+  }
+
+  /// Longer than this with nothing to show and the retry screen takes over,
+  /// instead of a spinner that never ends.
+  @visibleForTesting
+  static Duration loadTimeout = const Duration(seconds: 25);
+
+  /// Refreshes the saved profile in the background. If the server cannot be
+  /// reached, the saved copy stays on screen: offline is not an error.
+  Future<void> _revalidate(String accountId) async {
+    try {
+      final fresh = await _profiles.getMine().timeout(loadTimeout);
+      if (!ref.mounted || ref.read(currentAccountIdProvider) != accountId)
+        return;
+      await ref.read(localCacheProvider).saveProfile(accountId, fresh);
+      state = AsyncValue<Profile?>.data(fresh);
+    } catch (_) {
+      // Keep what is on screen.
+    }
   }
 
   /// `POST /profile/me`.
@@ -69,7 +103,11 @@ class ProfileViewModel extends AsyncNotifier<Profile?> {
 
   Future<String?> _write(Future<Profile> Function() action) async {
     try {
-      state = AsyncValue<Profile?>.data(await action());
+      final saved = await action();
+      state = AsyncValue<Profile?>.data(saved);
+      final account = ref.read(currentAccountIdProvider);
+      if (account != null)
+        await ref.read(localCacheProvider).saveProfile(account, saved);
       return null;
     } catch (error) {
       return humanError(error);

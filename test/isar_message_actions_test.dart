@@ -53,7 +53,7 @@ void main() {
       directory: dir.path,
       name: 'test_${DateTime.now().microsecondsSinceEpoch}',
     );
-    service = IsarService.withDb(Future.value(isar));
+    service = IsarService.withDb(Future.value(isar))..accountId = me;
   });
 
   tearDown(() async {
@@ -148,10 +148,13 @@ void main() {
       msg('mine', sender: me, recipient: peer, minute: 3),
     );
 
-    final summary = await service.watchRoomSummary(room, me).first;
+    final row = (await service.watchAllChatRooms().first).single;
 
-    expect(summary.latest!.messageId, 'new');
-    expect(summary.unreadCount, 2);
+    expect(row.roomId, room);
+    expect(row.lastMessageText, 'latest');
+    expect(row.lastMessageTimestamp.toUtc(), DateTime.utc(2026, 1, 1, 10, 5));
+    expect(row.peerUserId, peer);
+    expect(row.unreadCount, 2);
   });
 
   test('conversation peers include non-friends, once each', () async {
@@ -208,8 +211,8 @@ void main() {
       // Gone from the conversation, the preview and the unread count...
       final visible = await service.watchMessagesForRoom(room).first;
       expect(visible.map((m) => m.messageId), ['keep']);
-      final summary = await service.watchRoomSummary(room, me).first;
-      expect(summary.unreadCount, 1);
+      final row = (await service.watchAllChatRooms().first).single;
+      expect(row.unreadCount, 1);
       // ...and a re-push from the server (same id) cannot undelete it.
       expect((await service.getMessageById('img'))!.isHiddenForMe, isTrue);
     },
@@ -243,5 +246,66 @@ void main() {
       msg('reply', sender: me, recipient: peer)..replyToId = 'orig',
     );
     expect((await service.getMessageById('reply'))!.replyToId, 'orig');
+  });
+
+  group('summary rows and windows', () {
+    test('mark read, edit and delete keep the row current', () async {
+      await service.saveMessage(msg('a', minute: 1, text: 'hello'));
+      await service.saveMessage(msg('b', minute: 2, text: 'second'));
+      var row = (await service.watchAllChatRooms().first).single;
+      expect(row.unreadCount, 2);
+
+      await service.applyEdit('b', 'edited', DateTime.utc(2026, 1, 2));
+      row = (await service.watchAllChatRooms().first).single;
+      expect(row.lastMessageText, 'edited');
+
+      await service.applyDelete('b');
+      row = (await service.watchAllChatRooms().first).single;
+      expect(row.lastMessageDeleted, isTrue);
+      expect(row.lastMessageText, isNull);
+
+      await service.markRoomRead(room, me);
+      row = (await service.watchAllChatRooms().first).single;
+      expect(row.unreadCount, 0);
+    });
+
+    test('hiding the only message removes the row', () async {
+      await service.saveMessage(msg('a'));
+      await service.hideMessageForMe('a');
+      expect(await service.watchAllChatRooms().first, isEmpty);
+    });
+
+    test('rebuildRooms backfills rows from existing messages', () async {
+      await service.saveMessage(msg('a', minute: 1));
+      await isar.writeTxn(() => isar.localChatRooms.clear());
+      expect(await service.watchAllChatRooms().first, isEmpty);
+
+      await service.rebuildRooms();
+      final row = (await service.watchAllChatRooms().first).single;
+      expect(row.roomId, room);
+      expect(row.unreadCount, 1);
+    });
+
+    test('another account sees no row for these messages', () async {
+      await service.saveMessage(msg('a'));
+      service.accountId = 'someone-else';
+      await service.rebuildRooms();
+      expect(await service.watchAllChatRooms().first, isEmpty);
+    });
+
+    test('the window returns only the newest messages, newest first', () async {
+      for (var i = 0; i < 10; i++) {
+        await service.saveMessage(msg('m$i', minute: i));
+      }
+      final page = await service.watchMessagesForRoom(room, limit: 3).first;
+      expect(page.map((m) => m.messageId), ['m9', 'm8', 'm7']);
+
+      final older = await service.getMessagesByIds(['m1', 'nope']);
+      expect(older.keys, ['m1']);
+      expect(
+        await service.countMessagesAtOrAfter(room, DateTime.utc(2026, 1, 1, 10, 7)),
+        3,
+      );
+    });
   });
 }
