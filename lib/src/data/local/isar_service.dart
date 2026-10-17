@@ -136,6 +136,26 @@ class IsarService {
     return found;
   }
 
+  /// Records where a voice note's audio is: its server id once uploaded,
+  /// and/or the local file once downloaded.
+  Future<void> updateMedia(
+    String messageId, {
+    String? mediaRemoteId,
+    String? localMediaPath,
+  }) async {
+    final isar = await db;
+    await isar.writeTxn(() async {
+      final msg = await isar.localMessages
+          .filter()
+          .messageIdEqualTo(messageId)
+          .findFirst();
+      if (msg == null || msg.isDeleted || msg.isHiddenForMe) return;
+      if (mediaRemoteId != null) msg.mediaRemoteId = mediaRemoteId;
+      if (localMediaPath != null) msg.localMediaPath = localMediaPath;
+      await isar.localMessages.put(msg);
+    });
+  }
+
   Future<LocalMessage?> getMessageById(String messageId) async {
     final isar = await db;
     return isar.localMessages.filter().messageIdEqualTo(messageId).findFirst();
@@ -147,16 +167,19 @@ class IsarService {
     final isar = await db;
     var ids = <String>[];
     await isar.writeTxn(() async {
-      final unread = await isar.localMessages
-          .filter()
-          .roomIdEqualTo(roomId)
-          .recipientIdEqualTo(myId)
+      // In a group, "incoming" is anything someone else sent; groups have no
+      // read receipts, so nothing is owed to the server.
+      final group = _isGroupRoom(roomId);
+      final base = isar.localMessages.filter().roomIdEqualTo(roomId);
+      final unread = await (group
+              ? base.not().senderIdEqualTo(myId)
+              : base.recipientIdEqualTo(myId))
           .not()
           .statusEqualTo(MessageStatus.read)
           .findAll();
       for (final msg in unread) {
         msg.status = MessageStatus.read;
-        msg.readAckPending = true;
+        msg.readAckPending = !group;
       }
       await isar.localMessages.putAll(unread);
       ids = unread.map((m) => m.messageId).toList();
@@ -342,8 +365,10 @@ class IsarService {
     final isar = await db;
     yield* isar.localMessages.where().watchLazy(fireImmediately: true).asyncMap(
       (_) async {
+        // 1:1 conversations only; groups are listed from the group list.
         final latest = await isar.localMessages
-            .where()
+            .filter()
+            .groupIdIsNull()
             .distinctByRoomId()
             .findAll();
         return latest
@@ -372,18 +397,23 @@ class IsarService {
         .sortByTimestampDesc()
         .findFirst();
 
+    final group = _isGroupRoom(roomId);
     // No visible messages left, or a conversation this account isn't part of
     // (the database is shared by everyone who has signed in on this phone).
-    if (latest == null || (latest.senderId != me && latest.recipientId != me)) {
+    // Group membership is checked against the account's group list instead.
+    if (latest == null ||
+        (!group && latest.senderId != me && latest.recipientId != me)) {
       await isar.localChatRooms.deleteByRoomId(roomId);
       return;
     }
 
-    final unread = await isar.localMessages
+    final visible = isar.localMessages
         .filter()
         .roomIdEqualTo(roomId)
-        .isHiddenForMeEqualTo(false)
-        .recipientIdEqualTo(me)
+        .isHiddenForMeEqualTo(false);
+    final unread = await (group
+            ? visible.not().senderIdEqualTo(me)
+            : visible.recipientIdEqualTo(me))
         .not()
         .statusEqualTo(MessageStatus.read)
         .count();
@@ -392,10 +422,12 @@ class IsarService {
         await isar.localChatRooms.getByRoomId(roomId) ?? LocalChatRoom()
           ..roomId = roomId;
     room
-      ..peerUserId = latest.senderId == me
+      ..peerUserId = group
+          ? (latest.groupId ?? '')
+          : latest.senderId == me
           ? latest.recipientId
           : latest.senderId
-      ..lastMessageText = latest.isDeleted ? null : latest.textContent
+      ..lastMessageText = latest.isDeleted ? null : previewTextOf(latest)
       ..lastMessageSenderId = latest.senderId
       ..lastMessageIsImage =
           latest.type == MessageType.image && !latest.isDeleted
@@ -424,6 +456,40 @@ class IsarService {
     });
   }
 
+  /// Newest message time in [roomId] (for catching up on a group).
+  Future<DateTime?> latestTimestamp(String roomId) async {
+    final isar = await db;
+    final m = await isar.localMessages
+        .filter()
+        .roomIdEqualTo(roomId)
+        .sortByTimestampDesc()
+        .findFirst();
+    return m?.timestamp;
+  }
+
+  /// Removes a whole conversation from this device (e.g. a group you left
+  /// or were removed from), with its files.
+  Future<void> deleteRoom(String roomId) async {
+    final isar = await db;
+    final paths = <String>[];
+    await isar.writeTxn(() async {
+      final all = await isar.localMessages
+          .filter()
+          .roomIdEqualTo(roomId)
+          .findAll();
+      for (final m in all) {
+        if (m.localMediaPath != null) paths.add(m.localMediaPath!);
+      }
+      await isar.localMessages.deleteAll(all.map((m) => m.id).toList());
+      await isar.localChatRooms.deleteByRoomId(roomId);
+    });
+    for (final p in paths) {
+      await _deleteFile(p);
+    }
+  }
+
+  static bool _isGroupRoom(String roomId) => roomId.startsWith('group_');
+
   /// Save/Update a chat room preview
   Future<void> saveChatRoom(LocalChatRoom room) async {
     final isar = await db;
@@ -448,3 +514,11 @@ class IsarService {
     );
   }
 }
+
+/// What the chat list shows for [m]: its text, or a label for messages whose
+/// "text" is not meant to be read (a sticker's id, a voice note).
+String? previewTextOf(LocalMessage m) => switch (m.type) {
+  MessageType.sticker => '🙂 Sticker',
+  MessageType.audio => '🎤 Voice message',
+  _ => m.textContent,
+};

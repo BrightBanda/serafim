@@ -18,8 +18,18 @@ class AvatarStorageService {
   final String _supabaseUrl;
 
   /// Returns the public URL of the uploaded picture.
-  Future<String> uploadAvatar(String userId, Uint8List jpegBytes) async {
-    final path = '$userId/avatar.jpg';
+  Future<String> uploadAvatar(String userId, Uint8List jpegBytes) =>
+      _upload('$userId/avatar.jpg', jpegBytes);
+
+  /// A group's photo. Stored in the uploader's own folder (all the bucket
+  /// policies allow), under a name per group.
+  Future<String> uploadGroupPhoto(
+    String userId,
+    String groupId,
+    Uint8List jpegBytes,
+  ) => _upload('$userId/group_$groupId.jpg', jpegBytes);
+
+  Future<String> _upload(String path, Uint8List jpegBytes) async {
     try {
       await _dio.post<dynamic>(
         '/object/$bucket/$path',

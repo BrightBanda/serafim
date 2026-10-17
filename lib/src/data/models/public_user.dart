@@ -68,7 +68,7 @@ class PublicUser {
   final bool acceptsFriendRequests;
 
   /// Only present on a single-profile lookup, and absent when the profile is
-  /// locked.
+  /// locked and you are neither its owner nor a friend.
   final int? followerCount;
   final int? followingCount;
   final int? friendCount;

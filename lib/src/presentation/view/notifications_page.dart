@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/app_notification.dart';
 import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
-import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/chat/chat_time.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -223,9 +223,11 @@ class _NotificationCard extends StatelessWidget {
                         Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            AvatarThumb(
+                            TappableAvatar(
                               size: 42,
-                              imageProvider: avatarImage(n.actor.profilePic),
+                              heroTag: 'notification:${n.id}',
+                              name: n.actor.displayName,
+                              image: avatarImage(n.actor.profilePic),
                             ),
                             Positioned(
                               right: -4,

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -27,7 +28,11 @@ class ChatBubble extends StatelessWidget {
     this.onSaveImage,
     this.onDeleteImage,
     this.quote,
+    this.footer,
   });
+
+  /// Shown under the text (e.g. a link preview card).
+  final Widget? footer;
 
   /// The message this one replies to, shown above the content.
   final ReplyQuoteData? quote;
@@ -138,14 +143,18 @@ class ChatBubble extends StatelessWidget {
                   if (message.isNotEmpty) const SizedBox(height: 6),
                 ],
                 if (message.isNotEmpty)
-                  Text(
+                  LinkifiedText(
                     message,
                     style: AppTextStyles.body.copyWith(
                       color: isOut ? Colors.white : AppColors.text,
                       fontSize: 11,
                       height: 1.5,
                     ),
+                    linkColor: isOut
+                        ? const Color(0xFFEAF0FF)
+                        : AppColors.primaryPale,
                   ),
+                if (footer != null) footer!,
               ],
               if (isOut && status != null && !deleted) ...[
                 const SizedBox(height: 4),

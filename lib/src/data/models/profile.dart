@@ -1,3 +1,18 @@
+/// Who may add someone to group chats. Enforced by the server.
+enum GroupAddPrivacy {
+  everyone('Everyone', 'Anyone can add you to a group.'),
+  friends('Friends only', 'Only your friends can add you.'),
+  nobody('Nobody', 'No one can add you to a group.');
+
+  const GroupAddPrivacy(this.label, this.description);
+
+  final String label;
+  final String description;
+
+  static GroupAddPrivacy parse(String? raw) => GroupAddPrivacy.values
+      .firstWhere((v) => v.name == raw, orElse: () => GroupAddPrivacy.everyone);
+}
+
 /// Mirrors the backend's `ProfileResponse` (app/schemas/profile.py).
 class Profile {
   const Profile({
@@ -11,9 +26,13 @@ class Profile {
     this.allowFriendRequests = true,
     this.bio,
     this.lockProfile = false,
+    this.groupAddPrivacy = GroupAddPrivacy.everyone,
   });
 
   final String userId;
+
+  /// Privacy: who may add this user to groups.
+  final GroupAddPrivacy groupAddPrivacy;
 
   /// Privacy: when false, nobody can send this user a friend request.
   final bool allowFriendRequests;
@@ -40,6 +59,7 @@ class Profile {
     'allow_friend_requests': allowFriendRequests,
     'bio': bio,
     'lock_profile': lockProfile,
+    'group_add_privacy': groupAddPrivacy.name,
     'created_at': createdAt.toUtc().toIso8601String(),
     'updated_at': updatedAt.toUtc().toIso8601String(),
   };
@@ -57,6 +77,9 @@ class Profile {
       allowFriendRequests: json['allow_friend_requests'] as bool? ?? true,
       bio: json['bio'] as String?,
       lockProfile: json['lock_profile'] as bool? ?? false,
+      groupAddPrivacy: GroupAddPrivacy.parse(
+        json['group_add_privacy'] as String?,
+      ),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -99,8 +122,10 @@ class ProfileUpdateRequest {
     this.allowFriendRequests,
     this.bio,
     this.lockProfile,
+    this.groupAddPrivacy,
   });
 
+  final GroupAddPrivacy? groupAddPrivacy;
   final String? displayName;
   final String? username;
   final String? profilePic;
@@ -120,6 +145,7 @@ class ProfileUpdateRequest {
       'allow_friend_requests': allowFriendRequests,
     if (bio != null) 'bio': bio,
     if (lockProfile != null) 'lock_profile': lockProfile,
+    if (groupAddPrivacy != null) 'group_add_privacy': groupAddPrivacy!.name,
   };
 
   bool get isEmpty => toJson().isEmpty;

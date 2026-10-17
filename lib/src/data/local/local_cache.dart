@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:serafim/src/data/models/announcement.dart';
 import 'package:serafim/src/data/models/app_user.dart';
+import 'package:serafim/src/data/models/group.dart';
+import 'package:serafim/src/data/models/link_preview.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -130,6 +132,112 @@ class LocalCache {
 
   Future<void> saveOfficialLastRead(String account, DateTime at) =>
       _write(_key(account, 'officialLastRead'), at.toUtc().toIso8601String());
+
+  // --- groups ---------------------------------------------------------------
+
+  List<GroupSummary>? groups(String account) => _read(
+    _key(account, 'groups'),
+    (j) => [
+      for (final e in j! as List)
+        GroupSummary.fromJson(e as Map<String, dynamic>),
+    ],
+  );
+
+  Future<void> saveGroups(String account, List<GroupSummary> groups) =>
+      _write(_key(account, 'groups'), [for (final g in groups) g.toJson()]);
+
+  /// When this person last acknowledged each group's rules, by group id.
+  Map<String, DateTime> rulesSeen(String account) =>
+      _read(
+        _key(account, 'rulesSeen'),
+        (j) => (j! as Map<String, dynamic>).map(
+          (k, v) => MapEntry(k, DateTime.parse(v as String).toUtc()),
+        ),
+      ) ??
+      {};
+
+  Future<void> saveRulesSeen(String account, Map<String, DateTime> seen) =>
+      _write(
+        _key(account, 'rulesSeen'),
+        seen.map((k, v) => MapEntry(k, v.toUtc().toIso8601String())),
+      );
+
+  // --- stickers -------------------------------------------------------------
+
+  /// Recently sent sticker ids, most recent first.
+  List<String> recentStickers(String account) =>
+      _read(
+        _key(account, 'recentStickers'),
+        (j) => [for (final e in j! as List) e as String],
+      ) ??
+      const [];
+
+  Future<void> saveRecentStickers(String account, List<String> ids) =>
+      _write(_key(account, 'recentStickers'), ids);
+
+  // --- link previews --------------------------------------------------------
+
+  static const _maxPreviews = 150;
+
+  /// Saved previews by URL. A null value means "the server had nothing", so
+  /// the same dead link is not asked about again and again.
+  Map<String, LinkPreview?> _previews() =>
+      _read('$_version.linkPreviews', (j) {
+        final map = j! as Map<String, dynamic>;
+        return {
+          for (final e in map.entries)
+            e.key: e.value == null
+                ? null
+                : LinkPreview.fromJson(e.value as Map<String, dynamic>),
+        };
+      }) ??
+      {};
+
+  /// (found, preview): found is false when nothing is saved for [url].
+  (bool, LinkPreview?) linkPreview(String url) {
+    final all = _previews();
+    return (all.containsKey(url), all[url]);
+  }
+
+  Future<void> saveLinkPreview(String url, LinkPreview? preview) {
+    final all = _previews()
+      ..remove(url)
+      ..[url] = preview;
+    // Oldest first in insertion order: drop from the front.
+    while (all.length > _maxPreviews) {
+      all.remove(all.keys.first);
+    }
+    return _write('$_version.linkPreviews', {
+      for (final e in all.entries) e.key: e.value?.toJson(),
+    });
+  }
+
+  // --- chat backgrounds -----------------------------------------------------
+
+  /// The background every chat uses unless it has its own (encoded
+  /// `ChatWallpaper`).
+  String? defaultWallpaper(String account) =>
+      _prefs.getString(_key(account, 'wallpaper.default'));
+
+  Future<void> saveDefaultWallpaper(String account, String? encoded) =>
+      _setOrRemove(_key(account, 'wallpaper.default'), encoded);
+
+  /// Per-chat backgrounds, by room id.
+  Map<String, String> roomWallpapers(String account) =>
+      _read(
+        _key(account, 'wallpaper.rooms'),
+        (j) => (j! as Map<String, dynamic>).map(
+          (k, v) => MapEntry(k, v as String),
+        ),
+      ) ??
+      {};
+
+  Future<void> saveRoomWallpapers(String account, Map<String, String> rooms) =>
+      _write(_key(account, 'wallpaper.rooms'), rooms);
+
+  Future<void> _setOrRemove(String key, String? value) => value == null
+      ? _prefs.remove(key)
+      : _prefs.setString(key, value);
 
   // --- housekeeping ---------------------------------------------------------
 

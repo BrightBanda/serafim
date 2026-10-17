@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:serafim/src/data/models/chat_wallpaper.dart';
 import 'package:serafim/src/utils/chat/doodle_packing.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
@@ -22,4 +25,56 @@ class ChatBackground extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Draws a [ChatWallpaper]. Photos get a dimming (dark mode) or lightening
+/// (light mode) layer on top, so the status line and any text drawn straight
+/// on the background stay readable; bubbles are opaque either way.
+class ChatWallpaperView extends StatelessWidget {
+  const ChatWallpaperView({super.key, required this.wallpaper});
+
+  final ChatWallpaper wallpaper;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = wallpaper.value;
+    switch (wallpaper.kind) {
+      case WallpaperKind.doodles:
+        return const ChatBackground();
+      case WallpaperKind.plain:
+        return ColoredBox(color: AppColors.paper);
+      case WallpaperKind.color:
+        return ColoredBox(color: wallpaperColors[value] ?? AppColors.paper);
+      case WallpaperKind.gradient:
+        final colors = wallpaperGradients[value];
+        if (colors == null) return const ChatBackground();
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: colors,
+            ),
+          ),
+        );
+      case WallpaperKind.image:
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(
+              File(value!),
+              fit: BoxFit.cover,
+              // A missing file (cleared storage) falls back to the doodles.
+              errorBuilder: (_, __, ___) => const ChatBackground(),
+            ),
+            ColoredBox(color: imageScrim),
+          ],
+        );
+    }
+  }
+
+  /// The layer over photos that keeps things legible.
+  static Color get imageScrim => AppColors.isLight
+      ? Colors.white.withValues(alpha: 0.30)
+      : Colors.black.withValues(alpha: 0.40);
 }

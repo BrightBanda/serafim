@@ -56,12 +56,28 @@ class PrivacySettingsPage extends ConsumerWidget {
           'still message you or follow you; attachments are only ever allowed '
           'between friends.',
         ),
+        const SettingsSectionLabel('Who can add you to groups'),
+        for (final option in GroupAddPrivacy.values)
+          SettingsChoiceRow(
+            title: option.label,
+            subtitle: option.description,
+            selected:
+                (profile?.groupAddPrivacy ?? GroupAddPrivacy.everyone) ==
+                option,
+            onTap: profile == null
+                ? () {}
+                : () => save(ProfileUpdateRequest(groupAddPrivacy: option)),
+          ),
+        const SettingsNote(
+          'Applies however someone tries to add you (from their friends list, '
+          'your username or your UID). They are told you can\'t be added.',
+        ),
         const SettingsSectionLabel('Your profile'),
         SettingsSwitchRow(
           title: 'Lock profile',
           subtitle: profile == null
               ? 'Create your profile to change this.'
-              : 'Hide your friends, followers and following from other people.',
+              : 'Only your friends can see your friends, followers and following.',
           value: profile?.lockProfile ?? false,
           onChanged: profile == null
               ? null
@@ -70,7 +86,7 @@ class PrivacySettingsPage extends ConsumerWidget {
         const SettingsNote(
           'When unlocked, anyone signed in can see who your friends are and '
           'who you follow. Your name, photo, bio and interests stay visible '
-          'either way.',
+          'to everyone either way.',
         ),
       ],
     );

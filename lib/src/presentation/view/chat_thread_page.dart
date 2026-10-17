@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,12 +15,25 @@ import 'package:serafim/src/providers/service_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
-import 'package:serafim/src/utils/chat/avatar_thumb.dart';
+import 'package:serafim/src/presentation/view/chat_background_page.dart';
+import 'package:serafim/src/providers/wallpaper_providers.dart';
 import 'package:serafim/src/utils/chat/chat_background.dart';
 import 'package:serafim/src/utils/chat/chat_bubble.dart';
 import 'package:serafim/src/utils/chat/message_actions.dart';
 import 'package:serafim/src/utils/chat/swipe_to_reply.dart';
 import 'package:serafim/src/utils/chat/chat_input_bar.dart';
+import 'package:serafim/src/utils/chat/link_preview_card.dart';
+import 'package:serafim/src/providers/sticker_providers.dart';
+import 'package:serafim/src/utils/image_shrink.dart';
+import 'package:serafim/src/utils/stickers/sticker_message.dart';
+import 'package:serafim/src/utils/stickers/sticker_picker.dart';
+import 'package:serafim/src/data/models/group.dart';
+import 'package:serafim/src/presentation/view/group_info_page.dart';
+import 'package:serafim/src/providers/group_providers.dart';
+import 'package:serafim/src/providers/voice_providers.dart';
+import 'package:serafim/src/utils/voice/voice_note_view.dart';
+import 'package:serafim/src/utils/voice/voice_recorder_controls.dart';
+import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/utils/image_picking.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -33,7 +47,11 @@ class ChatThreadPage extends ConsumerStatefulWidget {
     this.profilePic,
     this.isGroup = false,
     this.onBack,
+    this.groupId,
   });
+
+  /// Set for a group chat ([recipientId] is then the group id too).
+  final String? groupId;
 
   final String contactName;
   final String recipientId;
@@ -90,7 +108,8 @@ String _formatMessageTime(BuildContext context, DateTime timestamp) {
   return timeOfDay.format(context);
 }
 
-class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
+class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
+    with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -113,17 +132,28 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   /// The message being replied to, while composing.
   LocalMessage? _replyingTo;
 
+  /// The sticker panel is open in place of the keyboard.
+  bool _stickersOpen = false;
+  final FocusNode _inputFocus = FocusNode();
+
   /// One key per message so a quote can scroll to its original.
   final Map<String, GlobalKey> _itemKeys = {};
 
   late final ActiveRoomNotifier _activeRoom;
+
+  // Kept from initState: providers can't be read during dispose.
+  late final VoiceRecorderController _recorder;
+  late final VoicePlayerController _player;
   String? _registeredRoom;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_loadOlderNearTop);
     _activeRoom = ref.read(activeRoomProvider.notifier);
+    _recorder = ref.read(voiceRecorderProvider.notifier);
+    _player = ref.read(voicePlayerProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // Tell alerts this conversation is on screen...
@@ -162,6 +192,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
           .sendMessage(
             roomId: _roomId,
             recipientId: widget.recipientId,
+            groupId: widget.groupId,
             imageBytes: bytes,
             replyToId: _replyingTo?.messageId,
           );
@@ -186,8 +217,18 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
       final notifier = _activeRoom;
       Future.microtask(() => notifier.clear(room));
     }
+    WidgetsBinding.instance.removeObserver(this);
+    // Leaving the chat ends any recording and voice note playing in it (not
+    // during the unmount itself, which can't change providers).
+    final recorder = _recorder;
+    final player = _player;
+    Future.microtask(() {
+      recorder.cancel();
+      player.stop();
+    });
     _messageController.dispose();
     _scrollController.dispose();
+    _inputFocus.dispose();
     super.dispose();
   }
 
@@ -196,6 +237,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   }
 
   String get _roomId {
+    final gid = widget.groupId;
+    if (gid != null) return groupRoomId(gid);
     final userId = _currentUserId;
 
     if (userId == null) {
@@ -209,12 +252,47 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   /// saved on the phone, then refreshes. (Its Message button is hidden: you are
   /// already in the conversation.)
   void _openProfile() {
+    final gid = widget.groupId;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            UserProfilePage(userId: widget.recipientId, fromChat: true),
+        builder: (_) => gid != null
+            ? GroupInfoPage(groupId: gid)
+            : UserProfilePage(userId: widget.recipientId, fromChat: true),
       ),
     );
+  }
+
+  /// Who sent [senderId]'s messages, as shown in this chat.
+  String _nameOf(String senderId) {
+    final gid = widget.groupId;
+    if (gid == null) return widget.contactName;
+    return ref.read(groupMemberNamesProvider(gid))[senderId] ??
+        ref.read(knownPersonProvider(senderId))?.displayName ??
+        'Member';
+  }
+
+  bool _rulesShown = false;
+
+  /// Shows a group's rules the first time you open it after joining, and
+  /// again whenever an admin changes them.
+  void _maybeShowRules(GroupSummary group) {
+    if (_rulesShown) return;
+    if (!shouldShowRules(group, ref.read(rulesSeenProvider))) return;
+    _rulesShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final String? rules;
+      try {
+        rules = (await ref.read(groupDetailProvider(group.id).future)).rules;
+      } catch (_) {
+        _rulesShown = false; // Try again next time.
+        return;
+      }
+      if (!mounted || rules == null || rules.isEmpty) return;
+      await showGroupRules(context, groupName: group.name, rules: rules);
+      ref
+          .read(rulesSeenProvider.notifier)
+          .acknowledge(group.id, group.rulesUpdatedAt!);
+    });
   }
 
   void _toast(String message, {bool error = false}) {
@@ -254,7 +332,10 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
   }) async {
     if (message.isDeleted) return;
 
-    final text = message.textContent ?? '';
+    // A sticker's "text" is its id, not something to copy or edit.
+    final text = message.type == MessageType.sticker
+        ? ''
+        : message.textContent ?? '';
     final isImage =
         message.type == MessageType.image && message.localMediaPath != null;
     final isConfirmed =
@@ -403,6 +484,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
               : isOutgoing && !isConfirmed
               ? 'This $what was never delivered. It will be removed from this '
                     'device.'
+              : widget.groupId != null
+              ? 'It will be removed from this device. Others in the group '
+                    'keep their copy.'
               : 'It will be removed from this device. ${widget.contactName} '
                     'keeps their copy.',
           style: AppTextStyles.body,
@@ -441,6 +525,14 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     }
   }
 
+  /// A preview card for the first link in a text message, if any.
+  Widget? _linkPreviewFor(LocalMessage message, bool outgoing) {
+    if (message.isDeleted) return null;
+    final uri = firstLink(message.textContent ?? '');
+    if (uri == null) return null;
+    return LinkPreviewCard(uri: uri, outgoing: outgoing);
+  }
+
   // ---- replying ----
 
   bool _canReplyTo(LocalMessage m) =>
@@ -450,6 +542,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
 
   String _snippetOf(LocalMessage m) {
     if (m.isDeleted) return 'Message deleted';
+    if (m.type == MessageType.sticker) return '🙂 Sticker';
+    if (m.type == MessageType.audio) return '🎤 Voice message';
     final text = (m.textContent ?? '').trim();
     if (m.type == MessageType.image) {
       return text.isEmpty ? '📷 Photo' : '📷 $text';
@@ -486,11 +580,108 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
       );
     }
     return ReplyQuoteData(
-      author: original.senderId == myId ? 'You' : widget.contactName,
+      author: original.senderId == myId ? 'You' : _nameOf(original.senderId),
       snippet: _snippetOf(original),
       available: !original.isDeleted,
       onTap: () => _scrollToMessage(targetId),
     );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Backgrounded mid-recording: pause and keep it (hands-free), never lose
+    // it. The user resumes or sends when they come back.
+    if (state != AppLifecycleState.resumed) {
+      ref.read(voiceRecorderProvider.notifier).interrupt();
+    }
+  }
+
+  void _sendVoice(RecordedVoice voice) {
+    ref
+        .read(chatViewModelProvider.notifier)
+        .sendVoice(
+          roomId: _roomId,
+          recipientId: widget.recipientId,
+          groupId: widget.groupId,
+          path: voice.path,
+          durationMs: voice.durationMs,
+          waveform: voice.waveform,
+          replyToId: _replyingTo?.messageId,
+        );
+    if (_replyingTo != null) setState(() => _replyingTo = null);
+    _scheduleScrollToBottom();
+  }
+
+  void _toggleStickers() {
+    setState(() => _stickersOpen = !_stickersOpen);
+    if (_stickersOpen) {
+      _inputFocus.unfocus();
+    } else {
+      _inputFocus.requestFocus();
+    }
+  }
+
+  void _sendSticker(String stickerId) {
+    final me = _currentUserId;
+    if (me == null) return;
+    ref
+        .read(chatViewModelProvider.notifier)
+        .sendSticker(
+          roomId: _roomId,
+          recipientId: widget.recipientId,
+          groupId: widget.groupId,
+          stickerId: stickerId,
+          replyToId: _replyingTo?.messageId,
+        );
+    ref.read(recentStickersProvider.notifier).used(stickerId);
+    if (_replyingTo != null) setState(() => _replyingTo = null);
+    _scheduleScrollToBottom();
+  }
+
+  /// A GIF, sticker or image inserted from the keyboard (Gboard etc.). Sent
+  /// as an image attachment; GIFs and transparent stickers are kept as they
+  /// are so they still animate / stay see-through.
+  Future<void> _handleInserted(
+    KeyboardInsertedContent content,
+    String? attachDisabledReason,
+  ) async {
+    if (attachDisabledReason != null) {
+      _toast(attachDisabledReason);
+      return;
+    }
+    final bytes = content.data;
+    if (bytes == null || bytes.isEmpty) {
+      _toast("Couldn't add that from the keyboard.", error: true);
+      return;
+    }
+    if (_attaching) return;
+    setState(() => _attaching = true);
+    try {
+      final prepared = await prepareInsertedImage(
+        bytes,
+        content.mimeType,
+        quality: ref.read(settingsProvider).imageQuality,
+      );
+      if (prepared == null) {
+        _toast('That is too large to send.', error: true);
+        return;
+      }
+      if (!mounted) return;
+      await ref
+          .read(chatViewModelProvider.notifier)
+          .sendMessage(
+            roomId: _roomId,
+            recipientId: widget.recipientId,
+            imageBytes: prepared,
+            replyToId: _replyingTo?.messageId,
+          );
+      if (mounted) setState(() => _replyingTo = null);
+      _scheduleScrollToBottom();
+    } catch (error) {
+      _toast(humanError(error, fallback: "Couldn't send that."), error: true);
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
   }
 
   void _handleSend() {
@@ -509,8 +700,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     ref
         .read(chatViewModelProvider.notifier)
         .sendMessage(
-          roomId: ChatViewModel.buildRoomId(currentUser.id, widget.recipientId),
+          roomId: _roomId,
           recipientId: widget.recipientId,
+          groupId: widget.groupId,
           content: content,
           replyToId: _replyingTo?.messageId,
         );
@@ -547,7 +739,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     if (!_hasMoreHistory || !_scrollController.hasClients) return;
     final position = _scrollController.position;
     if (position.pixels >= position.maxScrollExtent - 400) {
-      _hasMoreHistory = false; // One request per page; the next arrival re-arms it.
+      _hasMoreHistory =
+          false; // One request per page; the next arrival re-arms it.
       ref.read(messageWindowProvider(_roomId).notifier).loadMore();
     }
   }
@@ -576,7 +769,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     final id = _pendingReveal;
     if (id == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _pendingReveal != id || !_scrollController.hasClients) return;
+      if (!mounted || _pendingReveal != id || !_scrollController.hasClients) {
+        return;
+      }
 
       final built = _itemKeys[id]?.currentContext;
       if (built != null && built.mounted) {
@@ -622,11 +817,17 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
 
     // The newest message changed: a message was sent or arrived. (Loading older
     // history changes the *oldest* end, and must not move the view.)
-    final newest = currentMessages.isEmpty ? null : _sortMessagesNewestFirst(currentMessages).first;
-    final previousNewest = (previousMessages == null || previousMessages.isEmpty)
+    final newest = currentMessages.isEmpty
+        ? null
+        : _sortMessagesNewestFirst(currentMessages).first;
+    final previousNewest =
+        (previousMessages == null || previousMessages.isEmpty)
         ? null
         : _sortMessagesNewestFirst(previousMessages).first;
-    final isNew = newest != null && previousNewest != null && newest.messageId != previousNewest.messageId;
+    final isNew =
+        newest != null &&
+        previousNewest != null &&
+        newest.messageId != previousNewest.messageId;
     if (isNew && (newest.senderId == _currentUserId || _nearBottom)) {
       _scheduleScrollToBottom();
     }
@@ -634,7 +835,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     // We're looking at this conversation, so anything incoming is read.
     final myId = _currentUserId;
     final hasUnread = currentMessages.any(
-      (m) => m.recipientId == myId && m.status != MessageStatus.read,
+      (m) =>
+          (widget.groupId != null
+              ? m.senderId != myId
+              : m.recipientId == myId) &&
+          m.status != MessageStatus.read,
     );
     if (hasUnread) _markRead();
   }
@@ -644,7 +849,10 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     final currentUser = ref.watch(currentUserProvider);
     final currentUserId = currentUser?.id;
 
-    final roomId = currentUserId != null
+    final gid = widget.groupId;
+    final roomId = gid != null
+        ? groupRoomId(gid)
+        : currentUserId != null
         ? ChatViewModel.buildRoomId(currentUserId, widget.recipientId)
         : widget.recipientId;
 
@@ -663,210 +871,312 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage> {
     // server refuses them regardless.
     final friendsView = ref.watch(friendsViewProvider);
     final isFriend = ref.watch(friendIdsProvider).contains(widget.recipientId);
-    final attachDisabledReason = isFriend
+    // Groups: names for message labels, rules on first open, and whether
+    // you are still a member.
+    GroupSummary? group;
+    var removedFromGroup = false;
+    if (gid != null) {
+      ref.watch(groupMemberNamesProvider(gid));
+      group = ref.watch(myGroupProvider(gid));
+      final groupsLoaded = ref.watch(myGroupsProvider).hasValue;
+      removedFromGroup = groupsLoaded && group == null;
+      if (group != null) _maybeShowRules(group);
+    }
+
+    final attachDisabledReason = gid != null
+        ? "Photos and GIFs can't be shared in groups yet. Stickers and voice "
+              'messages work.'
+        : isFriend
         ? null
         : !friendsView.hasData && friendsView.isRefreshing
         ? 'Checking whether you are friends…'
         : 'Attachments are only available between friends. '
               'Add ${widget.contactName} as a friend to share images.';
 
-    return Scaffold(
-      backgroundColor: AppColors.paper,
+    return PopScope(
+      canPop: !_stickersOpen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _stickersOpen) setState(() => _stickersOpen = false);
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.paper,
 
-      appBar: AppTopBar(
-        onBack: widget.onBack ?? () => Navigator.of(context).pop(),
-        titleFontSize: 15,
-        // Tapping the photo or name opens that person's profile.
-        titleWidget: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _openProfile,
-          child: Row(
-            children: [
-              AvatarThumb(
-                size: 30,
-                isGroup: widget.isGroup,
-                imageProvider:
-                    (widget.profilePic != null && widget.profilePic!.isNotEmpty)
-                    ? CachedNetworkImageProvider(widget.profilePic!)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  widget.username ?? widget.contactName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.body.copyWith(
-                    color: AppColors.text,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+        appBar: AppTopBar(
+          onBack: widget.onBack ?? () => Navigator.of(context).pop(),
+          titleFontSize: 15,
+          trailing: ChatMenuButton(roomId: roomId),
+          // Tapping the photo opens it full screen; the name opens the profile.
+          titleWidget: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _openProfile,
+            child: Row(
+              children: [
+                TappableAvatar(
+                  size: 30,
+                  isGroup: widget.isGroup,
+                  heroTag: 'thread:${widget.recipientId}',
+                  name: widget.contactName,
+                  image:
+                      (widget.profilePic != null &&
+                          widget.profilePic!.isNotEmpty)
+                      ? CachedNetworkImageProvider(widget.profilePic!)
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    gid != null
+                        ? '${group?.name ?? widget.contactName}'
+                              '${group != null ? ' · ${group.memberCount} members' : ''}'
+                        : widget.username ?? widget.contactName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.text,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
 
-      // The wallpaper sits behind everything; bubbles and the input bar are
-      // opaque, so it only shows in the gaps.
-      body: Stack(
-        children: [
-          const Positioned.fill(child: ChatBackground()),
-          Column(
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 10),
-                child: _StatusLine(),
+        // The wallpaper sits behind everything; bubbles and the input bar are
+        // opaque, so it only shows in the gaps.
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: ChatWallpaperView(
+                wallpaper: ref.watch(roomWallpaperProvider(roomId)),
               ),
-
-              Expanded(
-                child: messagesAsync.when(
-                  skipLoadingOnReload: true,
-                  loading: () {
-                    return Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.primary,
-                      ),
-                    );
-                  },
-
-                  error: (error, stack) {
-                    return Center(
-                      child: Text(
-                        humanError(
-                          error,
-                          fallback: "Couldn't load this conversation.",
-                        ),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.rustPale),
-                      ),
-                    );
-                  },
-
-                  data: (messages) {
-                    if (messages.isEmpty) {
-                      return const _EmptyChat();
-                    }
-
-                    final orderedMessages = _sortMessagesNewestFirst(messages);
-                    _orderedIds = [for (final m in orderedMessages) m.messageId];
-                    final byId = {
-                      for (final m in orderedMessages) m.messageId: m,
-                    };
-
-                    // Replies whose original is older than the window.
-                    final missing = <String>{
-                      for (final m in orderedMessages)
-                        if (m.replyToId != null && !byId.containsKey(m.replyToId))
-                          m.replyToId!,
-                    };
-                    if (missing.isNotEmpty) {
-                      final ids = (missing.toList()..sort()).join(',');
-                      byId.addAll(
-                        ref.watch(quotedMessagesProvider(ids)).value ??
-                            const {},
-                      );
-                    }
-
-                    return ListView.separated(
-                      controller: _scrollController,
-                      reverse: true,
-
-                      padding: const EdgeInsets.all(14),
-
-                      itemCount: orderedMessages.length,
-
-                      separatorBuilder: (_, __) {
-                        return const SizedBox(height: 10);
-                      },
-
-                      itemBuilder: (context, index) {
-                        final message = orderedMessages[index];
-
-                        final isOutgoing =
-                            currentUserId != null &&
-                            message.senderId == currentUserId;
-
-                        final time = _formatMessageTime(
-                          context,
-                          message.timestamp,
-                        );
-
-                        final senderLabel =
-                            (isOutgoing
-                                ? 'You · $time'
-                                : '${widget.contactName} · $time') +
-                            (message.editedAt != null && !message.isDeleted
-                                ? ' · edited'
-                                : '');
-                        final who = isOutgoing ? 'you' : widget.contactName;
-
-                        final bubble = ChatBubble(
-                          who: senderLabel,
-                          quote: _quoteFor(message, byId, currentUserId),
-                          message: message.textContent ?? '',
-                          imagePath: message.type == MessageType.image
-                              ? message.localMediaPath
-                              : null,
-                          side: isOutgoing
-                              ? ChatBubbleSide.outgoing
-                              : ChatBubbleSide.incoming,
-                          status: isOutgoing
-                              ? _mapStatus(message.status)
-                              : null,
-                          deleted: message.isDeleted,
-                          onLongPress: () => _showMessageActions(
-                            message,
-                            isOutgoing: isOutgoing,
-                            senderLabel: who,
-                          ),
-                          onSaveImage: () => _saveImage(message, who),
-                          onDeleteImage: () => _deleteFlow(
-                            message,
-                            isOutgoing: isOutgoing,
-                            isConfirmed:
-                                message.status != MessageStatus.sending &&
-                                message.status != MessageStatus.failed,
-                          ),
-                        );
-
-                        return KeyedSubtree(
-                          key: _itemKeys.putIfAbsent(
-                            message.messageId,
-                            GlobalKey.new,
-                          ),
-                          child: SwipeToReply(
-                            enabled: !message.isDeleted,
-                            onReply: () => _startReply(message),
-                            child: bubble,
-                          ),
-                        );
-                      },
-                    );
-                  },
+            ),
+            Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: _StatusLine(),
                 ),
-              ),
 
-              ChatInputBar(
-                controller: _messageController,
-                onSend: _handleSend,
-                onAttach: _handleAttach,
-                attachDisabledReason: attachDisabledReason,
-                attachBusy: _attaching,
-                replyPreview: _replyingTo == null
-                    ? null
-                    : (
-                        author: _replyingTo!.senderId == currentUserId
-                            ? 'yourself'
-                            : widget.contactName,
-                        snippet: _snippetOf(_replyingTo!),
-                        onCancel: () => setState(() => _replyingTo = null),
-                      ),
-              ),
-            ],
-          ),
-        ],
+                Expanded(
+                  child: messagesAsync.when(
+                    skipLoadingOnReload: true,
+                    loading: () {
+                      return Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primary,
+                        ),
+                      );
+                    },
+
+                    error: (error, stack) {
+                      return Center(
+                        child: Text(
+                          humanError(
+                            error,
+                            fallback: "Couldn't load this conversation.",
+                          ),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppColors.rustPale),
+                        ),
+                      );
+                    },
+
+                    data: (messages) {
+                      if (messages.isEmpty) {
+                        return const _EmptyChat();
+                      }
+
+                      final orderedMessages = _sortMessagesNewestFirst(
+                        messages,
+                      );
+                      _orderedIds = [
+                        for (final m in orderedMessages) m.messageId,
+                      ];
+                      final byId = {
+                        for (final m in orderedMessages) m.messageId: m,
+                      };
+
+                      // Replies whose original is older than the window.
+                      final missing = <String>{
+                        for (final m in orderedMessages)
+                          if (m.replyToId != null &&
+                              !byId.containsKey(m.replyToId))
+                            m.replyToId!,
+                      };
+                      if (missing.isNotEmpty) {
+                        final ids = (missing.toList()..sort()).join(',');
+                        byId.addAll(
+                          ref.watch(quotedMessagesProvider(ids)).value ??
+                              const {},
+                        );
+                      }
+
+                      return ListView.separated(
+                        controller: _scrollController,
+                        reverse: true,
+
+                        padding: const EdgeInsets.all(14),
+
+                        itemCount: orderedMessages.length,
+
+                        separatorBuilder: (_, __) {
+                          return const SizedBox(height: 10);
+                        },
+
+                        itemBuilder: (context, index) {
+                          final message = orderedMessages[index];
+
+                          final isOutgoing =
+                              currentUserId != null &&
+                              message.senderId == currentUserId;
+
+                          final time = _formatMessageTime(
+                            context,
+                            message.timestamp,
+                          );
+
+                          final senderLabel =
+                              (isOutgoing
+                                  ? 'You · $time'
+                                  : '${_nameOf(message.senderId)} · $time') +
+                              (message.editedAt != null && !message.isDeleted
+                                  ? ' · edited'
+                                  : '');
+                          final who = isOutgoing
+                              ? 'you'
+                              : _nameOf(message.senderId);
+
+                          final Widget bubble =
+                              message.type == MessageType.sticker &&
+                                  !message.isDeleted
+                              ? StickerMessage(
+                                  stickerId: message.textContent ?? '',
+                                  label: senderLabel,
+                                  outgoing: isOutgoing,
+                                  status: isOutgoing
+                                      ? _mapStatus(message.status)
+                                      : null,
+                                  onLongPress: () => _showMessageActions(
+                                    message,
+                                    isOutgoing: isOutgoing,
+                                    senderLabel: who,
+                                  ),
+                                )
+                              : ChatBubble(
+                                  who: senderLabel,
+                                  quote: _quoteFor(
+                                    message,
+                                    byId,
+                                    currentUserId,
+                                  ),
+                                  message: message.textContent ?? '',
+                                  imagePath: message.type == MessageType.image
+                                      ? message.localMediaPath
+                                      : null,
+                                  side: isOutgoing
+                                      ? ChatBubbleSide.outgoing
+                                      : ChatBubbleSide.incoming,
+                                  status: isOutgoing
+                                      ? _mapStatus(message.status)
+                                      : null,
+                                  deleted: message.isDeleted,
+                                  footer:
+                                      message.type == MessageType.audio &&
+                                          !message.isDeleted
+                                      ? VoiceNoteView(
+                                          messageId: message.messageId,
+                                          outgoing: isOutgoing,
+                                          path: message.localMediaPath,
+                                          durationMs: message.durationMs ?? 0,
+                                          waveform:
+                                              message.waveform ?? const [],
+                                          failed:
+                                              message.status ==
+                                              MessageStatus.failed,
+                                          onRetry: () => ref
+                                              .read(
+                                                chatViewModelProvider.notifier,
+                                              )
+                                              .retryVoice(message.messageId),
+                                          onDownload: () => ref
+                                              .read(
+                                                chatViewModelProvider.notifier,
+                                              )
+                                              .downloadVoice(message.messageId),
+                                        )
+                                      : _linkPreviewFor(message, isOutgoing),
+                                  onLongPress: () => _showMessageActions(
+                                    message,
+                                    isOutgoing: isOutgoing,
+                                    senderLabel: who,
+                                  ),
+                                  onSaveImage: () => _saveImage(message, who),
+                                  onDeleteImage: () => _deleteFlow(
+                                    message,
+                                    isOutgoing: isOutgoing,
+                                    isConfirmed:
+                                        message.status !=
+                                            MessageStatus.sending &&
+                                        message.status != MessageStatus.failed,
+                                  ),
+                                );
+
+                          return KeyedSubtree(
+                            key: _itemKeys.putIfAbsent(
+                              message.messageId,
+                              GlobalKey.new,
+                            ),
+                            child: SwipeToReply(
+                              enabled: !message.isDeleted,
+                              onReply: () => _startReply(message),
+                              child: bubble,
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+
+                if (removedFromGroup)
+                  const _NotInGroup()
+                else
+                  ChatInputBar(
+                    controller: _messageController,
+                    focusNode: _inputFocus,
+                    onSend: _handleSend,
+                    onAttach: _handleAttach,
+                    attachDisabledReason: attachDisabledReason,
+                    attachBusy: _attaching,
+                    onStickers: _toggleStickers,
+                    stickersOpen: _stickersOpen,
+                    recordingStrip:
+                        ref.watch(voiceRecorderProvider.select((r) => r.active))
+                        ? const RecordingStrip()
+                        : null,
+                    trailing: MicButton(
+                      onRecorded: _sendVoice,
+                      onTell: (m) => _toast(m),
+                    ),
+                    onContentInserted: (content) =>
+                        _handleInserted(content, attachDisabledReason),
+                    replyPreview: _replyingTo == null
+                        ? null
+                        : (
+                            author: _replyingTo!.senderId == currentUserId
+                                ? 'yourself'
+                                : _nameOf(_replyingTo!.senderId),
+                            snippet: _snippetOf(_replyingTo!),
+                            onCancel: () => setState(() => _replyingTo = null),
+                          ),
+                  ),
+                if (_stickersOpen) StickerPicker(onPick: _sendSticker),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -878,9 +1188,13 @@ class _EmptyChat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text(
-        'No messages yet. Say hi!',
-        style: TextStyle(color: AppColors.textDim),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        color: AppColors.paper.withValues(alpha: 0.85),
+        child: Text(
+          'No messages yet. Say hi!',
+          style: TextStyle(color: AppColors.textDim),
+        ),
       ),
     );
   }
@@ -894,9 +1208,11 @@ class _StatusLine extends ConsumerWidget {
     final isConnected = ref.watch(chatViewModelProvider).isConnected;
 
     return Container(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       margin: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
+        // Translucent so the status stays readable on any background.
+        color: AppColors.paper.withValues(alpha: 0.7),
         border: Border(bottom: BorderSide(color: AppColors.lineSoft, width: 1)),
       ),
       child: Text(
@@ -906,6 +1222,68 @@ class _StatusLine extends ConsumerWidget {
           fontFamily: 'JetBrains Mono',
           fontSize: 9,
           color: isConnected ? AppColors.textDim : Colors.red.shade300,
+        ),
+      ),
+    );
+  }
+}
+
+/// The ⋮ menu in a chat's header.
+class ChatMenuButton extends StatelessWidget {
+  const ChatMenuButton({super.key, required this.roomId});
+
+  final String roomId;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'Chat options',
+      color: AppColors.paperAlt,
+      shape: Border.all(color: AppColors.line, width: 1.5),
+      icon: Icon(Icons.more_vert, size: 20, color: AppColors.text),
+      onSelected: (value) {
+        if (value == 'background') {
+          openChatBackgroundPage(context, roomId: roomId);
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'background',
+          child: Row(
+            children: [
+              Icon(Icons.wallpaper_outlined, size: 18, color: AppColors.text),
+              const SizedBox(width: 10),
+              Text(
+                'Chat background',
+                style: AppTextStyles.body.copyWith(color: AppColors.text),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Replaces the composer in a group you are no longer in.
+class _NotInGroup extends StatelessWidget {
+  const _NotInGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+      decoration: BoxDecoration(
+        color: AppColors.paperRaised,
+        border: Border(top: BorderSide(color: AppColors.line, width: 2)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Text(
+          "You're no longer a member of this group.",
+          textAlign: TextAlign.center,
+          style: AppTextStyles.smallDim,
         ),
       ),
     );

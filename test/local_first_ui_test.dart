@@ -16,6 +16,7 @@ import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
+import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const me = 'me';
@@ -331,13 +332,16 @@ void main() {
       expect(find.text('Sam Ndlovu'), findsOneWidget);
     });
 
-    testWidgets('tapping their photo does the same', (tester) async {
+    testWidgets('tapping their photo opens it full screen instead', (
+      tester,
+    ) async {
       await pump(tester, thread(), savedFriends: [sam]);
-      // The avatar sits just left of the name inside the same tappable header.
+      // The avatar sits just left of the name.
       final name = tester.getTopLeft(find.text('sam_n'));
       await tester.tapAt(Offset(name.dx - 22, name.dy + 8));
       await tester.pumpAndSettle();
-      expect(find.byType(UserProfilePage), findsOneWidget);
+      expect(find.byType(ProfilePhotoViewer), findsOneWidget);
+      expect(find.byType(UserProfilePage), findsNothing);
     });
 
     testWidgets(

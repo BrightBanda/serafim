@@ -15,7 +15,36 @@ class ChatInputBar extends StatelessWidget {
     this.attachDisabledReason,
     this.attachBusy = false,
     this.replyPreview,
+    this.onStickers,
+    this.stickersOpen = false,
+    this.onContentInserted,
+    this.focusNode,
+    this.trailing,
+    this.recordingStrip,
   });
+
+  /// Shown instead of the text field while a voice note is being recorded.
+  final Widget? recordingStrip;
+
+  /// Shows a sticker button that opens/closes the sticker panel.
+  final VoidCallback? onStickers;
+  final bool stickersOpen;
+
+  /// GIFs, stickers and images inserted from the keyboard (e.g. Gboard).
+  final ValueChanged<KeyboardInsertedContent>? onContentInserted;
+
+  final FocusNode? focusNode;
+
+  /// Shown instead of Send while the field is empty (the mic button).
+  final Widget? trailing;
+
+  /// What the keyboard may insert.
+  static const insertableMimeTypes = [
+    'image/gif',
+    'image/png',
+    'image/webp',
+    'image/jpeg',
+  ];
 
   /// Shown above the field while composing a reply.
   final ({String author, String snippet, VoidCallback onCancel})? replyPreview;
@@ -53,6 +82,8 @@ class ChatInputBar extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            // Kept while recording: removing it would shift the row and
+            // rebuild the mic button, ending the hold gesture.
             if (onAttach != null) ...[
               GestureDetector(
                 onTap: attachBusy
@@ -93,61 +124,100 @@ class ChatInputBar extends StatelessWidget {
               ),
               const SizedBox(width: 8),
             ],
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.paperAlt,
-                  border: Border.all(color: AppColors.lineSoft, width: 1.5),
-                ),
-                child: TextField(
-                  controller: controller,
-                  minLines: 1,
-                  maxLines: 3,
-                  keyboardType: TextInputType.multiline,
-                  style: AppTextStyles.fieldInput.copyWith(fontSize: 11),
-                  cursorColor: AppColors.primary,
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                    hintText: hintText,
-                    hintStyle: AppTextStyles.fieldInput.copyWith(
-                      color: AppColors.textDim,
-                      fontSize: 11,
+            if (recordingStrip != null)
+              Expanded(child: recordingStrip!)
+            else
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.paperAlt,
+                    border: Border.all(color: AppColors.lineSoft, width: 1.5),
+                  ),
+                  child: TextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    contentInsertionConfiguration: onContentInserted == null
+                        ? null
+                        : ContentInsertionConfiguration(
+                            allowedMimeTypes: insertableMimeTypes,
+                            onContentInserted: onContentInserted!,
+                          ),
+                    minLines: 1,
+                    maxLines: 3,
+                    keyboardType: TextInputType.multiline,
+                    style: AppTextStyles.fieldInput.copyWith(fontSize: 11),
+                    cursorColor: AppColors.primary,
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                      suffixIconConstraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 20,
+                      ),
+                      suffixIcon: onStickers == null
+                          ? null
+                          : Semantics(
+                              button: true,
+                              label: stickersOpen
+                                  ? 'Show keyboard'
+                                  : 'Stickers',
+                              child: GestureDetector(
+                                onTap: onStickers,
+                                child: Icon(
+                                  stickersOpen
+                                      ? Icons.keyboard_alt_outlined
+                                      : Icons.emoji_emotions_outlined,
+                                  size: 18,
+                                  color: stickersOpen
+                                      ? AppColors.primaryPale
+                                      : AppColors.textDim,
+                                ),
+                              ),
+                            ),
+                      hintText: hintText,
+                      hintStyle: AppTextStyles.fieldInput.copyWith(
+                        color: AppColors.textDim,
+                        fontSize: 11,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
             const SizedBox(width: 8),
-            GestureDetector(
-              onTap: onSend,
-              child: Container(
-                height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.primary, AppColors.primaryDeep],
-                  ),
-                  border: Border.all(color: AppColors.line, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.line,
-                      offset: Offset(2, 2),
-                      blurRadius: 0,
+            _SendOrIdle(
+              controller: controller,
+              idle: trailing,
+              recording: recordingStrip != null,
+              send: GestureDetector(
+                onTap: onSend,
+                child: Container(
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [AppColors.primary, AppColors.primaryDeep],
                     ),
-                  ],
-                ),
-                child: Text(
-                  'Send',
-                  style: AppTextStyles.buttonLabel.copyWith(fontSize: 10),
+                    border: Border.all(color: AppColors.line, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.line,
+                        offset: Offset(2, 2),
+                        blurRadius: 0,
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    'Send',
+                    style: AppTextStyles.buttonLabel.copyWith(fontSize: 10),
+                  ),
                 ),
               ),
             ),
@@ -202,6 +272,34 @@ class ChatInputBar extends StatelessWidget {
         ),
         bar,
       ],
+    );
+  }
+}
+
+/// Send when there is something typed; otherwise [idle] (the mic). While
+/// recording it is always [idle], which then acts as the send button.
+class _SendOrIdle extends StatelessWidget {
+  const _SendOrIdle({
+    required this.controller,
+    required this.idle,
+    required this.recording,
+    required this.send,
+  });
+
+  final TextEditingController? controller;
+  final Widget? idle;
+  final bool recording;
+  final Widget send;
+
+  @override
+  Widget build(BuildContext context) {
+    final idle = this.idle;
+    final controller = this.controller;
+    if (idle == null || controller == null) return send;
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (_, value, __) =>
+          recording || value.text.trim().isEmpty ? idle : send,
     );
   }
 }

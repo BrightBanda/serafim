@@ -2,7 +2,9 @@ import 'package:isar_community/isar.dart';
 
 part 'local_chat_message.g.dart';
 
-enum MessageType { text, image, video, audio }
+/// New values go at the END: the index is what is stored on the device.
+/// `audio` is a voice note; `sticker` keeps its sticker id in [textContent].
+enum MessageType { text, image, video, audio, sticker }
 
 enum MessageStatus { sending, sent, delivered, read, failed }
 
@@ -18,7 +20,12 @@ class LocalMessage {
 
   late String senderId;
 
+  /// The other person in a 1:1 chat, or the group id in a group chat.
   late String recipientId;
+
+  /// Set for group messages (the room id is then `group_<id>`).
+  @Index()
+  String? groupId;
 
   String? textContent;
 
@@ -33,6 +40,15 @@ class LocalMessage {
 
   /// Set when the sender edited the text after sending.
   DateTime? editedAt;
+
+  /// Voice notes: the server's media id, once uploaded.
+  String? mediaRemoteId;
+
+  /// Voice notes: length in milliseconds.
+  int? durationMs;
+
+  /// Voice notes: a coarse loudness outline (0–31 per bar) for the waveform.
+  List<int>? waveform;
 
   /// The message this one answers (its server id), if any.
   String? replyToId;

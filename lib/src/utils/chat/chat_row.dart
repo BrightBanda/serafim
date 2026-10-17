@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -17,6 +18,7 @@ class ChatRow extends StatelessWidget {
     this.onTap,
     this.leading,
     this.nameBadge,
+    this.avatarHeroTag,
   });
 
   final String name;
@@ -32,6 +34,9 @@ class ChatRow extends StatelessWidget {
 
   /// Shown right after the name (e.g. the official badge).
   final Widget? nameBadge;
+
+  /// When set, tapping the avatar opens the photo full screen.
+  final String? avatarHeroTag;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +58,17 @@ class ChatRow extends StatelessWidget {
         child: Row(
           children: [
             leading ??
-                AvatarThumb(isGroup: isGroup, imageProvider: imageProvider),
+                (avatarHeroTag == null
+                    ? AvatarThumb(
+                        isGroup: isGroup,
+                        imageProvider: imageProvider,
+                      )
+                    : TappableAvatar(
+                        image: imageProvider,
+                        heroTag: avatarHeroTag!,
+                        name: name,
+                        isGroup: isGroup,
+                      )),
             const SizedBox(width: 10),
             Expanded(
               child: Column(

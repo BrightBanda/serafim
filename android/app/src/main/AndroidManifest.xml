@@ -7,6 +7,8 @@
         android:maxSdkVersion="28" />
     <!-- Push notifications (a runtime permission on Android 13+). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Voice messages. Asked for the first time someone holds the mic. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application
         android:label="serafim"
         android:name="${applicationName}"
@@ -58,6 +60,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Opening links from messages in the browser (url_launcher). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
         </intent>
     </queries>
 </manifest>

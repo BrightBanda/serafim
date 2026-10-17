@@ -14,7 +14,15 @@ class AvatarPicker extends StatelessWidget {
     this.imageProvider,
     this.busy = false,
     this.busyLabel = 'Please wait…',
+    this.onPhotoTap,
+    this.heroTag,
   });
+
+  /// Tapping the photo itself (not the camera badge), e.g. to view it.
+  final VoidCallback? onPhotoTap;
+
+  /// Hero tag for a flight into a full-screen view.
+  final String? heroTag;
 
   final VoidCallback? onEditTap;
   final VoidCallback? onUploadTap;
@@ -40,36 +48,41 @@ class AvatarPicker extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.primary, width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.line,
-                      offset: Offset(3, 3),
-                      blurRadius: 0,
+              GestureDetector(
+                onTap: busy ? null : onPhotoTap,
+                child: _hero(
+                  Container(
+                    width: size,
+                    height: size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.primary, width: 3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.line,
+                          offset: Offset(3, 3),
+                          blurRadius: 0,
+                        ),
+                      ],
+                      image: imageProvider != null
+                          ? DecorationImage(
+                              image: imageProvider!,
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                      gradient: imageProvider == null
+                          ? SweepGradient(
+                              colors: [
+                                AppColors.rust,
+                                AppColors.paperAlt,
+                                AppColors.teal,
+                                AppColors.primaryDeep,
+                                AppColors.primary,
+                              ],
+                            )
+                          : null,
                     ),
-                  ],
-                  image: imageProvider != null
-                      ? DecorationImage(
-                          image: imageProvider!,
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                  gradient: imageProvider == null
-                      ? SweepGradient(
-                          colors: [
-                            AppColors.rust,
-                            AppColors.paperAlt,
-                            AppColors.teal,
-                            AppColors.primaryDeep,
-                            AppColors.primary,
-                          ],
-                        )
-                      : null,
+                  ),
                 ),
               ),
               if (busy)
@@ -130,4 +143,7 @@ class AvatarPicker extends StatelessWidget {
       ],
     );
   }
+
+  Widget _hero(Widget child) =>
+      heroTag == null ? child : Hero(tag: heroTag!, child: child);
 }

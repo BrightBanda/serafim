@@ -3,12 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/announcement.dart';
 import 'package:serafim/src/providers/official_providers.dart';
+import 'package:serafim/src/presentation/view/chat_thread_page.dart'
+    show ChatMenuButton;
 import 'package:serafim/src/providers/settings_providers.dart';
+import 'package:serafim/src/providers/wallpaper_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/chat/chat_background.dart';
 import 'package:serafim/src/utils/chat/chat_bubble.dart';
 import 'package:serafim/src/utils/chat/chat_input_bar.dart';
 import 'package:serafim/src/utils/chat/chat_time.dart';
+import 'package:serafim/src/utils/chat/link_preview_card.dart';
+import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/utils/official_badge.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -174,6 +179,10 @@ class _OfficialChatPageState extends ConsumerState<OfficialChatPage> {
             who: 'SERAFIM · ${formatChatListTime(context, a.createdAt)}',
             message: a.content,
             side: ChatBubbleSide.incoming,
+            footer: switch (firstLink(a.content)) {
+              final uri? => LinkPreviewCard(uri: uri, outgoing: false),
+              null => null,
+            },
             onLongPress: chat.canPost ? () => _confirmDelete(a) : null,
           );
         },
@@ -204,10 +213,15 @@ class _OfficialChatPageState extends ConsumerState<OfficialChatPage> {
             const OfficialBadge(),
           ],
         ),
+        trailing: const ChatMenuButton(roomId: officialRoomId),
       ),
       body: Stack(
         children: [
-          const Positioned.fill(child: ChatBackground()),
+          Positioned.fill(
+            child: ChatWallpaperView(
+              wallpaper: ref.watch(roomWallpaperProvider(officialRoomId)),
+            ),
+          ),
           Column(
             children: [
               const _InfoStrip(),

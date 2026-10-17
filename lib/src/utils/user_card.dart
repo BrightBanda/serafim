@@ -1,13 +1,13 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/presentation/view/chat_thread_page.dart';
 import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/relation_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
-import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/small_action_button.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -69,9 +69,11 @@ class UserCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                AvatarThumb(
+                TappableAvatar(
                   size: 44,
-                  imageProvider: avatarImage(user.profilePic),
+                  heroTag: 'card:${user.id}',
+                  name: user.displayName,
+                  image: avatarImage(user.profilePic),
                 ),
                 const SizedBox(width: 10),
                 Expanded(

@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -69,7 +70,10 @@ class ProfilePage extends ConsumerWidget {
                 ),
                 child: Column(
                   children: [
-                    _ProfileAvatar(imageProvider: avatar),
+                    _ProfileAvatar(
+                      imageProvider: avatar,
+                      name: profileAsync.value?.displayName ?? 'You',
+                    ),
                     const SizedBox(height: 14),
                     // Display Name
                     Text(
@@ -335,9 +339,11 @@ class _FriendRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            AvatarThumb(
+            TappableAvatar(
               size: 36,
-              imageProvider: avatarImage(friend.profilePic),
+              heroTag: 'friends:${friend.id}',
+              name: friend.displayName,
+              image: avatarImage(friend.profilePic),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -445,9 +451,10 @@ class _FollowCounts extends ConsumerWidget {
 /// The profile picture with its change-photo controls. Shows a spinner from the
 /// moment a photo is chosen until it has been shrunk and uploaded.
 class _ProfileAvatar extends ConsumerStatefulWidget {
-  const _ProfileAvatar({required this.imageProvider});
+  const _ProfileAvatar({required this.imageProvider, required this.name});
 
   final ImageProvider? imageProvider;
+  final String name;
 
   @override
   ConsumerState<_ProfileAvatar> createState() => _ProfileAvatarState();
@@ -497,6 +504,13 @@ class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
       busyLabel: 'Uploading…',
       onEditTap: _change,
       onUploadTap: _change,
+      heroTag: 'me',
+      onPhotoTap: () => openProfilePhoto(
+        context,
+        image: widget.imageProvider,
+        heroTag: 'me',
+        name: widget.name,
+      ),
     );
   }
 }

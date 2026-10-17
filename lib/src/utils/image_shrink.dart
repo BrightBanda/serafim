@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:image/image.dart' as img;
+import 'package:serafim/src/data/models/app_settings.dart';
 
 /// Downscales and re-encodes [bytes] as JPEG so images stay small enough to
 /// relay over the socket and keep in the local database.
@@ -34,7 +35,35 @@ Uint8List _shrink(({Uint8List bytes, int maxSide, int quality}) args) {
         )
       : oriented;
 
-  final encoded = Uint8List.fromList(img.encodeJpg(resized, quality: args.quality));
+  final encoded = Uint8List.fromList(
+    img.encodeJpg(resized, quality: args.quality),
+  );
   // Never return something bigger than what we were given.
   return encoded.length < args.bytes.length ? encoded : args.bytes;
+}
+
+/// Largest keyboard GIF/sticker sent as-is (base64 must stay under the
+/// server's ~3 MB relay limit).
+const maxRawInsertBytes = 2 * 1024 * 1024;
+
+/// Readies an image inserted from the keyboard for sending. GIFs, WebP and
+/// PNG (animated or transparent stickers) go as they are when small enough;
+/// JPEGs, and too-large PNGs, are shrunk. Returns null when it can't be sent.
+Future<Uint8List?> prepareInsertedImage(
+  Uint8List bytes,
+  String mimeType, {
+  required ImageQuality quality,
+}) async {
+  final keepAsIs =
+      mimeType == 'image/gif' ||
+      mimeType == 'image/webp' ||
+      mimeType == 'image/png';
+  if (keepAsIs && bytes.length <= maxRawInsertBytes) return bytes;
+  if (mimeType == 'image/gif' || mimeType == 'image/webp') return null;
+  final shrunk = await shrinkImage(
+    bytes,
+    maxSide: quality.maxSide,
+    quality: quality.jpegQuality,
+  );
+  return shrunk.length <= maxRawInsertBytes ? shrunk : null;
 }

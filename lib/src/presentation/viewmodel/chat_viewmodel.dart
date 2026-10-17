@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 // lib/src/presentation/viewmodel/chat_viewmodel.dart
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -16,6 +17,12 @@ import 'package:serafim/src/presentation/view/notifications_page.dart';
 import 'package:serafim/src/presentation/view/official_chat_page.dart';
 import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/providers/official_providers.dart';
+import 'package:serafim/src/providers/voice_providers.dart';
+import 'package:serafim/src/providers/group_providers.dart';
+import 'package:serafim/src/data/models/group.dart';
+import 'package:serafim/src/data/domain/local_chat_room.dart';
+import 'package:serafim/src/data/local/isar_service.dart' show previewTextOf;
+import 'package:serafim/src/utils/group_nav.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/websocket_providers.dart';
@@ -234,6 +241,23 @@ class ChatViewModel extends Notifier<ChatState> {
       final type = data['type'];
 
       switch (type) {
+        case 'message' when data['group_id'] != null:
+          await _persistGroupMessage(data, live: true);
+          break;
+
+        case 'group_update':
+          final gid = data['group_id'] as String?;
+          if (gid != null) ref.invalidate(groupDetailProvider(gid));
+          await ref.read(myGroupsProvider.notifier).reload();
+          break;
+
+        case 'group_removed':
+          // Removed from a group: it, its messages and its media go from
+          // this device too.
+          final gid = data['group_id'] as String?;
+          if (gid != null) await GroupActions.forget(ref, gid);
+          break;
+
         case 'message':
           final recipientId = data['recipient_id']?.toString();
           if (currentUser == null || recipientId != currentUser.id) {
@@ -272,6 +296,8 @@ class ChatViewModel extends Notifier<ChatState> {
                 .save(messageId, base64Decode(attachment));
           }
 
+          final isSticker = data['kind'] == 'sticker';
+          final isVoice = data['kind'] == 'voice';
           final msg = LocalMessage()
             ..messageId = messageId
             ..roomId = roomId
@@ -281,7 +307,21 @@ class ChatViewModel extends Notifier<ChatState> {
             ..textContent = data['content'] as String?
             ..localMediaPath = mediaPath
             ..replyToId = data['reply_to'] as String?
-            ..type = mediaPath != null ? MessageType.image : MessageType.text
+            ..type = isSticker
+                ? MessageType.sticker
+                : isVoice
+                ? MessageType.audio
+                : mediaPath != null
+                ? MessageType.image
+                : MessageType.text
+            ..mediaRemoteId = isVoice ? data['media_id'] as String? : null
+            ..durationMs = isVoice ? data['duration_ms'] as int? : null
+            ..waveform = isVoice
+                ? [
+                    for (final v in (data['waveform'] as List? ?? const []))
+                      v as int,
+                  ]
+                : null
             ..editedAt = data['edited_at'] != null
                 ? _parseServerTimestamp(data['edited_at'] as String?)
                 : null
@@ -301,9 +341,17 @@ class ChatViewModel extends Notifier<ChatState> {
             messageId: messageId,
             roomId: roomId,
             senderId: senderId,
-            text: msg.textContent,
+            text: isSticker
+                ? '🙂 Sticker'
+                : isVoice
+                ? '🎤 Voice message'
+                : msg.textContent,
             isImage: mediaPath != null,
           );
+          // Fetch the audio now, so it plays instantly (and offline) later.
+          if (isVoice && msg.mediaRemoteId != null) {
+            unawaited(downloadVoice(messageId));
+          }
           break;
 
         case 'message_ack':
@@ -427,6 +475,8 @@ class ChatViewModel extends Notifier<ChatState> {
             // Anything that happened while we were offline.
             await _flushReadAcks();
             await _syncMessageStates();
+            // Group messages are not queued per person: catch up from history.
+            unawaited(_syncGroups());
           }
           break;
       }
@@ -435,6 +485,147 @@ class ChatViewModel extends Notifier<ChatState> {
         'Error persisting incoming event payload $data: $error\n$stackTrace',
       );
     }
+  }
+
+  /// Stores one group message (live from the socket, or from history),
+  /// applying edits/deletions to ones already here.
+  Future<void> _persistGroupMessage(
+    Map<String, dynamic> data, {
+    required bool live,
+  }) async {
+    final me = ref.read(currentUserProvider)?.id;
+    final gid = data['group_id']?.toString();
+    final messageId = data['message_id']?.toString();
+    if (me == null || gid == null || messageId == null) return;
+    final isar = ref.read(isarServiceProvider);
+
+    final existing = await isar.getMessageById(messageId);
+    if (existing != null) {
+      if (data['deleted'] == true) {
+        await isar.applyDelete(messageId);
+      } else if (data['edited_at'] != null && data['content'] is String) {
+        await isar.applyEdit(
+          messageId,
+          data['content'] as String,
+          _parseServerTimestamp(data['edited_at'] as String?),
+        );
+      }
+      return;
+    }
+
+    final senderId = data['sender_id'].toString();
+    final kind = data['kind'] as String? ?? 'text';
+    final deleted = data['deleted'] == true;
+    final msg = LocalMessage()
+      ..messageId = messageId
+      ..roomId = groupRoomId(gid)
+      ..groupId = gid
+      ..senderId = senderId
+      ..recipientId = gid
+      ..textContent = deleted ? null : data['content'] as String?
+      ..replyToId = data['reply_to'] as String?
+      ..type = switch (kind) {
+        'sticker' when !deleted => MessageType.sticker,
+        'voice' when !deleted => MessageType.audio,
+        _ => MessageType.text,
+      }
+      ..mediaRemoteId = kind == 'voice' ? data['media_id'] as String? : null
+      ..durationMs = data['duration_ms'] as int?
+      ..waveform = [
+        for (final v in (data['waveform'] as List? ?? const [])) v as int,
+      ]
+      ..isDeleted = deleted
+      ..editedAt = data['edited_at'] != null
+          ? _parseServerTimestamp(data['edited_at'] as String?)
+          : null
+      ..status = MessageStatus.sent
+      ..timestamp = _parseServerTimestamp(data['timestamp'] as String?);
+    await isar.saveMessage(msg);
+
+    if (msg.type == MessageType.audio && msg.mediaRemoteId != null) {
+      unawaited(downloadVoice(messageId));
+    }
+    if (live && senderId != me) {
+      _alertGroupMessage(
+        messageId: messageId,
+        groupId: gid,
+        senderId: senderId,
+        text: previewTextOf(msg),
+      );
+    }
+  }
+
+  bool _syncingGroups = false;
+
+  /// After (re)connecting: refreshes the group list, forgets groups we were
+  /// removed from while away, and fetches messages we missed in the rest.
+  Future<void> _syncGroups() async {
+    if (_syncingGroups) return;
+    _syncingGroups = true;
+    try {
+      final service = ref.read(groupServiceProvider);
+      final isar = ref.read(isarServiceProvider);
+      final groups = await service.mine();
+      final ids = {for (final g in groups) g.id};
+      await ref.read(myGroupsProvider.notifier).reload();
+
+      final rooms =
+          ref.read(chatRoomsStreamProvider).value ?? const <LocalChatRoom>[];
+      for (final room in rooms) {
+        if (!isGroupRoom(room.roomId)) continue;
+        final gid = room.roomId.substring('group_'.length);
+        if (!ids.contains(gid)) await GroupActions.forget(ref, gid);
+      }
+
+      for (final g in groups) {
+        final after = await isar.latestTimestamp(g.roomId);
+        final missed = await service.messagesSince(g.id, after: after);
+        for (final m in missed) {
+          await _persistGroupMessage(m, live: false);
+        }
+      }
+    } catch (error) {
+      _log('group sync failed: $error');
+    } finally {
+      _syncingGroups = false;
+    }
+  }
+
+  void _alertGroupMessage({
+    required String messageId,
+    required String groupId,
+    required String senderId,
+    required String? text,
+  }) {
+    final settings = ref.read(settingsProvider);
+    if (!settings.inAppAlerts) return;
+    if (ref.read(activeRoomProvider) == groupRoomId(groupId)) return;
+    final shown = ref.read(shownAlertIdsProvider);
+    if (!shown.add(messageId)) return;
+    if (shown.length > 100) shown.remove(shown.first);
+
+    final group = ref.read(myGroupProvider(groupId));
+    final sender =
+        ref.read(knownPersonProvider(senderId))?.displayName ?? 'Someone';
+    ref
+        .read(inAppBannerProvider)
+        .show(
+          label: 'GROUP MESSAGE',
+          icon: Icons.groups_rounded,
+          accent: AppColors.teal,
+          title: group?.name ?? 'Group',
+          body: '$sender: ${text ?? ''}',
+          avatar: group?.photoUrl != null && group!.photoUrl!.isNotEmpty
+              ? CachedNetworkImageProvider(group.photoUrl!)
+              : null,
+          onTap: () {
+            final navigator = ref.read(navigatorKeyProvider).currentState;
+            if (navigator != null && group != null) {
+              openGroupChatWithNavigator(navigator, group);
+            }
+          },
+        );
+    if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
   }
 
   /// Builds a deterministic, order-independent room id for a 1:1 conversation
@@ -455,6 +646,11 @@ class ChatViewModel extends Notifier<ChatState> {
     final pendingMessages = await isar.getPendingMessages();
 
     for (final msg in pendingMessages) {
+      if (msg.type == MessageType.audio) {
+        // A voice note may still need its upload (which is safe to repeat).
+        unawaited(_deliverVoice(msg.messageId));
+        continue;
+      }
       ref
           .read(webSocketServiceProvider)
           .sendMessage(await _outgoingPayload(msg));
@@ -462,6 +658,20 @@ class ChatViewModel extends Notifier<ChatState> {
   }
 
   Future<Map<String, dynamic>> _outgoingPayload(LocalMessage msg) async {
+    final target = msg.groupId != null
+        ? {"group_id": msg.groupId}
+        : {"recipient_id": msg.recipientId};
+    if (msg.type == MessageType.audio) {
+      return {
+        "type": "message",
+        "temp_id": msg.messageId,
+        ...target,
+        "kind": "voice",
+        "media_id": msg.mediaRemoteId,
+        "content": "",
+        if (msg.replyToId != null) "reply_to": msg.replyToId,
+      };
+    }
     String? attachment;
     final path = msg.localMediaPath;
     if (path != null) {
@@ -473,10 +683,12 @@ class ChatViewModel extends Notifier<ChatState> {
     return {
       "type": "message",
       "temp_id": msg.messageId,
-      "recipient_id": msg.recipientId,
+      ...target,
       "content": msg.textContent ?? '',
+      if (msg.type == MessageType.sticker) "kind": "sticker",
       if (attachment != null) "attachment": attachment,
-      if (attachment != null) "attachment_type": "image",
+      if (attachment != null)
+        "attachment_type": path!.endsWith('.gif') ? 'gif' : 'image',
       if (msg.replyToId != null) "reply_to": msg.replyToId,
       "timestamp": msg.timestamp.toIso8601String(),
     };
@@ -600,12 +812,155 @@ class ChatViewModel extends Notifier<ChatState> {
     return sent ? null : 'Could not reach the server.';
   }
 
+  // ---- voice notes ----
+
+  /// Voice notes being uploaded right now, so a retry or reconnect can never
+  /// start a second upload of the same one.
+  final Set<String> _voiceInFlight = {};
+
+  /// Sends a recording: saved locally first (so it shows at once, with upload
+  /// progress), uploaded, then announced over the socket.
+  Future<void> sendVoice({
+    required String roomId,
+    required String recipientId,
+    required String path,
+    required int durationMs,
+    required List<int> waveform,
+    String? replyToId,
+    String? groupId,
+  }) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+    final tempId = DateTime.now().microsecondsSinceEpoch.toString();
+    final stored = await ref
+        .read(chatMediaStoreProvider)
+        .adoptRecording(tempId, path);
+
+    final msg = LocalMessage()
+      ..messageId = tempId
+      ..roomId = roomId
+      ..senderId = user.id
+      ..recipientId = recipientId
+      ..groupId = groupId
+      ..textContent = ''
+      ..localMediaPath = stored
+      ..durationMs = durationMs
+      ..waveform = waveform
+      ..replyToId = replyToId
+      ..type = MessageType.audio
+      ..status = MessageStatus.sending
+      ..timestamp = DateTime.now().toUtc();
+    await ref.read(isarServiceProvider).saveMessage(msg);
+    await _deliverVoice(tempId);
+  }
+
+  /// Tap-to-retry on a voice note that failed to send.
+  Future<void> retryVoice(String messageId) async {
+    await ref
+        .read(isarServiceProvider)
+        .updateMessageStatus(messageId, MessageStatus.sending);
+    await _deliverVoice(messageId);
+  }
+
+  Future<void> _deliverVoice(String messageId) async {
+    if (!_voiceInFlight.add(messageId)) return;
+    final isar = ref.read(isarServiceProvider);
+    final progress = ref.read(voiceUploadProgressProvider.notifier);
+    try {
+      var msg = await isar.getMessageById(messageId);
+      if (msg == null || msg.type != MessageType.audio) return;
+      if (msg.status != MessageStatus.sending) return; // Already through.
+
+      if (msg.mediaRemoteId == null) {
+        final path = msg.localMediaPath;
+        if (path == null || !await File(path).exists()) {
+          await isar.updateMessageStatus(messageId, MessageStatus.failed);
+          return;
+        }
+        progress.set(messageId, 0);
+        final uploaded = await ref
+            .read(mediaServiceProvider)
+            .uploadVoice(
+              bytes: await File(path).readAsBytes(),
+              // The temp id: uploading again after a failure returns the
+              // first upload instead of a duplicate.
+              clientId: messageId,
+              durationMs: msg.durationMs ?? 0,
+              waveform: msg.waveform ?? const [],
+              recipientId: msg.groupId == null ? msg.recipientId : null,
+              groupId: msg.groupId,
+              onProgress: (p) => progress.set(messageId, p),
+            );
+        await isar.updateMedia(messageId, mediaRemoteId: uploaded.id);
+        msg = await isar.getMessageById(messageId);
+        if (msg == null) return;
+      }
+      // Offline: it stays "sending" and goes out on reconnect. The server
+      // ignores a repeat of the same temp id.
+      ref
+          .read(webSocketServiceProvider)
+          .sendMessage(await _outgoingPayload(msg));
+    } catch (error) {
+      _log('voice upload failed: $error');
+      await isar.updateMessageStatus(messageId, MessageStatus.failed);
+    } finally {
+      progress.clear(messageId);
+      _voiceInFlight.remove(messageId);
+    }
+  }
+
+  final Set<String> _downloading = {};
+
+  /// Fetches a received voice note's audio. Safe to call repeatedly; returns
+  /// whether the audio is now on this device.
+  Future<bool> downloadVoice(String messageId) async {
+    final isar = ref.read(isarServiceProvider);
+    final msg = await isar.getMessageById(messageId);
+    if (msg == null || msg.mediaRemoteId == null) return false;
+    final existing = msg.localMediaPath;
+    if (existing != null && await File(existing).exists()) return true;
+    if (!_downloading.add(messageId)) return false;
+    try {
+      final bytes = await ref
+          .read(mediaServiceProvider)
+          .download(msg.mediaRemoteId!);
+      final path = await ref
+          .read(chatMediaStoreProvider)
+          .save(messageId, bytes, extension: 'm4a');
+      await isar.updateMedia(messageId, localMediaPath: path);
+      return true;
+    } catch (error) {
+      _log('voice download failed: $error');
+      return false;
+    } finally {
+      _downloading.remove(messageId);
+    }
+  }
+
+  /// Sends a sticker by its id (`pack/name`); the art ships with the app.
+  Future<void> sendSticker({
+    required String roomId,
+    required String recipientId,
+    required String stickerId,
+    String? replyToId,
+    String? groupId,
+  }) => sendMessage(
+    roomId: roomId,
+    recipientId: recipientId,
+    content: stickerId,
+    replyToId: replyToId,
+    type: MessageType.sticker,
+    groupId: groupId,
+  );
+
   Future<void> sendMessage({
     required String roomId,
     required String recipientId,
     String content = '',
     Uint8List? imageBytes,
     String? replyToId,
+    MessageType? type,
+    String? groupId,
   }) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -624,10 +979,12 @@ class ChatViewModel extends Notifier<ChatState> {
       ..roomId = roomId
       ..senderId = user.id
       ..recipientId = recipientId
+      ..groupId = groupId
       ..textContent = content
       ..localMediaPath = mediaPath
       ..replyToId = replyToId
-      ..type = mediaPath != null ? MessageType.image : MessageType.text
+      ..type =
+          type ?? (mediaPath != null ? MessageType.image : MessageType.text)
       ..status = MessageStatus.sending
       ..timestamp = timestamp;
 

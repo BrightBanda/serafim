@@ -16,7 +16,9 @@ import 'package:serafim/src/presentation/view/notifications_page.dart';
 import 'package:serafim/src/presentation/view/official_chat_page.dart';
 import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
+import 'package:serafim/src/providers/group_providers.dart';
 import 'package:serafim/src/providers/official_providers.dart';
+import 'package:serafim/src/utils/group_nav.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/network_providers.dart';
@@ -296,6 +298,19 @@ class PushRegistrar {
   }
 
   Future<void> _openChatFrom(RemoteMessage message) async {
+    if (message.data['type'] == 'group_message') {
+      final gid = message.data['group_id'] as String?;
+      final navigator = _ref.read(navigatorKeyProvider).currentState;
+      if (gid == null || navigator == null) return;
+      try {
+        await _ref.read(myGroupsProvider.notifier).reload();
+        final group = _ref.read(myGroupProvider(gid));
+        if (group != null) openGroupChatWithNavigator(navigator, group);
+      } catch (error) {
+        _log('could not open group from notification: $error');
+      }
+      return;
+    }
     if (message.data['type'] == 'friend_request') {
       final navigator = _ref.read(navigatorKeyProvider).currentState;
       if (navigator != null) openNotificationsWithNavigator(navigator);

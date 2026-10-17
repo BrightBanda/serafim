@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -7,7 +8,6 @@ import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/relation_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
-import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/serafim_chip.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -61,9 +61,11 @@ class UserProfilePage extends ConsumerWidget {
               ),
               child: Column(
                 children: [
-                  AvatarThumb(
+                  TappableAvatar(
                     size: 80,
-                    imageProvider: avatarImage(user.profilePic),
+                    heroTag: 'profile:${user.id}',
+                    name: user.displayName,
+                    image: avatarImage(user.profilePic),
                   ),
                   const SizedBox(height: 14),
                   Text(
@@ -205,7 +207,9 @@ class _Connections extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (user.profileLocked && !isMe) {
+    // The server leaves the counts out exactly when you may not see the lists
+    // (locked, and you are neither the owner nor a friend).
+    if (user.profileLocked && !isMe && user.friendCount == null) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -215,12 +219,25 @@ class _Connections extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_outline, size: 13, color: AppColors.textDim),
-            const SizedBox(width: 6),
+            Icon(Icons.lock_outline, size: 16, color: AppColors.textDim),
+            const SizedBox(width: 8),
             Flexible(
-              child: Text(
-                'Locked profile: friends and followers are private',
-                style: AppTextStyles.smallDim,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'This profile is locked',
+                    style: AppTextStyles.body.copyWith(
+                      color: AppColors.text,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    'Only friends can see their friends and followers.',
+                    style: AppTextStyles.smallDim,
+                  ),
+                ],
               ),
             ),
           ],

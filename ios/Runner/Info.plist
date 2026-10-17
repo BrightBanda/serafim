@@ -6,6 +6,8 @@
 	<string>Save photos from chats to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Choose photos to send in chat and set as your profile picture.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Serafim uses the microphone to record voice messages.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take photos to send in chat and set as your profile picture.</string>
 	<key>CFBundleDevelopmentRegion</key>

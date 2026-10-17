@@ -17,73 +17,89 @@ const LocalMessageSchema = CollectionSchema(
   name: r'LocalMessage',
   id: 1045835317208282169,
   properties: {
-    r'editedAt': PropertySchema(
+    r'durationMs': PropertySchema(
       id: 0,
+      name: r'durationMs',
+      type: IsarType.long,
+    ),
+    r'editedAt': PropertySchema(
+      id: 1,
       name: r'editedAt',
       type: IsarType.dateTime,
     ),
+    r'groupId': PropertySchema(id: 2, name: r'groupId', type: IsarType.string),
     r'isDeleted': PropertySchema(
-      id: 1,
+      id: 3,
       name: r'isDeleted',
       type: IsarType.bool,
     ),
     r'isHiddenForMe': PropertySchema(
-      id: 2,
+      id: 4,
       name: r'isHiddenForMe',
       type: IsarType.bool,
     ),
     r'localMediaPath': PropertySchema(
-      id: 3,
+      id: 5,
       name: r'localMediaPath',
       type: IsarType.string,
     ),
+    r'mediaRemoteId': PropertySchema(
+      id: 6,
+      name: r'mediaRemoteId',
+      type: IsarType.string,
+    ),
     r'messageId': PropertySchema(
-      id: 4,
+      id: 7,
       name: r'messageId',
       type: IsarType.string,
     ),
     r'readAckPending': PropertySchema(
-      id: 5,
+      id: 8,
       name: r'readAckPending',
       type: IsarType.bool,
     ),
     r'recipientId': PropertySchema(
-      id: 6,
+      id: 9,
       name: r'recipientId',
       type: IsarType.string,
     ),
     r'replyToId': PropertySchema(
-      id: 7,
+      id: 10,
       name: r'replyToId',
       type: IsarType.string,
     ),
-    r'roomId': PropertySchema(id: 8, name: r'roomId', type: IsarType.string),
+    r'roomId': PropertySchema(id: 11, name: r'roomId', type: IsarType.string),
     r'senderId': PropertySchema(
-      id: 9,
+      id: 12,
       name: r'senderId',
       type: IsarType.string,
     ),
     r'status': PropertySchema(
-      id: 10,
+      id: 13,
       name: r'status',
       type: IsarType.byte,
       enumMap: _LocalMessagestatusEnumValueMap,
     ),
     r'textContent': PropertySchema(
-      id: 11,
+      id: 14,
       name: r'textContent',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 12,
+      id: 15,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'type': PropertySchema(
-      id: 13,
+      id: 16,
       name: r'type',
       type: IsarType.byte,
       enumMap: _LocalMessagetypeEnumValueMap,
+    ),
+    r'waveform': PropertySchema(
+      id: 17,
+      name: r'waveform',
+      type: IsarType.longList,
     ),
   },
 
@@ -119,6 +135,19 @@ const LocalMessageSchema = CollectionSchema(
         ),
       ],
     ),
+    r'groupId': IndexSchema(
+      id: -8523216633229774932,
+      name: r'groupId',
+      unique: false,
+      replace: false,
+      properties: [
+        IndexPropertySchema(
+          name: r'groupId',
+          type: IndexType.hash,
+          caseSensitive: true,
+        ),
+      ],
+    ),
     r'timestamp': IndexSchema(
       id: 1852253767416892198,
       name: r'timestamp',
@@ -149,7 +178,19 @@ int _localMessageEstimateSize(
 ) {
   var bytesCount = offsets.last;
   {
+    final value = object.groupId;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.localMediaPath;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
+    final value = object.mediaRemoteId;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
     }
@@ -170,6 +211,12 @@ int _localMessageEstimateSize(
       bytesCount += 3 + value.length * 3;
     }
   }
+  {
+    final value = object.waveform;
+    if (value != null) {
+      bytesCount += 3 + value.length * 8;
+    }
+  }
   return bytesCount;
 }
 
@@ -179,20 +226,24 @@ void _localMessageSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeDateTime(offsets[0], object.editedAt);
-  writer.writeBool(offsets[1], object.isDeleted);
-  writer.writeBool(offsets[2], object.isHiddenForMe);
-  writer.writeString(offsets[3], object.localMediaPath);
-  writer.writeString(offsets[4], object.messageId);
-  writer.writeBool(offsets[5], object.readAckPending);
-  writer.writeString(offsets[6], object.recipientId);
-  writer.writeString(offsets[7], object.replyToId);
-  writer.writeString(offsets[8], object.roomId);
-  writer.writeString(offsets[9], object.senderId);
-  writer.writeByte(offsets[10], object.status.index);
-  writer.writeString(offsets[11], object.textContent);
-  writer.writeDateTime(offsets[12], object.timestamp);
-  writer.writeByte(offsets[13], object.type.index);
+  writer.writeLong(offsets[0], object.durationMs);
+  writer.writeDateTime(offsets[1], object.editedAt);
+  writer.writeString(offsets[2], object.groupId);
+  writer.writeBool(offsets[3], object.isDeleted);
+  writer.writeBool(offsets[4], object.isHiddenForMe);
+  writer.writeString(offsets[5], object.localMediaPath);
+  writer.writeString(offsets[6], object.mediaRemoteId);
+  writer.writeString(offsets[7], object.messageId);
+  writer.writeBool(offsets[8], object.readAckPending);
+  writer.writeString(offsets[9], object.recipientId);
+  writer.writeString(offsets[10], object.replyToId);
+  writer.writeString(offsets[11], object.roomId);
+  writer.writeString(offsets[12], object.senderId);
+  writer.writeByte(offsets[13], object.status.index);
+  writer.writeString(offsets[14], object.textContent);
+  writer.writeDateTime(offsets[15], object.timestamp);
+  writer.writeByte(offsets[16], object.type.index);
+  writer.writeLongList(offsets[17], object.waveform);
 }
 
 LocalMessage _localMessageDeserialize(
@@ -202,25 +253,29 @@ LocalMessage _localMessageDeserialize(
   Map<Type, List<int>> allOffsets,
 ) {
   final object = LocalMessage();
-  object.editedAt = reader.readDateTimeOrNull(offsets[0]);
+  object.durationMs = reader.readLongOrNull(offsets[0]);
+  object.editedAt = reader.readDateTimeOrNull(offsets[1]);
+  object.groupId = reader.readStringOrNull(offsets[2]);
   object.id = id;
-  object.isDeleted = reader.readBool(offsets[1]);
-  object.isHiddenForMe = reader.readBool(offsets[2]);
-  object.localMediaPath = reader.readStringOrNull(offsets[3]);
-  object.messageId = reader.readString(offsets[4]);
-  object.readAckPending = reader.readBool(offsets[5]);
-  object.recipientId = reader.readString(offsets[6]);
-  object.replyToId = reader.readStringOrNull(offsets[7]);
-  object.roomId = reader.readString(offsets[8]);
-  object.senderId = reader.readString(offsets[9]);
+  object.isDeleted = reader.readBool(offsets[3]);
+  object.isHiddenForMe = reader.readBool(offsets[4]);
+  object.localMediaPath = reader.readStringOrNull(offsets[5]);
+  object.mediaRemoteId = reader.readStringOrNull(offsets[6]);
+  object.messageId = reader.readString(offsets[7]);
+  object.readAckPending = reader.readBool(offsets[8]);
+  object.recipientId = reader.readString(offsets[9]);
+  object.replyToId = reader.readStringOrNull(offsets[10]);
+  object.roomId = reader.readString(offsets[11]);
+  object.senderId = reader.readString(offsets[12]);
   object.status =
-      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[10])] ??
+      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[13])] ??
       MessageStatus.sending;
-  object.textContent = reader.readStringOrNull(offsets[11]);
-  object.timestamp = reader.readDateTime(offsets[12]);
+  object.textContent = reader.readStringOrNull(offsets[14]);
+  object.timestamp = reader.readDateTime(offsets[15]);
   object.type =
-      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[13])] ??
+      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[16])] ??
       MessageType.text;
+  object.waveform = reader.readLongList(offsets[17]);
   return object;
 }
 
@@ -232,37 +287,45 @@ P _localMessageDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readDateTimeOrNull(offset)) as P;
+      return (reader.readLongOrNull(offset)) as P;
     case 1:
-      return (reader.readBool(offset)) as P;
+      return (reader.readDateTimeOrNull(offset)) as P;
     case 2:
-      return (reader.readBool(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 3:
-      return (reader.readStringOrNull(offset)) as P;
-    case 4:
-      return (reader.readString(offset)) as P;
-    case 5:
       return (reader.readBool(offset)) as P;
-    case 6:
-      return (reader.readString(offset)) as P;
-    case 7:
+    case 4:
+      return (reader.readBool(offset)) as P;
+    case 5:
       return (reader.readStringOrNull(offset)) as P;
-    case 8:
+    case 6:
+      return (reader.readStringOrNull(offset)) as P;
+    case 7:
       return (reader.readString(offset)) as P;
+    case 8:
+      return (reader.readBool(offset)) as P;
     case 9:
       return (reader.readString(offset)) as P;
     case 10:
+      return (reader.readStringOrNull(offset)) as P;
+    case 11:
+      return (reader.readString(offset)) as P;
+    case 12:
+      return (reader.readString(offset)) as P;
+    case 13:
       return (_LocalMessagestatusValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageStatus.sending)
           as P;
-    case 11:
+    case 14:
       return (reader.readStringOrNull(offset)) as P;
-    case 12:
+    case 15:
       return (reader.readDateTime(offset)) as P;
-    case 13:
+    case 16:
       return (_LocalMessagetypeValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageType.text)
           as P;
+    case 17:
+      return (reader.readLongList(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
   }
@@ -287,12 +350,14 @@ const _LocalMessagetypeEnumValueMap = {
   'image': 1,
   'video': 2,
   'audio': 3,
+  'sticker': 4,
 };
 const _LocalMessagetypeValueEnumMap = {
   0: MessageType.text,
   1: MessageType.image,
   2: MessageType.video,
   3: MessageType.audio,
+  4: MessageType.sticker,
 };
 
 Id _localMessageGetId(LocalMessage object) {
@@ -564,6 +629,82 @@ extension LocalMessageQueryWhere
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QAfterWhereClause> groupIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'groupId', value: [null]),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterWhereClause>
+  groupIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.between(
+          indexName: r'groupId',
+          lower: [null],
+          includeLower: false,
+          upper: [],
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterWhereClause> groupIdEqualTo(
+    String? groupId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addWhereClause(
+        IndexWhereClause.equalTo(indexName: r'groupId', value: [groupId]),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterWhereClause> groupIdNotEqualTo(
+    String? groupId,
+  ) {
+    return QueryBuilder.apply(this, (query) {
+      if (query.whereSort == Sort.asc) {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'groupId',
+                lower: [],
+                upper: [groupId],
+                includeUpper: false,
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'groupId',
+                lower: [groupId],
+                includeLower: false,
+                upper: [],
+              ),
+            );
+      } else {
+        return query
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'groupId',
+                lower: [groupId],
+                includeLower: false,
+                upper: [],
+              ),
+            )
+            .addWhereClause(
+              IndexWhereClause.between(
+                indexName: r'groupId',
+                lower: [],
+                upper: [groupId],
+                includeUpper: false,
+              ),
+            );
+      }
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterWhereClause> timestampEqualTo(
     DateTime timestamp,
   ) {
@@ -670,6 +811,79 @@ extension LocalMessageQueryWhere
 extension LocalMessageQueryFilter
     on QueryBuilder<LocalMessage, LocalMessage, QFilterCondition> {
   QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  durationMsIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'durationMs'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  durationMsIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'durationMs'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  durationMsEqualTo(int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'durationMs', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  durationMsGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'durationMs',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  durationMsLessThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'durationMs',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  durationMsBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'durationMs',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
   editedAtIsNull() {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -738,6 +952,165 @@ extension LocalMessageQueryFilter
           upper: upper,
           includeUpper: includeUpper,
         ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'groupId'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'groupId'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'groupId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'groupId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'groupId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'groupId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'groupId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'groupId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'groupId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'groupId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'groupId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  groupIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'groupId', value: ''),
       );
     });
   }
@@ -974,6 +1347,165 @@ extension LocalMessageQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'localMediaPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'mediaRemoteId'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'mediaRemoteId'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'mediaRemoteId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'mediaRemoteId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'mediaRemoteId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'mediaRemoteId',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'mediaRemoteId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'mediaRemoteId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'mediaRemoteId',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'mediaRemoteId',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'mediaRemoteId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  mediaRemoteIdIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'mediaRemoteId', value: ''),
       );
     });
   }
@@ -2038,6 +2570,132 @@ extension LocalMessageQueryFilter
       );
     });
   }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'waveform'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'waveform'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformElementEqualTo(int value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'waveform', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformElementGreaterThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'waveform',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformElementLessThan(int value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'waveform',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformElementBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'waveform',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformLengthEqualTo(int length) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'waveform', length, true, length, true);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'waveform', 0, true, 0, true);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'waveform', 0, false, 999999, true);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformLengthLessThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'waveform', 0, true, length, include);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformLengthGreaterThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'waveform', length, include, 999999, true);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  waveformLengthBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(
+        r'waveform',
+        lower,
+        includeLower,
+        upper,
+        includeUpper,
+      );
+    });
+  }
 }
 
 extension LocalMessageQueryObject
@@ -2048,6 +2706,19 @@ extension LocalMessageQueryLinks
 
 extension LocalMessageQuerySortBy
     on QueryBuilder<LocalMessage, LocalMessage, QSortBy> {
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByDurationMs() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'durationMs', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  sortByDurationMsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'durationMs', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByEditedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'editedAt', Sort.asc);
@@ -2057,6 +2728,18 @@ extension LocalMessageQuerySortBy
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByEditedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'editedAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByGroupId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'groupId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByGroupIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'groupId', Sort.desc);
     });
   }
 
@@ -2096,6 +2779,19 @@ extension LocalMessageQuerySortBy
   sortByLocalMediaPathDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'localMediaPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByMediaRemoteId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mediaRemoteId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  sortByMediaRemoteIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mediaRemoteId', Sort.desc);
     });
   }
 
@@ -2226,6 +2922,19 @@ extension LocalMessageQuerySortBy
 
 extension LocalMessageQuerySortThenBy
     on QueryBuilder<LocalMessage, LocalMessage, QSortThenBy> {
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByDurationMs() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'durationMs', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  thenByDurationMsDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'durationMs', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByEditedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'editedAt', Sort.asc);
@@ -2235,6 +2944,18 @@ extension LocalMessageQuerySortThenBy
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByEditedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'editedAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByGroupId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'groupId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByGroupIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'groupId', Sort.desc);
     });
   }
 
@@ -2286,6 +3007,19 @@ extension LocalMessageQuerySortThenBy
   thenByLocalMediaPathDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'localMediaPath', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByMediaRemoteId() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mediaRemoteId', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  thenByMediaRemoteIdDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'mediaRemoteId', Sort.desc);
     });
   }
 
@@ -2416,9 +3150,23 @@ extension LocalMessageQuerySortThenBy
 
 extension LocalMessageQueryWhereDistinct
     on QueryBuilder<LocalMessage, LocalMessage, QDistinct> {
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByDurationMs() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'durationMs');
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByEditedAt() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'editedAt');
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByGroupId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'groupId', caseSensitive: caseSensitive);
     });
   }
 
@@ -2441,6 +3189,17 @@ extension LocalMessageQueryWhereDistinct
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(
         r'localMediaPath',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByMediaRemoteId({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'mediaRemoteId',
         caseSensitive: caseSensitive,
       );
     });
@@ -2518,6 +3277,12 @@ extension LocalMessageQueryWhereDistinct
       return query.addDistinctBy(r'type');
     });
   }
+
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByWaveform() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'waveform');
+    });
+  }
 }
 
 extension LocalMessageQueryProperty
@@ -2528,9 +3293,21 @@ extension LocalMessageQueryProperty
     });
   }
 
+  QueryBuilder<LocalMessage, int?, QQueryOperations> durationMsProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'durationMs');
+    });
+  }
+
   QueryBuilder<LocalMessage, DateTime?, QQueryOperations> editedAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'editedAt');
+    });
+  }
+
+  QueryBuilder<LocalMessage, String?, QQueryOperations> groupIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'groupId');
     });
   }
 
@@ -2550,6 +3327,13 @@ extension LocalMessageQueryProperty
   localMediaPathProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'localMediaPath');
+    });
+  }
+
+  QueryBuilder<LocalMessage, String?, QQueryOperations>
+  mediaRemoteIdProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'mediaRemoteId');
     });
   }
 
@@ -2610,6 +3394,12 @@ extension LocalMessageQueryProperty
   QueryBuilder<LocalMessage, MessageType, QQueryOperations> typeProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'type');
+    });
+  }
+
+  QueryBuilder<LocalMessage, List<int>?, QQueryOperations> waveformProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'waveform');
     });
   }
 }

@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/public_user.dart';
+import 'package:serafim/src/data/models/group.dart';
+import 'package:serafim/src/presentation/view/create_group_page.dart';
 import 'package:serafim/src/presentation/view/notifications_page.dart';
+import 'package:serafim/src/providers/group_providers.dart';
+import 'package:serafim/src/utils/group_nav.dart';
 import 'package:serafim/src/presentation/view/official_chat_page.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
@@ -48,9 +52,10 @@ List<PublicUser> filterPeople(List<PublicUser> people, String query) {
 /// One row on the chat list: a friend (whose details we have) or someone you
 /// have only exchanged messages with (looked up by id).
 class _Entry {
-  const _Entry(this.id, this.friend);
+  const _Entry(this.id, this.friend, [this.group]);
   final String id;
   final PublicUser? friend;
+  final GroupSummary? group;
 }
 
 /// Everyone on the list, most recently active first — like any messaging app.
@@ -60,22 +65,28 @@ List<_Entry> _byRecentActivity({
   required List<String> strangerIds,
   required Map<String, RoomPreview> previews,
   required String myId,
+  List<GroupSummary> groups = const [],
 }) {
   final entries = [
     for (final f in friends) _Entry(f.id, f),
     for (final id in strangerIds) _Entry(id, null),
+    for (final g in groups) _Entry(g.id, null, g),
   ];
-  DateTime? lastOf(_Entry e) =>
-      previews[ChatViewModel.buildRoomId(myId, e.id)]?.timestamp;
+  DateTime? lastOf(_Entry e) => e.group != null
+      // A group with no messages yet sorts by when you joined.
+      ? previews[e.group!.roomId]?.timestamp ?? e.group!.joinedAt
+      : previews[ChatViewModel.buildRoomId(myId, e.id)]?.timestamp;
 
   entries.sort((a, b) {
     final ta = lastOf(a), tb = lastOf(b);
     if (ta != null && tb != null) return tb.compareTo(ta);
     if (ta != null) return -1;
     if (tb != null) return 1;
-    return (a.friend?.displayName ?? '').toLowerCase().compareTo(
-      (b.friend?.displayName ?? '').toLowerCase(),
-    );
+    return (a.friend?.displayName ?? a.group?.name ?? '')
+        .toLowerCase()
+        .compareTo(
+          (b.friend?.displayName ?? b.group?.name ?? '').toLowerCase(),
+        );
   });
   return entries;
 }
@@ -142,6 +153,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     final peersAsync = ref.watch(conversationPeerIdsProvider);
 
     final friends = view.friends;
+    final groups = ref.watch(myGroupsProvider).value ?? const <GroupSummary>[];
     final friendIds = {for (final f in friends) f.id};
     final strangerIds = (peersAsync.value ?? const <String>[])
         .where((id) => !friendIds.contains(id))
@@ -198,7 +210,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
             // Every account has the official chat, pinned first.
             const OfficialChatItem(),
             const SizedBox(height: 10),
-            if (friends.isEmpty && strangerIds.isEmpty)
+            if (friends.isEmpty && strangerIds.isEmpty && groups.isEmpty)
               _CenteredMessage(
                 text:
                     'No conversations yet.\nFind people in Discover to start one.',
@@ -208,10 +220,13 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
             for (final entry in _byRecentActivity(
               friends: friends,
               strangerIds: strangerIds,
+              groups: groups,
               previews: ref.watch(roomPreviewsProvider),
               myId: currentUser.id,
             )) ...[
-              entry.friend != null
+              entry.group != null
+                  ? _GroupChatItem(group: entry.group!, myId: currentUser.id)
+                  : entry.friend != null
                   ? _ChatListItem(user: entry.friend!, myId: currentUser.id)
                   : _PeerChatItem(peerId: entry.id, myId: currentUser.id),
               const SizedBox(height: 10),
@@ -227,6 +242,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const NewGroupButton(),
             GestureDetector(
               onTap: _toggleSearch,
               behavior: HitTestBehavior.opaque,
@@ -519,6 +535,7 @@ class _ChatListItem extends ConsumerWidget {
       time: time,
       unread: (preview?.unread ?? 0) > 0,
       imageProvider: avatarImage(user.profilePic),
+      avatarHeroTag: 'chats:${user.id}',
       onTap: () => openChatWith(context, user),
     );
   }
@@ -616,6 +633,79 @@ class NotificationBell extends ConsumerWidget {
                   ),
                 ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A group on the chat list: its photo, name and latest message.
+class _GroupChatItem extends ConsumerWidget {
+  const _GroupChatItem({required this.group, required this.myId});
+
+  final GroupSummary group;
+  final String myId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final preview = ref.watch(roomPreviewProvider(group.roomId));
+    var line = '${group.memberCount} members · say hi';
+    var time = '';
+    if (preview != null) {
+      final text = preview.isDeleted ? 'Message deleted' : preview.text ?? '';
+      final who = preview.senderId == myId
+          ? 'You'
+          : ref.watch(knownPersonProvider(preview.senderId))?.displayName;
+      line = who == null ? text : '$who: $text';
+      time = formatChatListTime(context, preview.timestamp);
+    }
+    return ChatRow(
+      name: group.name,
+      isGroup: true,
+      preview: line,
+      time: time,
+      unread: (preview?.unread ?? 0) > 0,
+      imageProvider: avatarImage(group.photoUrl),
+      avatarHeroTag: 'chats-group:${group.id}',
+      nameBadge: Icon(
+        Icons.groups_rounded,
+        size: 14,
+        color: AppColors.tealPale,
+      ),
+      onTap: () => openGroupChat(context, group),
+    );
+  }
+}
+
+/// Top-bar button to start a new group.
+class NewGroupButton extends StatelessWidget {
+  const NewGroupButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'New group',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const CreateGroupPage()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: AppColors.paper,
+              border: Border.all(color: AppColors.lineSoft, width: 1.5),
+            ),
+            child: Icon(
+              Icons.group_add_outlined,
+              size: 14,
+              color: AppColors.textDim,
+            ),
           ),
         ),
       ),

@@ -34,6 +34,37 @@ class DoodleInk {
       mint = _tint(const Color(0xFF6FD3C0), p),
       lemon = _tint(const Color(0xFFF4D35E), p);
 
+  /// Bold, fully coloured ink for stickers: the same drawings as the
+  /// wallpaper, but meant to be looked at rather than ignored.
+  DoodleInk.sticker()
+    : bg = Paint()
+        ..style = PaintingStyle.fill
+        ..color = Colors.white,
+      bgStroke = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = 2
+        ..color = Colors.white,
+      line = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = const Color(0xFF1C2440),
+      dot = Paint()
+        ..style = PaintingStyle.fill
+        ..color = const Color(0xFF1C2440),
+      pink = Paint()
+        ..style = PaintingStyle.fill
+        ..color = const Color(0xFFF59AC6),
+      mint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = const Color(0xFF7FDCC9),
+      lemon = Paint()
+        ..style = PaintingStyle.fill
+        ..color = const Color(0xFFF7D96B);
+
   static Color _tone(AppPalette p) =>
       p.brightness == Brightness.light ? p.primaryDeep : p.primaryPale;
 
