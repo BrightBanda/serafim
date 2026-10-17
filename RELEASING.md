@@ -25,7 +25,8 @@ time they allow "Install unknown apps" for Serafim.
 1. Bump `version:` in `pubspec.yaml`, e.g. `1.1.0+2` → `1.2.0+3`.
 2. Write the release notes (what's new) in a file, e.g. `notes.md`.
 3. Run `tool/release.sh notes.md`. It:
-   - builds the signed release APK (`flutter build apk --release`, using
+   - builds the signed release APK for 64-bit ARM phones only
+     (`flutter build apk --release --target-platform android-arm64`, using
      `.env` for the build settings),
    - refuses to go on if the APK is signed with the debug key,
    - prints the version, size, SHA-256 and the download URL,
@@ -59,25 +60,19 @@ release means publishing a newer one.
   the announcement (long-press it in the official chat) and post it again.
 - Anyone can always install by downloading the APK from the release page.
 
-## One-time setup after the package rename
+## The package rename (done)
 
 The application id changed from `com.example.serafim` to
-`com.binaryforge.serafim`. Until this is done, **Android builds fail**
-(google-services can't find the package):
+`com.binaryforge.serafim`. In Firebase (`serafim-chat-42421`) the new Android
+app "Serafim (com.binaryforge)" is registered with the release key (SHA-1
+`80:C7:C4:41:…:3A:08`, SHA-256 `C4:89:08:61:…:F8:09`) and the local debug key,
+`android/app/google-services.json` is the new config and
+`lib/firebase_options.dart` points at the new app. The old
+`com.example.serafim` app is still registered so existing installs keep
+working until people move over.
 
-1. Firebase console → Project settings → **Add app** → Android, package
-   `com.binaryforge.serafim`.
-2. Add the release certificate fingerprints:
-   - SHA-1 `80:C7:C4:41:22:74:76:8D:4C:8B:B7:C4:17:4C:22:A8:DD:D3:3A:08`
-   - SHA-256 `C4:89:08:61:84:83:73:66:55:04:90:91:95:12:A7:83:D6:DF:90:2C:EE:C2:8A:9E:D2:E1:14:8A:8A:84:F8:09`
-   - plus your debug key's (`keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`)
-     if you want Google sign-in in debug builds.
-3. Download the new `google-services.json` into `android/app/` (replacing
-   the old one).
-4. Run `flutterfire configure` (or re-download the Android options) so
-   `lib/firebase_options.dart` has the new Android app id.
-5. Google sign-in: the new Android OAuth client is created when you add the
-   SHA-1. The Web client id (`GOOGLE_WEB_CLIENT_ID`) stays the same.
+If you build on another computer, add that machine's debug SHA-1 in the
+Firebase console for Google sign-in to work in its debug builds.
 
 Everyone on the old package uninstalls it once and installs the new APK from
 the release page; from then on, updates happen in the app.

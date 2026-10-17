@@ -74,6 +74,18 @@ android {
     }
 }
 
+// Release builds are for 64-bit ARM phones only. The Flutter plugin lists
+// every ABI in defaultConfig, so plugins would still pack their own 32-bit and
+// x86 libraries and the APK would install on phones it can't run on. Debug
+// builds keep every ABI so emulators work.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll(
+            listOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**")
+        )
+    }
+}
+
 flutter {
     source = "../.."
 }

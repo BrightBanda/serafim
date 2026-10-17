@@ -10,8 +10,9 @@ Firebase is used for **FCM** (push) and as the home of the Google OAuth clients.
 
 ## Already done
 
-- Firebase project created; Android and iOS apps (`com.example.serafim`)
-  registered; debug SHA-1 and SHA-256 added.
+- Firebase project created; Android app `com.binaryforge.serafim` registered
+  with the release and debug SHA-1/SHA-256 (the older `com.example.serafim`
+  Android app and the iOS app are still registered).
 - `android/app/google-services.json`, `ios/Runner/GoogleService-Info.plist`,
   `lib/firebase_options.dart` generated.
 - App: Google button on landing/login/sign-up; FCM token registration; banner

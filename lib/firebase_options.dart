@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyASoRUBa9stviQ9jQPqHg6w5fx4Nz6f0DE',
-    appId: '1:38214413467:android:51bb077add2a1e9fddaa3e',
+    appId: '1:38214413467:android:0a66aea2de52e17fddaa3e',
     messagingSenderId: '38214413467',
     projectId: 'serafim-chat-42421',
     storageBucket: 'serafim-chat-42421.firebasestorage.app',

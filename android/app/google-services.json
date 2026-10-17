@@ -7,12 +7,33 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:38214413467:android:51bb077add2a1e9fddaa3e",
+        "mobilesdk_app_id": "1:38214413467:android:0a66aea2de52e17fddaa3e",
         "android_client_info": {
-          "package_name": "com.example.serafim"
+          "package_name": "com.binaryforge.serafim"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "38214413467-ip51tkhpjlkb5mu87sriqdoea79uicac.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.binaryforge.serafim",
+            "certificate_hash": "2dee82ea8cf028224b7a7b94d9d1b538d09cf7db"
+          }
+        },
+        {
+          "client_id": "38214413467-ut8hfuh6amud4vaev3l23639tgqrb21m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.binaryforge.serafim",
+            "certificate_hash": "80c7c4412274768d4c8bb7c4174c22a8ddd33a08"
+          }
+        },
+        {
+          "client_id": "38214413467-1kmi2v5iv9kk24iuh4o8i6etd694el1l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyASoRUBa9stviQ9jQPqHg6w5fx4Nz6f0DE"
@@ -20,7 +41,71 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "38214413467-1kmi2v5iv9kk24iuh4o8i6etd694el1l.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "38214413467-ltnblgq27l8q638l2h71apg02t584rk7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.serafim"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:38214413467:android:51bb077add2a1e9fddaa3e",
+        "android_client_info": {
+          "package_name": "com.example.serafim"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "38214413467-5bpo8j9cg2sqdtclmcpd0j6ig7dqn9p7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.serafim",
+            "certificate_hash": "2dee82ea8cf028224b7a7b94d9d1b538d09cf7db"
+          }
+        },
+        {
+          "client_id": "38214413467-calv0ihf1tjbqe7aifphv9jjs8nht939.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.serafim",
+            "certificate_hash": "80c7c4412274768d4c8bb7c4174c22a8ddd33a08"
+          }
+        },
+        {
+          "client_id": "38214413467-1kmi2v5iv9kk24iuh4o8i6etd694el1l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASoRUBa9stviQ9jQPqHg6w5fx4Nz6f0DE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "38214413467-1kmi2v5iv9kk24iuh4o8i6etd694el1l.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "38214413467-ltnblgq27l8q638l2h71apg02t584rk7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.serafim"
+              }
+            }
+          ]
         }
       }
     }

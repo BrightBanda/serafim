@@ -30,8 +30,10 @@ fi
 DEFINES=()
 [[ -f .env ]] && DEFINES=(--dart-define-from-file=.env)
 
-echo "==> Building Serafim $NAME (code $CODE)"
-flutter build apk --release "${DEFINES[@]}"
+echo "==> Building Serafim $NAME (code $CODE), arm64 only"
+# 64-bit ARM only: every current Android phone. Keeps the APK small; 32-bit
+# ARM and x86 devices aren't supported.
+flutter build apk --release --target-platform android-arm64 "${DEFINES[@]}"
 
 APK=build/app/outputs/flutter-apk/app-release.apk
 APKSIGNER=$(find "${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -1)
