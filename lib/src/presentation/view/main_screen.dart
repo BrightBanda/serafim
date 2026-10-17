@@ -8,6 +8,8 @@ import 'package:serafim/src/presentation/view/profile_page.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/providers/push_providers.dart';
+import 'package:serafim/src/providers/update_providers.dart';
+import 'package:serafim/src/utils/update/update_prompt.dart';
 import 'package:serafim/src/utils/app_bottom_nav.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
@@ -45,6 +47,28 @@ class MainScreen extends ConsumerStatefulWidget {
 }
 
 class _MainScreenState extends ConsumerState<MainScreen> {
+  bool _promptShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Offer a newer version once per launch (unless dismissed for it).
+    ref.listenManual<AsyncValue<UpdateStatus>>(updateCheckProvider, (_, next) {
+      final status = next.value;
+      final update = status?.available;
+      if (_promptShown || update == null || status!.mustUpdate) return;
+      if (ref
+          .read(updateCheckProvider.notifier)
+          .isDismissed(update.versionCode)) {
+        return;
+      }
+      _promptShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) showUpdatePrompt(context, update);
+      });
+    }, fireImmediately: true);
+  }
+
   // List of screens corresponding to each tab index
   static const List<Widget> _screens = [
     ChatListPage(),

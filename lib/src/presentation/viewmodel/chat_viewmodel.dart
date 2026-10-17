@@ -200,7 +200,7 @@ class ChatViewModel extends Notifier<ChatState> {
           label: 'OFFICIAL ANNOUNCEMENT',
           icon: Icons.campaign_rounded,
           title: 'SERAFIM',
-          body: announcement.content,
+          body: announcement.preview,
           leading: const SerafimMark(size: 42),
           onTap: () {
             final navigator = ref.read(navigatorKeyProvider).currentState;

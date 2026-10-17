@@ -12,7 +12,9 @@ import 'package:serafim/src/utils/chat/chat_background.dart';
 import 'package:serafim/src/utils/chat/chat_bubble.dart';
 import 'package:serafim/src/utils/chat/chat_input_bar.dart';
 import 'package:serafim/src/utils/chat/chat_time.dart';
+import 'package:serafim/src/presentation/view/post_update_page.dart';
 import 'package:serafim/src/utils/chat/link_preview_card.dart';
+import 'package:serafim/src/utils/update/update_card.dart';
 import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/utils/official_badge.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
@@ -175,6 +177,16 @@ class _OfficialChatPageState extends ConsumerState<OfficialChatPage> {
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (context, i) {
           final a = items[i];
+          final update = a.update;
+          if (update != null) {
+            return Align(
+              alignment: Alignment.centerLeft,
+              child: UpdateCard(
+                update: update,
+                onLongPress: chat.canPost ? () => _confirmDelete(a) : null,
+              ),
+            );
+          }
           return ChatBubble(
             who: 'SERAFIM · ${formatChatListTime(context, a.createdAt)}',
             message: a.content,
@@ -226,6 +238,7 @@ class _OfficialChatPageState extends ConsumerState<OfficialChatPage> {
             children: [
               const _InfoStrip(),
               Expanded(child: list),
+              if (chat?.canPost ?? false) const _AnnounceUpdateBar(),
               if (chat?.canPost ?? false)
                 ChatInputBar(
                   controller: _controller,
@@ -337,6 +350,34 @@ class _Centered extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Admins only: a way into "announce an update" above the composer.
+class _AnnounceUpdateBar extends StatelessWidget {
+  const _AnnounceUpdateBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      color: AppColors.paperRaised,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const PostUpdatePage()),
+          ),
+          icon: Icon(
+            Icons.system_update_alt,
+            size: 16,
+            color: AppColors.primaryPale,
+          ),
+          label: Text('Announce an app update', style: AppTextStyles.linkText),
         ),
       ),
     );

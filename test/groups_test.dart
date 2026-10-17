@@ -213,8 +213,17 @@ void main() {
       dir.deleteSync(recursive: true);
     });
 
-    Future<void> settle() =>
-        Future<void>.delayed(const Duration(milliseconds: 150));
+    /// Waits (up to 5 s) for the socket event to be processed, rather than a
+    /// fixed delay that a busy machine can outrun.
+    Future<void> until(Future<bool> Function() done) async {
+      final end = DateTime.now().add(const Duration(seconds: 5));
+      while (!await done() && DateTime.now().isBefore(end)) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+    }
+
+    Future<bool> stored(String id) async =>
+        await service.getMessageById(id) != null;
 
     test(
       'a live group message lands in the group room, unread, and is not a "stranger"',
@@ -228,7 +237,7 @@ void main() {
           'kind': 'text',
           'timestamp': '2026-10-01T10:00:00Z',
         });
-        await settle();
+        await until(() => stored('m1'));
         final m = (await service.getMessageById('m1'))!;
         expect(m.roomId, 'group_g1');
         expect(m.groupId, 'g1');
@@ -256,10 +265,11 @@ void main() {
         'content': 'x',
         'timestamp': '2026-10-01T10:00:00Z',
       });
-      await settle();
+      await until(() => stored('m1'));
+      expect(await stored('m1'), isTrue);
       groups.groups = [];
       socketIn.add({'type': 'group_removed', 'group_id': 'g1'});
-      await settle();
+      await until(() async => !await stored('m1'));
       expect(await service.getMessageById('m1'), isNull);
       expect(await isar.localChatRooms.getByRoomId('group_g1'), isNull);
     });

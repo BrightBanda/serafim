@@ -23,7 +23,11 @@ class AppConfig {
     required this.apiBaseUrl,
     this.googleWebClientId = '',
     this.googleIosClientId = '',
+    this.updateRepo = defaultUpdateRepo,
   });
+
+  /// GitHub repository whose public releases host the Android APK.
+  static const defaultUpdateRepo = 'BrightBanda/serafim';
 
   /// Reads the values baked in at build time.
   factory AppConfig.fromEnvironment() {
@@ -40,6 +44,10 @@ class AppConfig {
       ),
       googleWebClientId: String.fromEnvironment('GOOGLE_WEB_CLIENT_ID'),
       googleIosClientId: String.fromEnvironment('GOOGLE_IOS_CLIENT_ID'),
+      updateRepo: String.fromEnvironment(
+        'UPDATE_REPO',
+        defaultValue: defaultUpdateRepo,
+      ),
     );
   }
 
@@ -68,6 +76,10 @@ class AppConfig {
   /// iOS OAuth client id (`CLIENT_ID` in GoogleService-Info.plist). Optional
   /// on Android.
   final String googleIosClientId;
+
+  /// "owner/name" of the GitHub repo releases are published to. Public
+  /// releases only: the app never carries a GitHub token.
+  final String updateRepo;
 
   /// Google sign-in needs the web client id; without it the button explains
   /// that rather than failing obscurely.

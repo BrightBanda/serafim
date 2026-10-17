@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/update/update_gate.dart';
 import 'package:serafim/src/data/models/app_settings.dart';
 import 'package:serafim/src/presentation/view/auth_gate.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
@@ -132,7 +133,8 @@ class _SerafimAppState extends ConsumerState<SerafimApp>
           child: child!,
         ),
       ),
-      home: const AuthGate(),
+      // A mandatory update blocks everything, even sign-in.
+      home: const UpdateGate(child: AuthGate()),
     );
   }
 }

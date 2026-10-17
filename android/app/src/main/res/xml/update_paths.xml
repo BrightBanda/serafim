@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the downloaded-update folder is shared, and only with the system
+     installer (read-only, per install). -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

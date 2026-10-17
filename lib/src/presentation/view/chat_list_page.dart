@@ -562,7 +562,7 @@ class OfficialChatItem extends ConsumerWidget {
       name: 'SERAFIM',
       nameBadge: const OfficialBadge(),
       leading: const SerafimMark(size: 38),
-      preview: latest?.content ?? 'Official news and announcements',
+      preview: latest?.preview ?? 'Official news and announcements',
       time: latest == null ? '' : formatChatListTime(context, latest.createdAt),
       unread: unread,
       onTap: () => openOfficialChat(context),

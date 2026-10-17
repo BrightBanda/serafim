@@ -1,25 +1,45 @@
+import 'package:serafim/src/data/models/app_update.dart';
+
 /// A message in the official SERAFIM chat (backend `AnnouncementResponse`).
 class Announcement {
   const Announcement({
     required this.id,
     required this.content,
     required this.createdAt,
+    this.update,
   });
 
   final String id;
+
+  /// Plain text. For an app update, a readable fallback (what older app
+  /// versions show).
   final String content;
   final DateTime createdAt;
+
+  /// Set when this announces an Android release (kind `app_update`).
+  final AppUpdate? update;
+
+  /// What the chat list and banners show.
+  String get preview => update != null
+      ? '⬆️ Serafim ${update!.versionName} is available'
+      : content;
 
   Map<String, dynamic> toJson() => {
     'id': id,
     'content': content,
     'created_at': createdAt.toUtc().toIso8601String(),
+    if (update != null) 'kind': 'app_update',
+    if (update != null) 'update': update!.toJson(),
   };
 
   factory Announcement.fromJson(Map<String, dynamic> json) => Announcement(
     id: json['id'].toString(),
     content: json['content'] as String? ?? '',
     createdAt: _parseUtc(json['created_at'] as String),
+    // Unknown kinds are just text; a malformed update degrades to its text.
+    update: json['kind'] == 'app_update'
+        ? AppUpdate.tryParse(json['update'])
+        : null,
   );
 
   // The server sends UTC; an offset-less timestamp is UTC too.

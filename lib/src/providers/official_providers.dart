@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/announcement.dart';
+import 'package:serafim/src/data/models/app_update.dart';
 import 'package:serafim/src/data/services/official_service.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/network_providers.dart';
@@ -148,6 +149,17 @@ class OfficialChatController extends AsyncNotifier<OfficialChatState> {
       return null;
     } catch (error) {
       return humanError(error, fallback: "Couldn't post the announcement.");
+    }
+  }
+
+  /// Administrators only: announces an Android release. Returns null on
+  /// success or a message to show.
+  Future<String?> postUpdate(AppUpdate update) async {
+    try {
+      _insert(await _service.post('', update: update));
+      return null;
+    } catch (error) {
+      return humanError(error, fallback: "Couldn't post the update.");
     }
   }
 

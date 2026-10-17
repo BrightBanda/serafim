@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/data/models/announcement.dart';
+import 'package:serafim/src/data/models/app_update.dart';
 
 /// Talks to the backend's `/official` routes: the official SERAFIM chat.
 class OfficialService {
@@ -39,12 +40,25 @@ class OfficialService {
     ];
   }
 
-  /// Administrators only; the server answers 403 for anyone else.
-  Future<Announcement> post(String content) async {
+  /// Administrators only; the server answers 403 for anyone else. With
+  /// [update] it announces an Android release (the text may then be empty).
+  Future<Announcement> post(String content, {AppUpdate? update}) async {
     final data = await _call(
       () => _dio.post<dynamic>(
         '/official/announcements',
-        data: {'content': content},
+        data: {
+          'content': content,
+          if (update != null)
+            'update': {
+              'version_name': update.versionName,
+              'version_code': update.versionCode,
+              'changelog': update.changelog,
+              'apk_url': update.apkUrl,
+              'sha256': update.sha256,
+              'size_bytes': update.sizeBytes,
+              'mandatory': update.mandatory,
+            },
+        },
       ),
     );
     if (data is! Map<String, dynamic>) {
