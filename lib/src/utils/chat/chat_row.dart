@@ -15,6 +15,8 @@ class ChatRow extends StatelessWidget {
     this.unread = false,
     this.imageProvider,
     this.onTap,
+    this.leading,
+    this.nameBadge,
   });
 
   final String name;
@@ -24,6 +26,12 @@ class ChatRow extends StatelessWidget {
   final bool unread;
   final ImageProvider? imageProvider;
   final VoidCallback? onTap;
+
+  /// Replaces the avatar (the official chat shows the SERAFIM logo).
+  final Widget? leading;
+
+  /// Shown right after the name (e.g. the official badge).
+  final Widget? nameBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -44,19 +52,32 @@ class ChatRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            AvatarThumb(isGroup: isGroup, imageProvider: imageProvider),
+            leading ??
+                AvatarThumb(isGroup: isGroup, imageProvider: imageProvider),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    name,
-                    style: AppTextStyles.body.copyWith(
-                      color: AppColors.text,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.body.copyWith(
+                            color: AppColors.text,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      if (nameBadge != null) ...[
+                        const SizedBox(width: 5),
+                        nameBadge!,
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(

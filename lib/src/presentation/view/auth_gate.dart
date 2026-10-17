@@ -1,10 +1,7 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:serafim/src/presentation/view/chat_list_page.dart';
-import 'package:serafim/src/presentation/view/chat_thread_page.dart';
 import 'package:serafim/src/presentation/view/landing_page.dart';
 import 'package:serafim/src/presentation/view/login_page.dart';
 import 'package:serafim/src/presentation/view/main_screen.dart';
@@ -80,8 +77,7 @@ class _AuthGateState extends ConsumerState<AuthGate> {
         title: "Can't reach the server",
         body:
             "You're signed in, but Serafim couldn't reach its server. Check "
-            'your internet connection and try again.'
-            '${kDebugMode ? "\n\n(${ref.watch(appConfigProvider).apiBaseUrl})" : ""}',
+            'your internet connection and try again.',
         onRetry: ref.read(authViewModelProvider.notifier).retryBackendSync,
         isRetrying: ref.watch(authViewModelProvider).isBusy,
       ),

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MaxLengthEnforcement;
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 /// Labeled input field: small mono-caps label above a flat-bordered
 /// field, matching the web version's `.field` / `.field input`.
-/// Optional [footer] renders below the field (e.g. a char counter).
+/// Optional [footer] renders below the field. With [maxLength] and no footer,
+/// a live "used / max" counter is shown there instead, and typing past the
+/// limit is blocked.
 ///
 /// UI only — takes a [controller] and display options, no validation
 /// or submit logic lives in this widget.
@@ -19,6 +22,10 @@ class UiTextField extends StatelessWidget {
     this.suffix,
     this.autocorrect = false,
     this.footer,
+    this.maxLength,
+    this.maxLines = 1,
+    this.minLines,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   final String label;
@@ -29,6 +36,10 @@ class UiTextField extends StatelessWidget {
   final Widget? suffix;
   final bool autocorrect;
   final Widget? footer;
+  final int? maxLength;
+  final int? maxLines;
+  final int? minLines;
+  final TextCapitalization textCapitalization;
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +59,11 @@ class UiTextField extends StatelessWidget {
             obscureText: obscureText,
             keyboardType: keyboardType,
             autocorrect: autocorrect,
+            maxLength: maxLength,
+            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+            maxLines: maxLines,
+            minLines: minLines,
+            textCapitalization: textCapitalization,
             style: AppTextStyles.fieldInput,
             cursorColor: AppColors.primary,
             decoration: InputDecoration(
@@ -65,14 +81,44 @@ class UiTextField extends StatelessWidget {
                 horizontal: 12,
               ),
               suffixIcon: suffix,
+              // The counter is drawn below the box instead (see [footer]).
+              counterText: '',
             ),
           ),
         ),
-        if (footer != null) ...[
+        if (footer != null || (maxLength != null && controller != null)) ...[
           const SizedBox(height: 4),
-          Align(alignment: Alignment.centerRight, child: footer!),
+          Align(
+            alignment: Alignment.centerRight,
+            child: footer ?? _Counter(controller: controller!, max: maxLength!),
+          ),
         ],
       ],
+    );
+  }
+}
+
+/// "used / max", turning to the warning colour at the limit.
+class _Counter extends StatelessWidget {
+  const _Counter({required this.controller, required this.max});
+
+  final TextEditingController controller;
+  final int max;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (_, value, __) {
+        final used = value.text.characters.length;
+        return Text(
+          '$used / $max',
+          style: AppTextStyles.fieldLabel.copyWith(
+            fontSize: 8.5,
+            color: used >= max ? AppColors.rustPale : AppColors.textDim,
+          ),
+        );
+      },
     );
   }
 }

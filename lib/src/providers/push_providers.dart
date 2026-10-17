@@ -10,7 +10,14 @@ import 'package:serafim/firebase_options.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 
 import 'package:serafim/src/data/services/push_service.dart';
+import 'package:flutter/material.dart' show Icons;
+import 'package:serafim/src/data/models/app_notification.dart';
+import 'package:serafim/src/presentation/view/notifications_page.dart';
+import 'package:serafim/src/presentation/view/official_chat_page.dart';
+import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
+import 'package:serafim/src/providers/official_providers.dart';
+import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/network_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
@@ -204,6 +211,14 @@ class PushRegistrar {
   // show the same in-app banner as a socket message.
   void _onForegroundMessage(RemoteMessage message) {
     final data = message.data;
+    if (data['type'] == 'announcement') {
+      _onForegroundAnnouncement(message);
+      return;
+    }
+    if (data['type'] == 'friend_request') {
+      _onForegroundFriendRequest(message);
+      return;
+    }
     final senderId = data['sender_id'] as String?;
     final messageId = data['message_id'] as String?;
     final me = _ref.read(currentAccountIdProvider);
@@ -230,7 +245,67 @@ class PushRegistrar {
     }
   }
 
+  /// The same announcement usually also arrives over the socket; whichever is
+  /// first shows the banner.
+  void _onForegroundAnnouncement(RemoteMessage message) {
+    final id = message.data['announcement_id'] as String?;
+    if (!_ref.read(settingsProvider).inAppAlerts) return;
+    if (_ref.read(activeRoomProvider) == officialRoomId) return;
+    final shown = _ref.read(shownAlertIdsProvider);
+    if (id != null && !shown.add('announcement:$id')) return;
+    if (shown.length > 100) shown.remove(shown.first);
+
+    _ref.invalidate(officialChatProvider);
+    _ref
+        .read(inAppBannerProvider)
+        .show(
+          label: 'OFFICIAL ANNOUNCEMENT',
+          icon: Icons.campaign_rounded,
+          title: 'SERAFIM',
+          body: message.notification?.body ?? '',
+          leading: const SerafimMark(size: 42),
+          onTap: () => _openChatFrom(message),
+        );
+    if (_ref.read(settingsProvider).alertSound) {
+      SystemSound.play(SystemSoundType.alert);
+    }
+  }
+
+  /// Usually the socket's `notification` event got here first and already
+  /// showed the banner; both use the same key, so it is shown once.
+  void _onForegroundFriendRequest(RemoteMessage message) {
+    _ref.invalidate(notificationsProvider);
+    if (!_ref.read(settingsProvider).inAppAlerts) return;
+    final id = message.data['notification_id'] as String?;
+    final shown = _ref.read(shownAlertIdsProvider);
+    if (id != null && !shown.add('notification:$id:friend_request')) return;
+    if (shown.length > 100) shown.remove(shown.first);
+
+    _ref
+        .read(inAppBannerProvider)
+        .show(
+          label: NotificationKind.friendRequest.bannerLabel,
+          icon: Icons.person_add_alt_1_rounded,
+          title: message.notification?.title ?? 'Friend request',
+          body: message.notification?.body ?? '',
+          onTap: () => _openChatFrom(message),
+        );
+    if (_ref.read(settingsProvider).alertSound) {
+      SystemSound.play(SystemSoundType.alert);
+    }
+  }
+
   Future<void> _openChatFrom(RemoteMessage message) async {
+    if (message.data['type'] == 'friend_request') {
+      final navigator = _ref.read(navigatorKeyProvider).currentState;
+      if (navigator != null) openNotificationsWithNavigator(navigator);
+      return;
+    }
+    if (message.data['type'] == 'announcement') {
+      final navigator = _ref.read(navigatorKeyProvider).currentState;
+      if (navigator != null) openOfficialChatWithNavigator(navigator);
+      return;
+    }
     final senderId = message.data['sender_id'] as String?;
     if (senderId == null) return;
 

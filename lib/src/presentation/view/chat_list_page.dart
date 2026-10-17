@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
-import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/data/models/public_user.dart';
+import 'package:serafim/src/presentation/view/notifications_page.dart';
+import 'package:serafim/src/presentation/view/official_chat_page.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
+import 'package:serafim/src/providers/notification_providers.dart';
+import 'package:serafim/src/providers/official_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/chat/chat_row.dart';
 import 'package:serafim/src/utils/chat/chat_time.dart';
+import 'package:serafim/src/utils/official_badge.dart';
+import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/user_card.dart';
@@ -159,6 +164,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
       body = _SearchResults(
         query: _query,
         results: filterPeople(people, _query),
+        showOfficial: officialMatches(_query),
         myId: currentUser.id,
         onOpenDiscover: _openDiscover,
       );
@@ -167,12 +173,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
         text: humanError(view.error, fallback: "Couldn't load your chats."),
         actionLabel: 'Try again',
         onAction: () => ref.invalidate(friendsProvider),
-      );
-    } else if (friends.isEmpty && strangerIds.isEmpty) {
-      body = _CenteredMessage(
-        text: 'No conversations yet.\nFind people in Discover to start one.',
-        actionLabel: 'Open Discover',
-        onAction: _openDiscover,
       );
     } else {
       body = RefreshIndicator(
@@ -195,6 +195,16 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                 style: AppTextStyles.eyebrow,
               ),
             ),
+            // Every account has the official chat, pinned first.
+            const OfficialChatItem(),
+            const SizedBox(height: 10),
+            if (friends.isEmpty && strangerIds.isEmpty)
+              _CenteredMessage(
+                text:
+                    'No conversations yet.\nFind people in Discover to start one.',
+                actionLabel: 'Open Discover',
+                onAction: _openDiscover,
+              ),
             for (final entry in _byRecentActivity(
               friends: friends,
               strangerIds: strangerIds,
@@ -214,29 +224,35 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     return Scaffold(
       backgroundColor: AppColors.paper,
       appBar: AppTopBar(
-        trailing: GestureDetector(
-          onTap: _toggleSearch,
-          behavior: HitTestBehavior.opaque,
-          child: Padding(
-            // A bigger tap target than the visible 26px square.
-            padding: const EdgeInsets.all(6),
-            child: Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: _searching ? AppColors.primary : AppColors.paper,
-                border: Border.all(
-                  color: _searching ? AppColors.line : AppColors.lineSoft,
-                  width: 1.5,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            GestureDetector(
+              onTap: _toggleSearch,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                // A bigger tap target than the visible 26px square.
+                padding: const EdgeInsets.all(6),
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: _searching ? AppColors.primary : AppColors.paper,
+                    border: Border.all(
+                      color: _searching ? AppColors.line : AppColors.lineSoft,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Icon(
+                    _searching ? Icons.close : Icons.search,
+                    size: 14,
+                    color: _searching ? Colors.white : AppColors.textDim,
+                  ),
                 ),
               ),
-              child: Icon(
-                _searching ? Icons.close : Icons.search,
-                size: 14,
-                color: _searching ? Colors.white : AppColors.textDim,
-              ),
             ),
-          ),
+            const NotificationBell(),
+          ],
         ),
       ),
       body: SafeArea(
@@ -330,10 +346,12 @@ class _SearchResults extends StatelessWidget {
     required this.results,
     required this.myId,
     required this.onOpenDiscover,
+    this.showOfficial = false,
   });
 
   final String query;
   final List<PublicUser> results;
+  final bool showOfficial;
   final String myId;
   final VoidCallback onOpenDiscover;
 
@@ -349,7 +367,7 @@ class _SearchResults extends StatelessWidget {
       ),
     );
 
-    if (results.isEmpty) {
+    if (results.isEmpty && !showOfficial) {
       return ListView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.all(24),
@@ -376,6 +394,10 @@ class _SearchResults extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 10),
           child: Text('RESULTS', style: AppTextStyles.eyebrow),
         ),
+        if (showOfficial) ...[
+          const OfficialChatItem(),
+          const SizedBox(height: 10),
+        ],
         for (final user in results) ...[
           _ChatListItem(user: user, myId: myId),
           const SizedBox(height: 10),
@@ -498,6 +520,105 @@ class _ChatListItem extends ConsumerWidget {
       unread: (preview?.unread ?? 0) > 0,
       imageProvider: avatarImage(user.profilePic),
       onTap: () => openChatWith(context, user),
+    );
+  }
+}
+
+/// Whether a chat-list search should include the official chat.
+bool officialMatches(String query) {
+  final needle = query.trim().toLowerCase().replaceFirst(RegExp(r'^@'), '');
+  if (needle.isEmpty) return false;
+  return 'serafim'.contains(needle) || 'official'.contains(needle);
+}
+
+/// The official SERAFIM chat's row: the logo, a verified badge, and the latest
+/// announcement. Never shows a spinner — the chat list must stay instant.
+class OfficialChatItem extends ConsumerWidget {
+  const OfficialChatItem({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final latest = ref.watch(officialChatProvider).value?.latest;
+    final unread = ref.watch(officialUnreadProvider);
+
+    return ChatRow(
+      name: 'SERAFIM',
+      nameBadge: const OfficialBadge(),
+      leading: const SerafimMark(size: 38),
+      preview: latest?.content ?? 'Official news and announcements',
+      time: latest == null ? '' : formatChatListTime(context, latest.createdAt),
+      unread: unread,
+      onTap: () => openOfficialChat(context),
+    );
+  }
+}
+
+/// Bell in the top bar with the number of unread notifications.
+class NotificationBell extends ConsumerWidget {
+  const NotificationBell({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unread = ref.watch(unreadNotificationCountProvider);
+    final label = unread > 99 ? '99+' : '$unread';
+
+    return Semantics(
+      button: true,
+      label: unread == 0 ? 'Notifications' : 'Notifications, $unread unread',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const NotificationsPage()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: AppColors.paper,
+                  border: Border.all(
+                    color: unread > 0 ? AppColors.primary : AppColors.lineSoft,
+                    width: 1.5,
+                  ),
+                ),
+                child: Icon(
+                  unread > 0
+                      ? Icons.notifications_active
+                      : Icons.notifications_none,
+                  size: 14,
+                  color: unread > 0 ? AppColors.primaryPale : AppColors.textDim,
+                ),
+              ),
+              if (unread > 0)
+                Positioned(
+                  right: -6,
+                  top: -6,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    height: 16,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.rust,
+                      border: Border.all(color: AppColors.line, width: 1.5),
+                    ),
+                    child: Text(
+                      label,
+                      style: AppTextStyles.fieldLabel.copyWith(
+                        fontSize: 8,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

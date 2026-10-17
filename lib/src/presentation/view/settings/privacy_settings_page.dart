@@ -14,10 +14,10 @@ class PrivacySettingsPage extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final profile = ref.watch(profileViewModelProvider).value;
 
-    Future<void> setAllowRequests(bool allow) async {
+    Future<void> save(ProfileUpdateRequest request) async {
       final error = await ref
           .read(profileViewModelProvider.notifier)
-          .updateProfile(ProfileUpdateRequest(allowFriendRequests: allow));
+          .updateProfile(request);
       if (error != null && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(error), backgroundColor: AppColors.rust),
@@ -46,12 +46,31 @@ class PrivacySettingsPage extends ConsumerWidget {
               ? 'Create your profile to change this.'
               : 'Turn off to stop new people sending you friend requests.',
           value: profile?.allowFriendRequests ?? true,
-          onChanged: profile == null ? null : setAllowRequests,
+          onChanged: profile == null
+              ? null
+              : (allow) =>
+                    save(ProfileUpdateRequest(allowFriendRequests: allow)),
         ),
         const SettingsNote(
           'Existing friends and pending requests are not affected. Anyone can '
           'still message you or follow you; attachments are only ever allowed '
           'between friends.',
+        ),
+        const SettingsSectionLabel('Your profile'),
+        SettingsSwitchRow(
+          title: 'Lock profile',
+          subtitle: profile == null
+              ? 'Create your profile to change this.'
+              : 'Hide your friends, followers and following from other people.',
+          value: profile?.lockProfile ?? false,
+          onChanged: profile == null
+              ? null
+              : (locked) => save(ProfileUpdateRequest(lockProfile: locked)),
+        ),
+        const SettingsNote(
+          'When unlocked, anyone signed in can see who your friends are and '
+          'who you follow. Your name, photo, bio and interests stay visible '
+          'either way.',
         ),
       ],
     );

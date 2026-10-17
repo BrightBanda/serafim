@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/presentation/view/chat_thread_page.dart';
 import 'package:serafim/src/presentation/view/user_profile_page.dart';
+import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/providers/relation_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/small_action_button.dart';
@@ -140,27 +142,20 @@ class FriendActionRow extends ConsumerStatefulWidget {
 }
 
 class _FriendActionRowState extends ConsumerState<FriendActionRow> {
-  String? _busyAction;
-
-  Future<void> _run(
-    String name,
-    Future<String?> Function(SocialActions) fn,
-  ) async {
-    if (_busyAction != null) return; // No double taps / duplicate requests.
-    setState(() => _busyAction = name);
+  /// Runs a command. Its result is already on screen (it is optimistic), so
+  /// all that is left here is reporting a failure, after which the change has
+  /// been rolled back.
+  Future<void> _run(Future<String?> Function(SocialActions) fn) async {
     final error = await fn(ref.read(socialActionsProvider));
-    if (!mounted) return;
-    setState(() => _busyAction = null);
-    if (error != null) {
-      ScaffoldMessenger.of(context)
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: AppColors.rust),
-        );
-    }
+    if (error == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppColors.rust),
+      );
   }
 
-  Future<void> _confirmUnfriend() async {
+  Future<void> _confirmUnfriend(PublicUser user) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -170,7 +165,7 @@ class _FriendActionRowState extends ConsumerState<FriendActionRow> {
           style: AppTextStyles.displayHeading.copyWith(fontSize: 20),
         ),
         content: Text(
-          'You and ${widget.user.displayName} will no longer be able to send '
+          'You and ${user.displayName} will no longer be able to send '
           'each other attachments. Your messages stay.',
           style: AppTextStyles.body,
         ),
@@ -186,13 +181,19 @@ class _FriendActionRowState extends ConsumerState<FriendActionRow> {
         ],
       ),
     );
-    if (ok == true) await _run('unfriend', (a) => a.unfriend(widget.user.id));
+    if (ok == true) await _run((a) => a.unfriend(user.id));
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = widget.user;
-    final busy = _busyAction;
+    // You can appear in someone else's friends or followers list; there is
+    // nothing to do with yourself.
+    if (widget.user.id == ref.watch(currentAccountIdProvider)) {
+      return Text('THIS IS YOU', style: AppTextStyles.fieldLabel);
+    }
+
+    // What the server said, with any tap still on its way laid over it.
+    final user = watchWithPending(ref, widget.user);
 
     final buttons = <Widget>[
       if (widget.showMessage)
@@ -208,8 +209,7 @@ class _FriendActionRowState extends ConsumerState<FriendActionRow> {
               label: 'Add friend',
               icon: Icons.person_add_alt,
               primary: true,
-              busy: busy == 'add',
-              onPressed: () => _run('add', (a) => a.sendRequest(user.id)),
+              onPressed: () => _run((a) => a.sendRequest(user.id)),
             )
           else
             const SmallActionButton(
@@ -226,8 +226,7 @@ class _FriendActionRowState extends ConsumerState<FriendActionRow> {
           ),
           SmallActionButton(
             label: 'Cancel',
-            busy: busy == 'cancel',
-            onPressed: () => _run('cancel', (a) => a.cancel(user.id)),
+            onPressed: () => _run((a) => a.cancel(user.id)),
           ),
         ],
         FriendStatus.requestReceived => [
@@ -235,13 +234,11 @@ class _FriendActionRowState extends ConsumerState<FriendActionRow> {
             label: 'Accept',
             icon: Icons.check,
             primary: true,
-            busy: busy == 'accept',
-            onPressed: () => _run('accept', (a) => a.accept(user.id)),
+            onPressed: () => _run((a) => a.accept(user.id)),
           ),
           SmallActionButton(
             label: 'Decline',
-            busy: busy == 'reject',
-            onPressed: () => _run('reject', (a) => a.reject(user.id)),
+            onPressed: () => _run((a) => a.reject(user.id)),
           ),
         ],
         FriendStatus.friends => [
@@ -253,8 +250,7 @@ class _FriendActionRowState extends ConsumerState<FriendActionRow> {
           if (widget.showUnfriend)
             SmallActionButton(
               label: 'Unfriend',
-              busy: busy == 'unfriend',
-              onPressed: _confirmUnfriend,
+              onPressed: () => _confirmUnfriend(user),
             ),
         ],
       },
@@ -266,14 +262,12 @@ class _FriendActionRowState extends ConsumerState<FriendActionRow> {
           ? SmallActionButton(
               label: 'Following',
               icon: Icons.check,
-              busy: busy == 'unfollow',
-              onPressed: () => _run('unfollow', (a) => a.unfollow(user.id)),
+              onPressed: () => _run((a) => a.unfollow(user.id)),
             )
           : SmallActionButton(
               label: 'Follow',
               icon: Icons.add,
-              busy: busy == 'follow',
-              onPressed: () => _run('follow', (a) => a.follow(user.id)),
+              onPressed: () => _run((a) => a.follow(user.id)),
             ),
     );
 

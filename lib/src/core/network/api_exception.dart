@@ -126,6 +126,11 @@ class ApiException implements Exception {
     if (text.isEmpty) return null;
 
     final lower = text.toLowerCase();
+    // Addresses, hosts and IPs mean nothing to a person and say too much about
+    // our setup, so a message carrying one is replaced by the generic wording.
+    if (RegExp(r'https?://|wss?://|www\.|\b[\w-]+\.(supabase|onrender|herokuapp|railway|fly|vercel)\.\w+|\b\d{1,3}(\.\d{1,3}){3}\b').hasMatch(lower)) {
+      return null;
+    }
     if (lower.startsWith('<') ||
         lower.contains('<html') ||
         lower.contains('traceback')) {

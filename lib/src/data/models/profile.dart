@@ -9,12 +9,21 @@ class Profile {
     this.profilePic,
     this.interests = const [],
     this.allowFriendRequests = true,
+    this.bio,
+    this.lockProfile = false,
   });
 
   final String userId;
 
   /// Privacy: when false, nobody can send this user a friend request.
   final bool allowFriendRequests;
+
+  /// Privacy: when true, other people cannot see this user's friends,
+  /// followers or following.
+  final bool lockProfile;
+
+  /// A short self-description, or null when there is none.
+  final String? bio;
   final String displayName;
   final String username;
   final String? profilePic;
@@ -29,6 +38,8 @@ class Profile {
     'profile_pic': profilePic,
     'interests': interests,
     'allow_friend_requests': allowFriendRequests,
+    'bio': bio,
+    'lock_profile': lockProfile,
     'created_at': createdAt.toUtc().toIso8601String(),
     'updated_at': updatedAt.toUtc().toIso8601String(),
   };
@@ -44,6 +55,8 @@ class Profile {
           ? interests.map((e) => e.toString()).toList(growable: false)
           : const [],
       allowFriendRequests: json['allow_friend_requests'] as bool? ?? true,
+      bio: json['bio'] as String?,
+      lockProfile: json['lock_profile'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -84,6 +97,8 @@ class ProfileUpdateRequest {
     this.profilePic,
     this.interests,
     this.allowFriendRequests,
+    this.bio,
+    this.lockProfile,
   });
 
   final String? displayName;
@@ -92,6 +107,10 @@ class ProfileUpdateRequest {
   final List<String>? interests;
   final bool? allowFriendRequests;
 
+  /// An empty string clears the bio; null leaves it alone.
+  final String? bio;
+  final bool? lockProfile;
+
   Map<String, dynamic> toJson() => {
     if (displayName != null) 'display_name': displayName,
     if (username != null) 'username': username,
@@ -99,6 +118,8 @@ class ProfileUpdateRequest {
     if (interests != null) 'interests': interests,
     if (allowFriendRequests != null)
       'allow_friend_requests': allowFriendRequests,
+    if (bio != null) 'bio': bio,
+    if (lockProfile != null) 'lock_profile': lockProfile,
   };
 
   bool get isEmpty => toJson().isEmpty;

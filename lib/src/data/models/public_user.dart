@@ -38,6 +38,9 @@ class PublicUser {
     this.acceptsFriendRequests = true,
     this.followerCount,
     this.followingCount,
+    this.friendCount,
+    this.bio,
+    this.profileLocked = false,
   });
 
   final String id;
@@ -45,6 +48,12 @@ class PublicUser {
   final String displayName;
   final String? profilePic;
   final List<String> interests;
+
+  /// Their self-description, or null.
+  final String? bio;
+
+  /// They hide their friends, followers and following from other people.
+  final bool profileLocked;
 
   /// Interests both people listed — the only basis for a "why am I seeing
   /// this person" reason.
@@ -58,11 +67,39 @@ class PublicUser {
   /// False when they have turned friend requests off.
   final bool acceptsFriendRequests;
 
-  /// Only present on a single-profile lookup.
+  /// Only present on a single-profile lookup, and absent when the profile is
+  /// locked.
   final int? followerCount;
   final int? followingCount;
+  final int? friendCount;
 
   bool get isFriend => friendStatus == FriendStatus.friends;
+
+  /// The same person with their relationship to you changed — used to show a
+  /// tap's result straight away, before the server confirms it.
+  PublicUser copyWith({
+    FriendStatus? friendStatus,
+    bool? isFollowing,
+    int? followerCount,
+  }) {
+    return PublicUser(
+      id: id,
+      username: username,
+      displayName: displayName,
+      profilePic: profilePic,
+      interests: interests,
+      sharedInterests: sharedInterests,
+      friendStatus: friendStatus ?? this.friendStatus,
+      isFollowing: isFollowing ?? this.isFollowing,
+      followsYou: followsYou,
+      acceptsFriendRequests: acceptsFriendRequests,
+      followerCount: followerCount ?? this.followerCount,
+      followingCount: followingCount,
+      friendCount: friendCount,
+      bio: bio,
+      profileLocked: profileLocked,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -77,6 +114,9 @@ class PublicUser {
     'accepts_friend_requests': acceptsFriendRequests,
     'follower_count': followerCount,
     'following_count': followingCount,
+    'friend_count': friendCount,
+    'bio': bio,
+    'profile_locked': profileLocked,
   };
 
   factory PublicUser.fromJson(Map<String, dynamic> json) {
@@ -97,6 +137,9 @@ class PublicUser {
       acceptsFriendRequests: json['accepts_friend_requests'] as bool? ?? true,
       followerCount: json['follower_count'] as int?,
       followingCount: json['following_count'] as int?,
+      friendCount: json['friend_count'] as int?,
+      bio: json['bio'] as String?,
+      profileLocked: json['profile_locked'] as bool? ?? false,
     );
   }
 }

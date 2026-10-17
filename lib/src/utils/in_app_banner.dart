@@ -21,6 +21,10 @@ class InAppBannerService {
     required String title,
     required String body,
     ImageProvider? avatar,
+    Widget? leading,
+    String label = 'NEW MESSAGE',
+    IconData icon = Icons.chat_bubble_rounded,
+    Color? accent,
     VoidCallback? onTap,
   }) {
     final overlay = _navigatorKey.currentState?.overlay;
@@ -36,6 +40,10 @@ class InAppBannerService {
         title: title,
         body: body,
         avatar: avatar,
+        leading: leading,
+        label: label,
+        icon: icon,
+        accent: accent,
         onTap: onTap,
       ),
     );
@@ -80,7 +88,11 @@ class _BannerView extends StatefulWidget {
     required this.controller,
     required this.title,
     required this.body,
+    required this.label,
+    required this.icon,
     this.avatar,
+    this.leading,
+    this.accent,
     this.onTap,
   });
 
@@ -88,6 +100,16 @@ class _BannerView extends StatefulWidget {
   final String title;
   final String body;
   final ImageProvider? avatar;
+
+  /// Replaces the avatar (e.g. the SERAFIM logo for announcements).
+  final Widget? leading;
+
+  /// What kind of alert this is, e.g. "NEW MESSAGE".
+  final String label;
+  final IconData icon;
+
+  /// Colour of the stripe and label chip; the brand blue when null.
+  final Color? accent;
   final VoidCallback? onTap;
 
   @override
@@ -154,67 +176,123 @@ class _BannerViewState extends State<_BannerView>
               onVerticalDragEnd: (d) {
                 if ((d.primaryVelocity ?? 0) < -150) _close();
               },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 10,
-                  horizontal: 12,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [AppColors.paperRaised, AppColors.paperAlt],
-                  ),
-                  border: Border.all(color: AppColors.line, width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.line,
-                      offset: const Offset(3, 3),
-                      blurRadius: 0,
-                    ),
-                  ],
-                ),
+              child: _card(),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A raised, lighter card than the page beneath it, with an accent stripe
+  /// and a filled label chip, so it stands out in both themes.
+  Widget _card() {
+    final accent = widget.accent ?? AppColors.primary;
+    final surface = Color.lerp(
+      AppColors.isLight ? Colors.white : AppColors.paperRaised,
+      accent,
+      AppColors.isLight ? 0.07 : 0.16,
+    )!;
+    final surfaceEnd = AppColors.isLight ? Colors.white : AppColors.paperRaised;
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [surface, surfaceEnd],
+        ),
+        border: Border.all(color: AppColors.line, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.line,
+            offset: const Offset(3, 3),
+            blurRadius: 0,
+          ),
+          BoxShadow(
+            color: accent.withValues(alpha: 0.28),
+            blurRadius: 18,
+            spreadRadius: -2,
+          ),
+        ],
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 5, color: accent),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
                 child: Row(
                   children: [
-                    AvatarThumb(size: 40, imageProvider: widget.avatar),
-                    const SizedBox(width: 10),
+                    widget.leading ??
+                        AvatarThumb(size: 42, imageProvider: widget.avatar),
+                    const SizedBox(width: 11),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            'NEW MESSAGE',
-                            style: AppTextStyles.fieldLabel.copyWith(
-                              fontSize: 8.5,
-                              color: AppColors.primaryPale,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1.5,
+                            ),
+                            color: accent,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(widget.icon, size: 9, color: Colors.white),
+                                const SizedBox(width: 4),
+                                Text(
+                                  widget.label,
+                                  style: AppTextStyles.fieldLabel.copyWith(
+                                    fontSize: 8.5,
+                                    color: Colors.white,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 1),
+                          const SizedBox(height: 4),
                           Text(
                             widget.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: AppTextStyles.body.copyWith(
                               color: AppColors.text,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                              height: 1.25,
                             ),
                           ),
-                          Text(
-                            widget.body,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.body.copyWith(fontSize: 11),
-                          ),
+                          if (widget.body.isNotEmpty)
+                            Text(
+                              widget.body,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.body.copyWith(
+                                fontSize: 11.5,
+                                height: 1.35,
+                                color: AppColors.text.withValues(alpha: 0.82),
+                              ),
+                            ),
                         ],
                       ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: AppColors.textDim,
                     ),
                   ],
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );

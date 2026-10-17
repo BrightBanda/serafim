@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -36,7 +37,9 @@ class ProfilePage extends ConsumerWidget {
     final user = ref.watch(currentUserProvider);
     final profileAsync = ref.watch(profileViewModelProvider);
     final pic = profileAsync.value?.profilePic;
-    final avatar = pic != null && pic.isNotEmpty ? CachedNetworkImageProvider(pic) : null;
+    final avatar = pic != null && pic.isNotEmpty
+        ? CachedNetworkImageProvider(pic)
+        : null;
 
     return Scaffold(
       backgroundColor: AppColors.paper,
@@ -90,13 +93,11 @@ class ProfilePage extends ConsumerWidget {
                       style: AppTextStyles.smallDim,
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 4),
-                    // UID
-                    Text(
-                      'UID: ${user?.id ?? 'UNKNOWN'}',
-                      style: AppTextStyles.smallDim.copyWith(fontSize: 10),
-                      textAlign: TextAlign.center,
-                    ),
+                    _Bio(bio: profileAsync.value?.bio),
+                    const SizedBox(height: 10),
+                    // The account id from sign-in: the same id the server
+                    // knows this account by, and what people search for.
+                    if (user != null) UidRow(uid: user.id),
                     const SizedBox(height: 14),
                     const _FollowCounts(),
                     const SizedBox(height: 16),
@@ -165,7 +166,7 @@ class ProfilePage extends ConsumerWidget {
               SettingTile(
                 icon: Icons.security,
                 title: 'Privacy Settings',
-                subtitle: 'Read receipts, who can send you friend requests',
+                subtitle: 'Read receipts, friend requests, lock profile',
                 onTap: () => _open(context, const PrivacySettingsPage()),
               ),
               const SizedBox(height: 8),
@@ -496,6 +497,98 @@ class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
       busyLabel: 'Uploading…',
       onEditTap: _change,
       onUploadTap: _change,
+    );
+  }
+}
+
+/// The bio under the name, or a nudge to add one.
+class _Bio extends StatelessWidget {
+  const _Bio({required this.bio});
+
+  final String? bio;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = bio?.trim() ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Text(
+        text.isEmpty ? 'No bio yet. Add one with Edit profile.' : text,
+        textAlign: TextAlign.center,
+        style: text.isEmpty
+            ? AppTextStyles.smallDim.copyWith(fontStyle: FontStyle.italic)
+            : AppTextStyles.body.copyWith(
+                color: AppColors.text,
+                fontSize: 12.5,
+              ),
+      ),
+    );
+  }
+}
+
+/// Shows the account's UID with a copy button. Copies exactly [uid] — the
+/// id the server uses — never the name or username.
+class UidRow extends StatelessWidget {
+  const UidRow({super.key, required this.uid});
+
+  final String uid;
+
+  Future<void> _copy(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: uid));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('UID copied'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Copy your UID',
+      child: Material(
+        color: AppColors.paper,
+        shape: Border.all(color: AppColors.lineSoft, width: 1.5),
+        child: InkWell(
+          onTap: () => _copy(context),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+            child: Row(
+              children: [
+                Text('UID', style: AppTextStyles.fieldLabel),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    uid,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.smallDim.copyWith(
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                      color: AppColors.text,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Copy UID',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _copy(context),
+                  icon: Icon(
+                    Icons.copy_rounded,
+                    size: 16,
+                    color: AppColors.primaryPale,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

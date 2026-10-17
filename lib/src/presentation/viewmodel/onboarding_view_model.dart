@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/config/profile_limits.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
@@ -110,7 +111,12 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
     );
 
     final email = ref.read(currentUserProvider)?.email;
-    final displayName = _resolveDisplayName(email);
+    final resolved = _resolveDisplayName(email);
+    // The server caps display names; an email local-part can be longer.
+    final displayName =
+        resolved == null || resolved.length <= ProfileLimits.displayNameMax
+        ? resolved
+        : resolved.substring(0, ProfileLimits.displayNameMax).trim();
 
     if (displayName == null) {
       // No name and no email to derive one from — a phone-only account. The
@@ -174,13 +180,20 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
   static bool _isUsernameTaken(String error) =>
       error.toLowerCase().contains('username already taken');
 
+  /// A username the server accepts, with room left for the `_xxxx` suffix
+  /// added on a collision.
   static String _slugify(String input) {
-    final slug = input
+    var slug = input
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
         .replaceAll(RegExp(r'^_+|_+$'), '');
 
     if (slug.isEmpty) return 'user';
-    return slug.length > 40 ? slug.substring(0, 40) : slug;
+    if (slug.length < ProfileLimits.usernameMin) slug = '${slug}_user';
+    const room = ProfileLimits.usernameMax - 5; // "_" + 4-character suffix.
+    if (slug.length > room) {
+      slug = slug.substring(0, room).replaceAll(RegExp(r'_+$'), '');
+    }
+    return slug;
   }
 }

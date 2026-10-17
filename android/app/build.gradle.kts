@@ -57,6 +57,13 @@ android {
 
     buildTypes {
         release {
+            // Shrink and optimise code and resources: smaller APK.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             signingConfig = if (hasReleaseKey) {
                 signingConfigs.getByName("release")
             } else {

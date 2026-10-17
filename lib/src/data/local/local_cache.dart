@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:serafim/src/data/models/announcement.dart';
 import 'package:serafim/src/data/models/app_user.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -103,6 +104,32 @@ class LocalCache {
       for (final e in people.entries) e.key: e.value.toJson(),
     });
   }
+
+  // --- the official SERAFIM chat ------------------------------------------
+
+  /// The announcements last fetched, newest first, so the official chat opens
+  /// instantly and works offline.
+  List<Announcement>? announcements(String account) => _read(
+    _key(account, 'announcements'),
+    (j) => [
+      for (final e in j! as List)
+        Announcement.fromJson(e as Map<String, dynamic>),
+    ],
+  );
+
+  Future<void> saveAnnouncements(String account, List<Announcement> items) =>
+      _write(_key(account, 'announcements'), [
+        for (final a in items) a.toJson(),
+      ]);
+
+  /// When this person last looked at the official chat (for its unread dot).
+  DateTime? officialLastRead(String account) => _read(
+    _key(account, 'officialLastRead'),
+    (j) => DateTime.parse(j! as String).toUtc(),
+  );
+
+  Future<void> saveOfficialLastRead(String account, DateTime at) =>
+      _write(_key(account, 'officialLastRead'), at.toUtc().toIso8601String());
 
   // --- housekeeping ---------------------------------------------------------
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/config/profile_limits.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
@@ -9,8 +10,9 @@ import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/ui_text_field.dart';
 
-/// Change display name, username and interests. Only fields that actually
-/// changed are sent.
+/// Change display name, username, bio and interests. Only fields that
+/// actually changed are sent. This page only ever edits the signed-in user's
+/// own profile (`PUT /profile/me`).
 class EditProfilePage extends ConsumerStatefulWidget {
   const EditProfilePage({super.key, required this.profile});
 
@@ -21,13 +23,14 @@ class EditProfilePage extends ConsumerStatefulWidget {
 }
 
 class _EditProfilePageState extends ConsumerState<EditProfilePage> {
-  static final _usernameRule = RegExp(r'^[a-z0-9_]{3,30}$');
-
   late final TextEditingController _name = TextEditingController(
     text: widget.profile.displayName,
   );
   late final TextEditingController _username = TextEditingController(
     text: widget.profile.username,
+  );
+  late final TextEditingController _bio = TextEditingController(
+    text: widget.profile.bio ?? '',
   );
   late Set<String> _interests = {...widget.profile.interests};
 
@@ -38,6 +41,7 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
   void dispose() {
     _name.dispose();
     _username.dispose();
+    _bio.dispose();
     super.dispose();
   }
 
@@ -48,24 +52,24 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
   }
 
   Future<void> _save() async {
-    final name = _name.text.trim();
+    final name = _name.text.trim().replaceAll(RegExp(r'\s+'), ' ');
     final username = _username.text.trim().toLowerCase();
+    final bio = _bio.text.trim();
 
-    if (name.isEmpty) {
-      setState(() => _error = 'Display name cannot be empty.');
-      return;
-    }
-    if (!_usernameRule.hasMatch(username)) {
-      setState(
-        () => _error =
-            'Username must be 3–30 characters: lowercase letters, numbers and _.',
-      );
+    final problem =
+        ProfileLimits.displayNameError(name) ??
+        ProfileLimits.usernameError(username) ??
+        ProfileLimits.bioError(bio);
+    if (problem != null) {
+      setState(() => _error = problem);
       return;
     }
 
     final request = ProfileUpdateRequest(
       displayName: name != widget.profile.displayName ? name : null,
       username: username != widget.profile.username ? username : null,
+      // An empty bio is sent as "" so the server clears it.
+      bio: bio != (widget.profile.bio ?? '') ? bio : null,
       interests: _interestsChanged ? _interests.toList() : null,
     );
     if (request.isEmpty) {
@@ -110,12 +114,30 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
                 label: 'Display name',
                 controller: _name,
                 hintText: 'How should people see you?',
+                maxLength: ProfileLimits.displayNameMax,
+                textCapitalization: TextCapitalization.words,
               ),
               const SizedBox(height: 16),
               UiTextField(
                 label: 'Username',
                 controller: _username,
                 hintText: 'letters, numbers and _',
+                maxLength: ProfileLimits.usernameMax,
+              ),
+              const SizedBox(height: 16),
+              UiTextField(
+                label: 'Bio',
+                controller: _bio,
+                hintText: 'A line or two about you (optional)',
+                maxLength: ProfileLimits.bioMax,
+                maxLines: 4,
+                minLines: 2,
+                autocorrect: true,
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              Text(
+                'Leave it empty to remove your bio.',
+                style: AppTextStyles.smallDim,
               ),
               const SizedBox(height: 24),
               Text('INTERESTS', style: AppTextStyles.eyebrow),

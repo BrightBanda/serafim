@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:serafim/src/core/config/profile_limits.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/avatar_picker.dart';
 import 'package:serafim/src/utils/progress_bar.dart';
@@ -12,9 +13,9 @@ import 'package:serafim/src/utils/ui_text_field.dart';
 /// Onboarding Step 2 — photo + display name only. Reuses SerafimTopBar,
 /// SerafimTextField and SerafimButton from the signup flow.
 ///
-/// UI only: the 0/24 character counter is local visual state (same
-/// category as the password show/hide toggle) — [onContinue], [onSkip]
-/// and [onBack] are plain callbacks with no logic behind them here.
+/// UI only: [onContinue], [onSkip] and [onBack] are plain callbacks with no
+/// logic behind them here. The name field shows a counter against the
+/// display-name limit and stops at it.
 class ProfilePhotoNamePage extends StatefulWidget {
   const ProfilePhotoNamePage({
     super.key,
@@ -47,15 +48,6 @@ class ProfilePhotoNamePage extends StatefulWidget {
 class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
   late final TextEditingController _nameController =
       widget.nameController ?? TextEditingController();
-  int _charCount = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController.addListener(() {
-      setState(() => _charCount = _nameController.text.length);
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,10 +98,8 @@ class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
                       label: 'Display name',
                       controller: _nameController,
                       hintText: 'How should people see you?',
-                      footer: Text(
-                        '$_charCount / 24',
-                        style: AppTextStyles.fieldLabel.copyWith(fontSize: 8.5),
-                      ),
+                      maxLength: ProfileLimits.displayNameMax,
+                      textCapitalization: TextCapitalization.words,
                     ),
                     const SizedBox(height: 22),
 

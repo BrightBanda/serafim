@@ -38,6 +38,18 @@ class SocialService {
     return PublicUser.fromJson(data);
   }
 
+  /// Someone's friends / followers / following, each with their relationship
+  /// to you. The server refuses (403) when that person has locked their
+  /// profile.
+  Future<List<PublicUser>> friendsOf(String userId) async =>
+      _users(await _get('/users/$userId/friends'));
+
+  Future<List<PublicUser>> followersOf(String userId) async =>
+      _users(await _get('/users/$userId/followers'));
+
+  Future<List<PublicUser>> followingOf(String userId) async =>
+      _users(await _get('/users/$userId/following'));
+
   Future<FriendStatus> sendRequest(String userId) =>
       _mutate('POST', '/friends/requests', body: {'user_id': userId});
 

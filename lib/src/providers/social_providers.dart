@@ -5,6 +5,7 @@ import 'package:serafim/src/data/services/social_service.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/network_providers.dart';
+import 'package:serafim/src/providers/relation_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 
 final socialServiceProvider = Provider<SocialService>((ref) {
@@ -106,10 +107,28 @@ final publicUserProvider = FutureProvider.autoDispose
     .family<PublicUser, String>((ref, id) async {
       final user = await ref.watch(socialServiceProvider).user(id);
       final account = ref.read(currentAccountIdProvider);
-      if (account != null)
+      if (account != null) {
         await ref.read(localCacheProvider).savePerson(account, user);
+      }
       return user;
     });
+
+/// Someone else's friends, followers and following. These fail with a
+/// "profile is locked" error when that person has locked their profile.
+final friendsOfProvider = FutureProvider.autoDispose
+    .family<List<PublicUser>, String>(
+      (ref, id) => ref.watch(socialServiceProvider).friendsOf(id),
+    );
+
+final followersOfProvider = FutureProvider.autoDispose
+    .family<List<PublicUser>, String>(
+      (ref, id) => ref.watch(socialServiceProvider).followersOf(id),
+    );
+
+final followingOfProvider = FutureProvider.autoDispose
+    .family<List<PublicUser>, String>(
+      (ref, id) => ref.watch(socialServiceProvider).followingOf(id),
+    );
 
 /// Someone you know about, instantly and without the network: a friend, else
 /// the copy saved on this phone, else null. Screens show this immediately and
@@ -137,42 +156,124 @@ final conversationPeerIdsProvider = StreamProvider<List<String>>((ref) {
   return ref.watch(isarServiceProvider).watchConversationPeerIds(myId);
 });
 
-/// Friend-request commands. Each returns null on success or a message to
-/// show, and refreshes every list the change could affect.
+/// Friend and follow commands, applied optimistically: the screen shows the
+/// result of a tap straight away (through [relationOverridesProvider]) while
+/// the request runs in the background. Each command returns null on success
+/// or a message to show; on failure the change is rolled back.
+///
+/// Rapid taps never produce duplicate or out-of-order requests: friend
+/// commands for someone are ignored while one is already in flight, and
+/// follow/unfollow taps are coalesced so only the latest wish is sent once the
+/// current request finishes.
 class SocialActions {
   SocialActions(this._ref);
 
   final Ref _ref;
 
   SocialService get _service => _ref.read(socialServiceProvider);
+  RelationOverridesNotifier get _overrides =>
+      _ref.read(relationOverridesProvider.notifier);
 
-  Future<String?> sendRequest(String userId) =>
-      _run(() => _service.sendRequest(userId));
-  Future<String?> accept(String userId) => _run(() => _service.accept(userId));
-  Future<String?> reject(String userId) => _run(() => _service.reject(userId));
-  Future<String?> cancel(String userId) => _run(() => _service.cancel(userId));
+  /// People with a friend command on its way to the server.
+  final Set<String> _friendBusy = {};
+
+  /// The follow state the user last asked for, per person, while a follow
+  /// request for them is running.
+  final Map<String, bool> _wantFollow = {};
+
+  Future<String?> sendRequest(String userId) => _friend(
+    userId,
+    FriendStatus.requestSent,
+    () => _service.sendRequest(userId),
+  );
+  Future<String?> accept(String userId) =>
+      _friend(userId, FriendStatus.friends, () => _service.accept(userId));
+  Future<String?> reject(String userId) =>
+      _friend(userId, FriendStatus.none, () => _service.reject(userId));
+  Future<String?> cancel(String userId) =>
+      _friend(userId, FriendStatus.none, () => _service.cancel(userId));
   Future<String?> unfriend(String userId) =>
-      _run(() => _service.unfriend(userId));
+      _friend(userId, FriendStatus.none, () => _service.unfriend(userId));
 
-  Future<String?> follow(String userId) => _run(() async {
-    await _service.follow(userId);
-    return FriendStatus.none;
-  });
+  Future<String?> follow(String userId) => setFollowing(userId, true);
+  Future<String?> unfollow(String userId) => setFollowing(userId, false);
 
-  Future<String?> unfollow(String userId) => _run(() async {
-    await _service.unfollow(userId);
-    return FriendStatus.none;
-  });
-
-  Future<String?> _run(Future<FriendStatus> Function() action) async {
+  Future<String?> _friend(
+    String userId,
+    FriendStatus optimistic,
+    Future<FriendStatus> Function() action,
+  ) async {
+    if (!_friendBusy.add(userId)) return null; // Already on its way.
+    _overrides.setFriend(userId, optimistic);
     try {
-      await action();
-      refreshAll(_ref);
+      // The server's answer can differ from the guess (asking someone who
+      // already asked you makes you friends), so show what it said.
+      _overrides.setFriend(userId, await action());
+      await _resync(userId);
+      _overrides.clearFriend(userId);
       return null;
     } on ApiException catch (error) {
+      _overrides.clearFriend(userId);
       // The other side may have changed things first; resync either way.
       refreshAll(_ref);
       return error.message;
+    } finally {
+      _friendBusy.remove(userId);
+    }
+  }
+
+  /// Follows or unfollows [userId], showing the new state at once.
+  Future<String?> setFollowing(String userId, bool following) async {
+    _overrides.setFollow(userId, following);
+    final running = _wantFollow.containsKey(userId);
+    _wantFollow[userId] = following;
+    if (running) return null; // The running loop below sends the latest wish.
+
+    bool? sent;
+    try {
+      while (true) {
+        final want = _wantFollow[userId]!;
+        if (want != sent) {
+          want
+              ? await _service.follow(userId)
+              : await _service.unfollow(userId);
+          sent = want;
+          continue;
+        }
+        await _resync(userId);
+        // A tap may have landed while the lists were refreshing.
+        if (_wantFollow[userId] == sent) break;
+      }
+      _overrides.clearFollow(userId);
+      return null;
+    } on ApiException catch (error) {
+      _overrides.clearFollow(userId);
+      refreshAll(_ref);
+      return error.message;
+    } finally {
+      _wantFollow.remove(userId);
+    }
+  }
+
+  /// Refetches every list the change could affect and waits (briefly) for
+  /// the ones on screen, so dropping the pending change never flashes the old
+  /// state back.
+  Future<void> _resync(String userId) async {
+    refreshAll(_ref);
+    final waits = <Future<Object?>>[
+      if (_ref.exists(friendsProvider)) _ref.read(friendsProvider.future),
+      if (_ref.exists(friendRequestsProvider))
+        _ref.read(friendRequestsProvider.future),
+      if (_ref.exists(followingProvider)) _ref.read(followingProvider.future),
+      if (_ref.exists(followersProvider)) _ref.read(followersProvider.future),
+      if (_ref.exists(discoverProvider)) _ref.read(discoverProvider.future),
+      if (_ref.exists(publicUserProvider(userId)))
+        _ref.read(publicUserProvider(userId).future),
+    ];
+    try {
+      await Future.wait(waits).timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // A list that failed to refresh shows its own error.
     }
   }
 
@@ -185,6 +286,9 @@ class SocialActions {
     ref.invalidate(discoverProvider);
     ref.invalidate(userSearchProvider);
     ref.invalidate(publicUserProvider);
+    ref.invalidate(friendsOfProvider);
+    ref.invalidate(followersOfProvider);
+    ref.invalidate(followingOfProvider);
   }
 }
 

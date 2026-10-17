@@ -6,10 +6,17 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
-import 'package:flutter/material.dart' show NetworkImage;
+import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
+import 'package:serafim/src/data/models/announcement.dart';
+import 'package:serafim/src/data/models/app_notification.dart';
+import 'package:serafim/src/presentation/view/notifications_page.dart';
+import 'package:serafim/src/presentation/view/official_chat_page.dart';
+import 'package:serafim/src/providers/notification_providers.dart';
+import 'package:serafim/src/providers/official_providers.dart';
+import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/websocket_providers.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
@@ -18,6 +25,7 @@ import 'package:serafim/src/providers/service_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/providers/social_providers.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/user_card.dart';
 
 class ChatState {
@@ -110,7 +118,9 @@ class ChatViewModel extends Notifier<ChatState> {
         .show(
           title: sender?.displayName ?? 'Someone',
           body: body,
-          avatar: pic != null && pic.isNotEmpty ? CachedNetworkImageProvider(pic) : null,
+          avatar: pic != null && pic.isNotEmpty
+              ? CachedNetworkImageProvider(pic)
+              : null,
           onTap: () {
             final navigator = ref.read(navigatorKeyProvider).currentState;
             if (navigator == null) return;
@@ -123,6 +133,71 @@ class ChatViewModel extends Notifier<ChatState> {
                     displayName: 'Unknown user',
                   ),
             );
+          },
+        );
+    if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
+  }
+
+  /// Banner for a friend request, accepted request or new follower.
+  void _alertNotification(Map<String, dynamic> data) {
+    final settings = ref.read(settingsProvider);
+    if (!settings.inAppAlerts) return;
+    final id = data['id'] as String?;
+    final shown = ref.read(shownAlertIdsProvider);
+    if (id != null && !shown.add('notification:$id:${data['kind']}')) return;
+    if (shown.length > 100) shown.remove(shown.first);
+
+    final kind = NotificationKind.parse(data['kind'] as String?);
+    final name = (data['actor_name'] as String?) ?? 'Someone';
+    final pic = data['actor_pic'] as String?;
+    ref
+        .read(inAppBannerProvider)
+        .show(
+          label: kind.bannerLabel,
+          icon: switch (kind) {
+            NotificationKind.friendRequest => Icons.person_add_alt_1_rounded,
+            NotificationKind.friendAccepted => Icons.people_alt_rounded,
+            NotificationKind.newFollower => Icons.favorite_rounded,
+            NotificationKind.unknown => Icons.notifications_rounded,
+          },
+          accent: switch (kind) {
+            NotificationKind.friendAccepted => AppColors.teal,
+            NotificationKind.newFollower => AppColors.rust,
+            _ => AppColors.primary,
+          },
+          title: name,
+          body: kind.action[0].toUpperCase() + kind.action.substring(1),
+          avatar: pic != null && pic.isNotEmpty
+              ? CachedNetworkImageProvider(pic)
+              : null,
+          onTap: () {
+            final navigator = ref.read(navigatorKeyProvider).currentState;
+            if (navigator != null) openNotificationsWithNavigator(navigator);
+          },
+        );
+    if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
+  }
+
+  /// Banner for a new official announcement, unless that chat is open.
+  void _alertAnnouncement(Announcement announcement) {
+    final settings = ref.read(settingsProvider);
+    if (!settings.inAppAlerts) return;
+    if (ref.read(activeRoomProvider) == officialRoomId) return;
+    final shown = ref.read(shownAlertIdsProvider);
+    if (!shown.add('announcement:${announcement.id}')) return;
+    if (shown.length > 100) shown.remove(shown.first);
+
+    ref
+        .read(inAppBannerProvider)
+        .show(
+          label: 'OFFICIAL ANNOUNCEMENT',
+          icon: Icons.campaign_rounded,
+          title: 'SERAFIM',
+          body: announcement.content,
+          leading: const SerafimMark(size: 42),
+          onTap: () {
+            final navigator = ref.read(navigatorKeyProvider).currentState;
+            if (navigator != null) openOfficialChatWithNavigator(navigator);
           },
         );
     if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
@@ -321,6 +396,26 @@ class ChatViewModel extends Notifier<ChatState> {
 
         case 'friend_update':
           SocialActions.refreshAll(ref);
+          // An undone follow or request also takes its notification away.
+          ref.invalidate(notificationsProvider);
+          break;
+
+        case 'notification':
+          ref.invalidate(notificationsProvider);
+          _alertNotification(data);
+          break;
+
+        case 'announcement':
+          final announcement = Announcement.fromJson(data);
+          ref.read(officialChatProvider.notifier).receive(announcement);
+          _alertAnnouncement(announcement);
+          break;
+
+        case 'announcement_deleted':
+          final id = data['id'] as String?;
+          if (id != null) {
+            ref.read(officialChatProvider.notifier).removeLocal(id);
+          }
           break;
 
         case 'status':
