@@ -33,6 +33,9 @@ class _PostUpdatePageState extends ConsumerState<PostUpdatePage> {
   final _size = TextEditingController();
   final _notes = TextEditingController();
   bool _mandatory = false;
+
+  /// Per-CPU builds found on the release (empty for a single-APK release).
+  List<ApkVariant> _variants = const [];
   bool _fetching = false;
   bool _posting = false;
   double? _hashProgress;
@@ -67,8 +70,9 @@ class _PostUpdatePageState extends ConsumerState<PostUpdatePage> {
         _size.text = '${u.sizeBytes}';
         _sha.text = u.sha256 ?? '';
         _notes.text = u.changelog;
-        if (u.sha256 == null) {
-          _error = "GitHub didn't publish a checksum. Tap Compute SHA-256.";
+        _variants = u.variants;
+        if (u.sha256 == null || u.variants.any((v) => v.sha256 == null)) {
+          _error = "GitHub didn't publish every checksum. Tap Compute SHA-256.";
         }
       }
     } catch (e) {
@@ -78,32 +82,59 @@ class _PostUpdatePageState extends ConsumerState<PostUpdatePage> {
     }
   }
 
-  /// Downloads the APK once (same allow-listed downloader) and hashes it.
+  /// Downloads each APK whose checksum is missing (same allow-listed
+  /// downloader) and hashes it.
   Future<void> _computeHash() async {
-    final uri = Uri.tryParse(_url.text.trim());
-    if (uri == null) return;
     final dir = await updatesDirectory();
     final file = File('${dir.path}/hash-check.apk');
-    if (await file.exists()) await file.delete();
     _hashCancel = CancelToken();
     setState(() {
       _hashProgress = 0;
       _error = null;
     });
-    try {
+    Future<(String, int)> hash(String url) async {
+      if (await file.exists()) await file.delete();
       await ref
           .read(apkDownloaderProvider)
           .download(
-            uri,
+            Uri.parse(url),
             file,
             cancel: _hashCancel,
             onProgress: (r, t) {
               if (mounted && t > 0) setState(() => _hashProgress = r / t);
             },
           );
-      final digest = await computeSha256(file);
-      _sha.text = digest;
-      _size.text = '${await file.length()}';
+      return (await computeSha256(file), await file.length());
+    }
+
+    try {
+      if (_variants.isEmpty) {
+        final (sha, size) = await hash(_url.text.trim());
+        _sha.text = sha;
+        _size.text = '$size';
+      } else {
+        final done = <ApkVariant>[];
+        for (final v in _variants) {
+          if (v.sha256 != null) {
+            done.add(v);
+            continue;
+          }
+          final (sha, size) = await hash(v.apkUrl);
+          done.add(
+            ApkVariant(
+              abi: v.abi,
+              apkUrl: v.apkUrl,
+              sha256: sha,
+              sizeBytes: size,
+            ),
+          );
+          if (v.apkUrl == _url.text.trim()) {
+            _sha.text = sha;
+            _size.text = '$size';
+          }
+        }
+        _variants = done;
+      }
     } on UpdateFailure catch (f) {
       _error = f.message;
     } catch (e) {
@@ -134,6 +165,8 @@ class _PostUpdatePageState extends ConsumerState<PostUpdatePage> {
       problem = 'The SHA-256 must be 64 hex characters.';
     } else if (size == null || size <= 0) {
       problem = 'The size must be the APK size in bytes.';
+    } else if (_variants.any((v) => v.sha256 == null)) {
+      problem = 'Every build needs a SHA-256. Tap Compute SHA-256.';
     }
     if (problem != null) {
       setState(() => _error = problem);
@@ -147,6 +180,7 @@ class _PostUpdatePageState extends ConsumerState<PostUpdatePage> {
       sizeBytes: size!,
       changelog: _notes.text.trim(),
       mandatory: _mandatory,
+      variants: _variants,
     );
   }
 
@@ -253,6 +287,20 @@ class _PostUpdatePageState extends ConsumerState<PostUpdatePage> {
                   ),
                 ),
               ),
+            if (_variants.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('BUILDS', style: AppTextStyles.fieldLabel),
+              for (final v in _variants)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${v.abi} · ${formatBytes(v.sizeBytes)} · '
+                    '${v.sha256 == null ? 'checksum missing' : 'checksum ${v.sha256!.substring(0, 12)}…'}',
+                    style: AppTextStyles.smallDim,
+                  ),
+                ),
+              const SizedBox(height: 6),
+            ],
             const SizedBox(height: 6),
             UiTextField(
               label: 'Size (bytes)',

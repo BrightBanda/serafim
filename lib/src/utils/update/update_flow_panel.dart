@@ -19,6 +19,9 @@ class UpdateFlowPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final installed = ref.watch(installedVersionProvider);
+    // The size of the build this phone would download.
+    final abis = ref.watch(deviceAbisProvider).value ?? const <String>[];
+    final forPhone = update.forDevice(abis);
     final flow = ref.watch(updateFlowProvider);
     final controller = ref.read(updateFlowProvider.notifier);
 
@@ -48,10 +51,14 @@ class UpdateFlowPanel extends ConsumerWidget {
 
     switch (phase) {
       case UpdatePhase.idle:
+        if (abis.isNotEmpty && forPhone == null) {
+          return const _Line(
+            text: "This release isn't available for your phone's processor.",
+          );
+        }
+        final size = (forPhone ?? update).sizeBytes;
         return SerafimButton(
-          label: update.sizeBytes > 0
-              ? 'Update · ${formatBytes(update.sizeBytes)}'
-              : 'Update',
+          label: size > 0 ? 'Update · ${formatBytes(size)}' : 'Update',
           onPressed: () => controller.start(update),
         );
       case UpdatePhase.preparing:

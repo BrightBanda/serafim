@@ -57,6 +57,15 @@ class OfficialService {
               'sha256': update.sha256,
               'size_bytes': update.sizeBytes,
               'mandatory': update.mandatory,
+              'variants': [
+                for (final v in update.variants)
+                  {
+                    'abi': v.abi,
+                    'apk_url': v.apkUrl,
+                    'sha256': v.sha256,
+                    'size_bytes': v.sizeBytes,
+                  },
+              ],
             },
         },
       ),

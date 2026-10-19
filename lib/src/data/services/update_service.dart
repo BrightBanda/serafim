@@ -15,6 +15,7 @@ enum UpdateErrorKind {
   wrongApp,
   wrongSigner,
   notNewer,
+  incompatible,
   permissionDenied,
   installerCancelled,
   installFailed,
@@ -112,19 +113,35 @@ class UpdateService {
     if (tag == null || data['draft'] == true || data['prerelease'] == true) {
       return (release: null, unchanged: false);
     }
-    Map<String, dynamic>? apk;
+    // Every .apk on the release; per-CPU builds are named …-<abi>.apk.
+    final apks = <Map<String, dynamic>>[];
     for (final a in (data['assets'] as List? ?? const [])) {
-      if (a is Map<String, dynamic> &&
-          (a['name'] as String? ?? '').toLowerCase().endsWith('.apk')) {
-        apk = a;
-        break;
+      if (a is! Map<String, dynamic>) continue;
+      final name = (a['name'] as String? ?? '').toLowerCase();
+      final link = a['browser_download_url'] as String?;
+      if (name.endsWith('.apk') &&
+          link != null &&
+          isAllowedDownloadUrl(Uri.parse(link), repo)) {
+        apks.add(a);
       }
     }
-    final url = apk?['browser_download_url'] as String?;
-    if (apk == null || url == null) return (release: null, unchanged: false);
-    if (!isAllowedDownloadUrl(Uri.parse(url), repo)) {
-      return (release: null, unchanged: false);
-    }
+    if (apks.isEmpty) return (release: null, unchanged: false);
+    final variants = [
+      for (final a in apks)
+        if (abiFromFileName(a['name'] as String) case final abi?)
+          ApkVariant(
+            abi: abi,
+            apkUrl: a['browser_download_url'] as String,
+            sha256: normaliseSha256(a['digest'] as String?),
+            sizeBytes: (a['size'] as num?)?.toInt() ?? 0,
+          ),
+    ];
+    // The top-level build is the arm64 one when there is one.
+    final apk = apks.firstWhere(
+      (a) => abiFromFileName(a['name'] as String) == 'arm64-v8a',
+      orElse: () => apks.first,
+    );
+    final url = apk['browser_download_url'] as String;
     return (
       release: GitHubRelease(
         update: AppUpdate(
@@ -138,6 +155,7 @@ class UpdateService {
           publishedAt: DateTime.tryParse(
             data['published_at'] as String? ?? '',
           )?.toUtc(),
+          variants: variants,
         ),
         etag: r.headers.value('etag'),
       ),

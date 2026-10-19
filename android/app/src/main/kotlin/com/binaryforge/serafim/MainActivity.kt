@@ -32,6 +32,9 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "versionInfo" -> result.success(versionInfo())
                     "freeBytes" -> result.success(cacheDir.usableSpace)
+                    // CPU types this phone runs, best first (e.g. arm64-v8a,
+                    // armeabi-v7a), to pick the matching APK.
+                    "supportedAbis" -> result.success(Build.SUPPORTED_ABIS.toList())
                     "canInstallPackages" -> result.success(canInstallPackages())
                     "openInstallSettings" -> {
                         openInstallSettings()

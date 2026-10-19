@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds a signed release APK and publishes it as a GitHub release.
 #
-#   tool/release.sh [path/to/notes.md]
+#   tool/release.sh [release-notes/<version>.md]
 #
 # Reads the version from pubspec.yaml (`version: 1.2.0+5`), so bump that
 # first. Refuses to continue if the APK isn't signed with your release key.
@@ -30,13 +30,17 @@ fi
 DEFINES=()
 [[ -f .env ]] && DEFINES=(--dart-define-from-file=.env)
 
-echo "==> Building Serafim $NAME (code $CODE), arm64 only"
-# 64-bit ARM only: every current Android phone. Keeps the APK small; 32-bit
-# ARM and x86 devices aren't supported.
-flutter build apk --release --target-platform android-arm64 "${DEFINES[@]}"
-
-APK=build/app/outputs/flutter-apk/app-release.apk
 APKSIGNER=$(find "${ANDROID_HOME:-$HOME/Android/Sdk}/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -1)
+REPO=$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')
+TAG_URL=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$TAG")
+mkdir -p build/release
+
+# One APK for both 64-bit and 32-bit ARM phones (no x86: no real phones need
+# it). A single file means nobody can download the wrong one.
+FILES=()
+echo "==> Building Serafim $NAME (code $CODE) for arm64-v8a + armeabi-v7a"
+flutter build apk --release --target-platform android-arm,android-arm64 "${DEFINES[@]}"
+APK=build/app/outputs/flutter-apk/app-release.apk
 if [[ -n "$APKSIGNER" ]]; then
   CERT=$("$APKSIGNER" verify --print-certs "$APK" | grep 'certificate DN' || true)
   echo "==> Signed by: ${CERT#*: }"
@@ -45,35 +49,32 @@ if [[ -n "$APKSIGNER" ]]; then
     exit 1
   fi
 fi
-
-mkdir -p build/release
 OUT="build/release/serafim-${NAME}.apk"
 cp "$APK" "$OUT"
-SHA=$(sha256sum "$OUT" | awk '{print $1}')
-SIZE=$(stat -c %s "$OUT")
-REPO=$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')
-TAG_URL=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$TAG")
-URL="https://github.com/${REPO}/releases/download/${TAG_URL}/serafim-${NAME}.apk"
+FILES+=("$OUT")
 
 echo
 echo "  version name : $NAME"
 echo "  version code : $CODE"
 echo "  tag          : $TAG"
-echo "  file         : $OUT"
-echo "  size (bytes) : $SIZE"
-echo "  SHA-256      : $SHA"
-echo "  download URL : $URL"
+for OUT in "${FILES[@]}"; do
+  echo
+  echo "  file         : $OUT"
+  echo "  size (bytes) : $(stat -c %s "$OUT")"
+  echo "  SHA-256      : $(sha256sum "$OUT" | awk '{print $1}')"
+  echo "  download URL : https://github.com/${REPO}/releases/download/${TAG_URL}/$(basename "$OUT")"
+done
 echo
 
 if command -v gh >/dev/null 2>&1; then
   NOTES_ARGS=(--notes "")
   [[ -n "$NOTES_FILE" ]] && NOTES_ARGS=(--notes-file "$NOTES_FILE")
-  gh release create "$TAG" "$OUT" --title "Serafim $NAME" "${NOTES_ARGS[@]}"
+  gh release create "$TAG" "${FILES[@]}" --title "Serafim $NAME" "${NOTES_ARGS[@]}"
   echo "==> Released. Now announce it from the official chat."
 else
   echo "GitHub CLI not found. Create the release by hand:"
   echo "  1. https://github.com/${REPO}/releases/new"
   echo "  2. Tag: $TAG   Title: Serafim $NAME   Notes: what's new"
-  echo "  3. Attach $OUT and publish (not as a draft or pre-release)."
+  echo "  3. Attach ${FILES[0]} and publish (not as a draft or pre-release)."
   echo "  4. Announce it from the official chat."
 fi

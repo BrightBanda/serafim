@@ -8,6 +8,49 @@ class AppVersion {
   final int code;
 }
 
+/// The build of a release for one CPU type (`arm64-v8a`, `armeabi-v7a`).
+class ApkVariant {
+  const ApkVariant({
+    required this.abi,
+    required this.apkUrl,
+    required this.sizeBytes,
+    this.sha256,
+  });
+
+  final String abi;
+  final String apkUrl;
+  final String? sha256;
+  final int sizeBytes;
+
+  Map<String, dynamic> toJson() => {
+    'abi': abi,
+    'apk_url': apkUrl,
+    'sha256': sha256,
+    'size_bytes': sizeBytes,
+  };
+
+  static ApkVariant? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final abi = json['abi'], url = json['apk_url'];
+    if (abi is! String || url is! String) return null;
+    return ApkVariant(
+      abi: abi,
+      apkUrl: url,
+      sha256: normaliseSha256(json['sha256'] as String?),
+      sizeBytes: (json['size_bytes'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// The CPU type an APK file name says it is for (`…-arm64-v8a.apk`).
+String? abiFromFileName(String name) {
+  final lower = name.toLowerCase();
+  for (final abi in const ['arm64-v8a', 'armeabi-v7a', 'x86_64']) {
+    if (lower.endsWith('-$abi.apk')) return abi;
+  }
+  return null;
+}
+
 /// An Android release that can be installed over this one.
 class AppUpdate {
   const AppUpdate({
@@ -19,7 +62,36 @@ class AppUpdate {
     this.changelog = '',
     this.mandatory = false,
     this.publishedAt,
+    this.variants = const [],
   });
+
+  /// One build per CPU type. Empty for single-APK releases, where [apkUrl]
+  /// is the only build. Otherwise [apkUrl] is the arm64 build (what app
+  /// versions without variant support download).
+  final List<ApkVariant> variants;
+
+  /// This release with the APK for a phone that runs [abis] (best first), or
+  /// null when it has no build for that phone.
+  AppUpdate? forDevice(List<String> abis) {
+    if (variants.isEmpty) return this;
+    for (final abi in abis) {
+      for (final v in variants) {
+        if (v.abi == abi) {
+          return AppUpdate(
+            versionName: versionName,
+            versionCode: versionCode,
+            changelog: changelog,
+            apkUrl: v.apkUrl,
+            sha256: v.sha256,
+            sizeBytes: v.sizeBytes,
+            mandatory: mandatory,
+            publishedAt: publishedAt,
+          );
+        }
+      }
+    }
+    return null;
+  }
 
   final String versionName;
   final int versionCode;
@@ -52,6 +124,7 @@ class AppUpdate {
     sizeBytes: sizeBytes,
     mandatory: mandatory ?? this.mandatory,
     publishedAt: publishedAt,
+    variants: variants,
   );
 
   Map<String, dynamic> toJson() => {
@@ -63,6 +136,7 @@ class AppUpdate {
     'size_bytes': sizeBytes,
     'mandatory': mandatory,
     if (publishedAt != null) 'created_at': publishedAt!.toIso8601String(),
+    if (variants.isNotEmpty) 'variants': [for (final v in variants) v.toJson()],
   };
 
   static AppUpdate? tryParse(Object? json) {
@@ -79,6 +153,10 @@ class AppUpdate {
         publishedAt: json['created_at'] is String
             ? DateTime.tryParse(json['created_at'] as String)?.toUtc()
             : null,
+        variants: [
+          for (final v in (json['variants'] as List? ?? const []))
+            ?ApkVariant.tryParse(v),
+        ],
       );
     } catch (_) {
       return null;

@@ -34,6 +34,9 @@ abstract class AppInstaller {
   bool get supported;
 
   Future<AppVersion?> installedVersion();
+
+  /// CPU types this phone can run, best first (e.g. `arm64-v8a`).
+  Future<List<String>> supportedAbis();
   Future<int> freeBytes();
   Future<bool> canInstallPackages();
   Future<void> openInstallSettings();
@@ -57,6 +60,10 @@ class ChannelAppInstaller implements AppInstaller {
       code: (m['versionCode'] as num).toInt(),
     );
   }
+
+  @override
+  Future<List<String>> supportedAbis() async =>
+      await _channel.invokeListMethod<String>('supportedAbis') ?? const [];
 
   @override
   Future<int> freeBytes() async =>

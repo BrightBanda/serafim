@@ -17,26 +17,32 @@ time they allow "Install unknown apps" for Serafim.
   (`version: 1.2.0+5`) must go up with every release.
 - **Same application id.** `com.binaryforge.serafim`. Changing it makes a
   different app.
-- **Tag format.** `v<version>+<code>`, e.g. `v1.2.0+5`, with exactly one
-  `.apk` attached. The in-app checker relies on it.
+- **Tag format.** `v<version>+<code>`, e.g. `v1.2.0+5`. The in-app checker
+  relies on it.
+- **One APK per release**, `serafim-<version>.apk`, for both 64-bit and
+  32-bit ARM phones (32-bit covers many itel and Android Go models). Attach
+  only that one `.apk`: app versions before 1.0.2 take the first `.apk` on
+  the release. (The app can also handle one APK per CPU type, named
+  `…-arm64-v8a.apk` / `…-armeabi-v7a.apk`, if downloads ever need to be
+  smaller.)
 
 ## Publishing a release
 
 1. Bump `version:` in `pubspec.yaml`, e.g. `1.1.0+2` → `1.2.0+3`.
-2. Write the release notes (what's new) in a file, e.g. `notes.md`.
-3. Run `tool/release.sh notes.md`. It:
-   - builds the signed release APK for 64-bit ARM phones only
-     (`flutter build apk --release --target-platform android-arm64`, using
-     `.env` for the build settings),
+2. Write the release notes (what's new) in `release-notes/<version>.md`,
+   e.g. `release-notes/1.2.0.md`.
+3. Run `tool/release.sh release-notes/1.2.0.md`. It:
+   - builds the signed release APK for 64-bit and 32-bit ARM phones
+     (`flutter build apk --release --target-platform android-arm,android-arm64`,
+     using `.env` for the build settings),
    - refuses to go on if the APK is signed with the debug key,
-   - prints the version, size, SHA-256 and the download URL,
+   - prints the version, size, SHA-256 and download URL,
    - creates the GitHub release with the APK attached if the GitHub CLI
      (`gh`) is installed and logged in; otherwise it prints the steps to do it
      on github.com.
 4. In the app, signed in as an admin, open the **SERAFIM** chat → **Announce
-   an app update** → **Fill from the latest GitHub release**. Check the
-   details (GitHub supplies the SHA-256; if it's missing, tap **Compute
-   SHA-256**), write or adjust "What's new", decide whether it is **Required**,
+   an app update** → **Fill from the latest GitHub release**. Check the details (GitHub supplies the checksums; if one is
+   missing, tap **Compute SHA-256**), write or adjust "What's new", decide whether it is **Required**,
    and **Post update**.
 
 Everyone sees the update card in the official chat; phones with the app

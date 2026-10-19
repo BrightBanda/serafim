@@ -20,6 +20,17 @@ final appInstallerProvider = Provider<AppInstaller>(
 
 /// The installed app's version, or null where in-app updates don't apply
 /// (not Android).
+/// CPU types this phone runs, best first (empty off Android).
+final deviceAbisProvider = FutureProvider<List<String>>((ref) async {
+  final installer = ref.watch(appInstallerProvider);
+  if (!installer.supported) return const [];
+  try {
+    return await installer.supportedAbis();
+  } catch (_) {
+    return const [];
+  }
+});
+
 final installedVersionProvider = FutureProvider<AppVersion?>((ref) async {
   final installer = ref.watch(appInstallerProvider);
   if (!installer.supported) return null;
@@ -288,9 +299,9 @@ class UpdateFlowController extends Notifier<UpdateFlowState> {
     );
   }
 
-  Future<void> start(AppUpdate update) async {
+  Future<void> start(AppUpdate release) async {
     if (state.busy) return;
-    state = UpdateFlowState(phase: UpdatePhase.preparing, update: update);
+    state = UpdateFlowState(phase: UpdatePhase.preparing, update: release);
     try {
       if (!_installer.supported) {
         throw const UpdateFailure(
@@ -298,6 +309,16 @@ class UpdateFlowController extends Notifier<UpdateFlowState> {
           'Updates are installed from Serafim on Android.',
         );
       }
+      // The build for this phone's CPU (64-bit or 32-bit ARM).
+      final update = release.forDevice(await _installer.supportedAbis());
+      if (update == null) {
+        throw const UpdateFailure(
+          UpdateErrorKind.incompatible,
+          "This release doesn't include a version for your phone's "
+          'processor. Check the release page for one that fits.',
+        );
+      }
+      state = UpdateFlowState(phase: UpdatePhase.preparing, update: update);
       if (!update.canVerify) {
         throw const UpdateFailure(
           UpdateErrorKind.unverifiable,

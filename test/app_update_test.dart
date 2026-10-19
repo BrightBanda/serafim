@@ -99,6 +99,11 @@ class FakeInstaller implements AppInstaller {
   bool get supported => true;
   @override
   Future<AppVersion?> installedVersion() async => installed1;
+  List<String> abis = const ['arm64-v8a', 'armeabi-v7a'];
+
+  @override
+  Future<List<String>> supportedAbis() async => abis;
+
   @override
   Future<int> freeBytes() async => free;
   @override
@@ -583,6 +588,179 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  group('one APK per CPU type', () {
+    const base = 'https://github.com/$repo/releases/download/v1.2.0%2B3';
+    AppUpdate split() => AppUpdate(
+      versionName: '1.2.0',
+      versionCode: 3,
+      apkUrl: '$base/serafim-1.2.0-arm64-v8a.apk',
+      sha256: 'a' * 64,
+      sizeBytes: 25,
+      variants: [
+        ApkVariant(
+          abi: 'arm64-v8a',
+          apkUrl: '$base/serafim-1.2.0-arm64-v8a.apk',
+          sha256: 'a' * 64,
+          sizeBytes: 25,
+        ),
+        ApkVariant(
+          abi: 'armeabi-v7a',
+          apkUrl: '$base/serafim-1.2.0-armeabi-v7a.apk',
+          sha256: 'b' * 64,
+          sizeBytes: 22,
+        ),
+      ],
+    );
+
+    test('each phone gets the build for its processor', () {
+      final pixel = split().forDevice(['arm64-v8a']);
+      expect(pixel!.apkUrl, endsWith('arm64-v8a.apk'));
+      final itel = split().forDevice(['armeabi-v7a', 'armeabi']);
+      expect(itel!.apkUrl, endsWith('armeabi-v7a.apk'));
+      expect(itel.sha256, 'b' * 64);
+      expect(itel.sizeBytes, 22);
+      // A 64-bit phone that also runs 32-bit still prefers 64-bit.
+      expect(
+        split().forDevice(['arm64-v8a', 'armeabi-v7a'])!.apkUrl,
+        endsWith('arm64-v8a.apk'),
+      );
+      expect(split().forDevice(['x86_64']), isNull);
+      // Single-APK releases are offered as they are.
+      expect(release().forDevice(['armeabi-v7a']), isNotNull);
+    });
+
+    test('file names say the CPU type', () {
+      expect(abiFromFileName('serafim-1.2.0-arm64-v8a.apk'), 'arm64-v8a');
+      expect(abiFromFileName('serafim-1.2.0-ARMEABI-V7A.apk'), 'armeabi-v7a');
+      expect(abiFromFileName('serafim-1.0.0.apk'), isNull);
+    });
+
+    test('variants survive the saved copy', () {
+      final back = AppUpdate.tryParse(jsonDecode(jsonEncode(split().toJson())));
+      expect(back!.variants.map((v) => v.abi), ['arm64-v8a', 'armeabi-v7a']);
+    });
+
+    test(
+      'a GitHub release with two APKs: arm64 on top, both as variants',
+      () async {
+        final net = FakeNet();
+        net.routes['https://api.github.com/repos/$repo/releases/latest'] =
+            (_) => ResponseBody.fromString(
+              jsonEncode({
+                'tag_name': 'v1.2.0+3',
+                'body': 'Notes',
+                'assets': [
+                  {
+                    'name': 'serafim-1.2.0-armeabi-v7a.apk',
+                    'browser_download_url':
+                        '$base/serafim-1.2.0-armeabi-v7a.apk',
+                    'size': 22,
+                    'digest': 'sha256:${'b' * 64}',
+                  },
+                  {
+                    'name': 'serafim-1.2.0-arm64-v8a.apk',
+                    'browser_download_url': '$base/serafim-1.2.0-arm64-v8a.apk',
+                    'size': 25,
+                    'digest': 'sha256:${'a' * 64}',
+                  },
+                ],
+              }),
+              200,
+              headers: {
+                'content-type': ['application/json'],
+              },
+            );
+        final service = UpdateService(
+          api: Dio(),
+          github: Dio()..httpClientAdapter = net,
+          repo: repo,
+        );
+        final u = (await service.latestRelease()).release!.update;
+        expect(u.versionCode, 3);
+        expect(u.apkUrl, endsWith('arm64-v8a.apk'));
+        expect(u.variants, hasLength(2));
+      },
+    );
+
+    test(
+      'the install flow downloads the 32-bit build on a 32-bit phone',
+      () async {
+        final dir = Directory.systemTemp.createTempSync('abi');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        updatesDirectory = () async => dir;
+        final arm32 = '$base/serafim-1.2.0-armeabi-v7a.apk';
+        final net = FakeNet()..routes[arm32] = (_) => bytes(apkBytes);
+        final installer = FakeInstaller()
+          ..abis = const ['armeabi-v7a', 'armeabi']
+          ..info = const ApkInfo(
+            packageName: 'com.binaryforge.serafim',
+            versionCode: 3,
+            sameSigner: true,
+            samePackage: true,
+          );
+        SharedPreferences.setMockInitialValues({});
+        final c = ProviderContainer(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(
+              await SharedPreferences.getInstance(),
+            ),
+            appInstallerProvider.overrideWithValue(installer),
+            apkDownloaderProvider.overrideWithValue(
+              ApkDownloader(dio: Dio()..httpClientAdapter = net, repo: repo),
+            ),
+          ],
+        );
+        addTearDown(c.dispose);
+        final update = AppUpdate(
+          versionName: '1.2.0',
+          versionCode: 3,
+          apkUrl: '$base/serafim-1.2.0-arm64-v8a.apk',
+          sha256: 'a' * 64,
+          sizeBytes: 25,
+          variants: [
+            ApkVariant(
+              abi: 'arm64-v8a',
+              apkUrl: '$base/serafim-1.2.0-arm64-v8a.apk',
+              sha256: 'a' * 64,
+              sizeBytes: 25,
+            ),
+            ApkVariant(
+              abi: 'armeabi-v7a',
+              apkUrl: arm32,
+              sha256: apkSha,
+              sizeBytes: apkBytes.length,
+            ),
+          ],
+        );
+        await c.read(updateFlowProvider.notifier).start(update);
+        expect(net.seen, [arm32]);
+        expect(installer.installs, hasLength(1));
+      },
+    );
+
+    test(
+      'no build for the phone is said clearly, nothing downloaded',
+      () async {
+        final installer = FakeInstaller()..abis = const ['x86_64'];
+        SharedPreferences.setMockInitialValues({});
+        final c = ProviderContainer(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(
+              await SharedPreferences.getInstance(),
+            ),
+            appInstallerProvider.overrideWithValue(installer),
+          ],
+        );
+        addTearDown(c.dispose);
+        await c.read(updateFlowProvider.notifier).start(split());
+        expect(
+          c.read(updateFlowProvider).error!.kind,
+          UpdateErrorKind.incompatible,
+        );
+      },
+    );
   });
 }
 

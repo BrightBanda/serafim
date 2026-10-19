@@ -7,7 +7,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
-import 'package:flutter/material.dart' show Icons;
+import 'package:flutter/material.dart' show Icon, Icons;
 import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
@@ -432,10 +432,34 @@ class ChatViewModel extends Notifier<ChatState> {
           // The server refused to accept this message (e.g. an attachment to
           // a non-friend). It was never stored, so it can only be failed.
           final tempId = data['temp_id'] as String?;
+          final notice = rejectionNotice(data);
+          // Looked up before the status change so we know which chat it was.
+          final roomId = notice != null && tempId != null
+              ? (await isar.getMessageById(tempId))?.roomId
+              : null;
           if (tempId != null) {
             await isar.updateMessageStatus(tempId, MessageStatus.failed);
           }
           _log('message rejected: ${data['reason']}');
+          // Only while that chat is open: elsewhere the failed tick is enough.
+          if (notice != null &&
+              roomId != null &&
+              ref.read(activeRoomProvider) == roomId) {
+            ref
+                .read(inAppBannerProvider)
+                .show(
+                  label: 'NOT SENT',
+                  icon: Icons.error_outline_rounded,
+                  accent: AppColors.rust,
+                  leading: Icon(
+                    Icons.person_off_rounded,
+                    size: 32,
+                    color: AppColors.rust,
+                  ),
+                  title: notice,
+                  body: '',
+                );
+          }
           break;
 
         case 'action_rejected':
@@ -1003,6 +1027,18 @@ final chatViewModelProvider = NotifierProvider<ChatViewModel, ChatState>(
 );
 
 DateTime _parseServerTimestamp(String? raw) => parseServerTimestamp(raw);
+
+/// What to tell the sender when the server refuses a message, or null when
+/// the failed status says enough. Today only a suspended recipient
+/// (`user_unavailable`) gets words; the server's own text wins when present.
+@visibleForTesting
+String? rejectionNotice(Map<String, dynamic> data) {
+  if (data['reason'] != 'user_unavailable') return null;
+  final message = data['message'];
+  return message is String && message.trim().isNotEmpty
+      ? message.trim()
+      : 'User not available';
+}
 
 @visibleForTesting
 DateTime parseServerTimestamp(String? raw) {

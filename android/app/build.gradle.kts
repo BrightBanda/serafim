@@ -74,15 +74,28 @@ android {
     }
 }
 
-// Release builds are for 64-bit ARM phones only. The Flutter plugin lists
-// every ABI in defaultConfig, so plugins would still pack their own 32-bit and
-// x86 libraries and the APK would install on phones it can't run on. Debug
-// builds keep every ABI so emulators work.
+// Release builds contain native libraries for the CPU types being built
+// (`flutter build apk --target-platform ...`) and nothing else. The Flutter
+// plugin lists every ABI in defaultConfig, so plugins would otherwise still
+// pack their 32-bit/x86 libraries, and an APK could install on phones it can't
+// run on. tool/release.sh builds one APK for arm64 + 32-bit ARM. Debug builds
+// keep every ABI so emulators work.
+val flutterAbis = mapOf(
+    "android-arm" to "armeabi-v7a",
+    "android-arm64" to "arm64-v8a",
+    "android-x64" to "x86_64",
+)
+val builtAbis = (project.findProperty("target-platform") as String?)
+    ?.split(",")
+    ?.mapNotNull { flutterAbis[it.trim()] }
+    ?.toSet()
+    ?.takeIf { it.isNotEmpty() }
+    ?: setOf("arm64-v8a")
+
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
-        variant.packaging.jniLibs.excludes.addAll(
-            listOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**")
-        )
+        val unwanted = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") - builtAbis
+        variant.packaging.jniLibs.excludes.addAll(unwanted.map { "lib/$it/**" })
     }
 }
 
