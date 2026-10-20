@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/presentation/view/main_screen.dart';
+import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -143,7 +145,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
 
   void _openDiscover() {
     if (_searching) _toggleSearch();
-    ref.read(navigationNotifierProvider.notifier).setIndex(1);
+    ref.read(navigationNotifierProvider.notifier).setIndex(discoverTabIndex);
   }
 
   @override
@@ -268,6 +270,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
               ),
             ),
             const NotificationBell(),
+            const ProfileMenuButton(),
           ],
         ),
       ),

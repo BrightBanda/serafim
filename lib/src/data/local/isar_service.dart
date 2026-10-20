@@ -26,12 +26,72 @@ class IsarService {
     final dir = await getApplicationDocumentsDirectory();
     if (Isar.instanceNames.isEmpty) {
       return await Isar.open(
-        [LocalMessageSchema, LocalChatRoomSchema],
+        _schemas,
         directory: dir.path,
         inspector: true, // Enables Isar Inspector in dev environment
       );
     }
     return Future.value(Isar.getInstance());
+  }
+
+  // ==========================================
+  // BACKUP AND RESTORE
+  // ==========================================
+
+  static const _schemas = [LocalMessageSchema, LocalChatRoomSchema];
+
+  /// Writes a consistent copy of the whole database to [path] (any existing
+  /// file there is replaced). Safe to run while the app is in use.
+  Future<void> snapshotTo(String path) async {
+    final isar = await db;
+    final file = File(path);
+    if (await file.exists()) await file.delete();
+    await isar.copyToFile(path);
+  }
+
+  /// Whether [path] is a database this version of the app can read. Opened
+  /// under a throwaway name, so the live database is not touched.
+  Future<bool> isValidBackup(String path) async {
+    final tmp = await Directory.systemTemp.createTemp('serafim_check_');
+    try {
+      await File(path).copy('${tmp.path}/check.isar');
+      final check = await Isar.open(
+        _schemas,
+        directory: tmp.path,
+        name: 'check',
+      );
+      await check.close();
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      await tmp.delete(recursive: true);
+    }
+  }
+
+  /// Replaces the database with the one at [path]. The current one is closed
+  /// first and kept as `<name>.before-restore` until the swap has worked, so a
+  /// failed restore puts everything back. Callers should check
+  /// [isValidBackup] first.
+  Future<void> restoreFrom(String path) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final live = File('${dir.path}/default.isar');
+    final aside = File('${dir.path}/default.isar.before-restore');
+    final current = await db;
+    await current.close();
+    try {
+      if (await aside.exists()) await aside.delete();
+      if (await live.exists()) await live.rename(aside.path);
+      await File(path).copy(live.path);
+      db = _initDB();
+      await db;
+      if (await aside.exists()) await aside.delete();
+    } catch (_) {
+      if (await live.exists()) await live.delete();
+      if (await aside.exists()) await aside.rename(live.path);
+      db = _initDB();
+      rethrow;
+    }
   }
 
   // ==========================================
@@ -171,12 +231,13 @@ class IsarService {
       // read receipts, so nothing is owed to the server.
       final group = _isGroupRoom(roomId);
       final base = isar.localMessages.filter().roomIdEqualTo(roomId);
-      final unread = await (group
-              ? base.not().senderIdEqualTo(myId)
-              : base.recipientIdEqualTo(myId))
-          .not()
-          .statusEqualTo(MessageStatus.read)
-          .findAll();
+      final unread =
+          await (group
+                  ? base.not().senderIdEqualTo(myId)
+                  : base.recipientIdEqualTo(myId))
+              .not()
+              .statusEqualTo(MessageStatus.read)
+              .findAll();
       for (final msg in unread) {
         msg.status = MessageStatus.read;
         msg.readAckPending = !group;
@@ -411,12 +472,13 @@ class IsarService {
         .filter()
         .roomIdEqualTo(roomId)
         .isHiddenForMeEqualTo(false);
-    final unread = await (group
-            ? visible.not().senderIdEqualTo(me)
-            : visible.recipientIdEqualTo(me))
-        .not()
-        .statusEqualTo(MessageStatus.read)
-        .count();
+    final unread =
+        await (group
+                ? visible.not().senderIdEqualTo(me)
+                : visible.recipientIdEqualTo(me))
+            .not()
+            .statusEqualTo(MessageStatus.read)
+            .count();
 
     final room =
         await isar.localChatRooms.getByRoomId(roomId) ?? LocalChatRoom()

@@ -18,4 +18,21 @@ class FeatureFlags {
   /// when Google sign-in can't work here (Linux and Windows desktop), because
   /// otherwise nobody could sign in at all.
   static bool get emailSignInAvailable => emailSignIn || !googleSignInSupported;
+
+  /// Circles, and the posts inside them.
+  ///
+  /// Off until the backend that serves them is deployed: the Circles tab
+  /// would show nothing, and a tab that cannot do anything is worse than no
+  /// tab. The screens are all in place — flip this to `true` once
+  /// `POST /circles` answers on the deployed API, and the tab appears with
+  /// its content behind it.
+  ///
+  /// The admin dashboard reserves a `FeatureFlags.circles` switch of its own
+  /// (see `docs/admin-dashboard-README.md` §10.7); this is the app's half of
+  /// the same idea.
+  static const bool circles = true;
+
+  /// Posts on a profile, and the feed that mixes them with the posts of
+  /// people you follow. Needs the same backend as [circles].
+  static const bool posts = true;
 }

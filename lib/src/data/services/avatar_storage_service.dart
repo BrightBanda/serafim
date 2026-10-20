@@ -13,13 +13,16 @@ class AvatarStorageService {
 
   static const bucket = 'avatars';
 
+  /// Pictures attached to posts (at most 2 MB each, set on the bucket).
+  static const postBucket = 'post-images';
+
   /// Dio authenticated as the signed-in user, with `apikey` set.
   final Dio _dio;
   final String _supabaseUrl;
 
   /// Returns the public URL of the uploaded picture.
   Future<String> uploadAvatar(String userId, Uint8List jpegBytes) =>
-      _upload('$userId/avatar.jpg', jpegBytes);
+      _upload(bucket, '$userId/avatar.jpg', jpegBytes);
 
   /// A group's photo. Stored in the uploader's own folder (all the bucket
   /// policies allow), under a name per group.
@@ -27,9 +30,21 @@ class AvatarStorageService {
     String userId,
     String groupId,
     Uint8List jpegBytes,
-  ) => _upload('$userId/group_$groupId.jpg', jpegBytes);
+  ) => _upload(bucket, '$userId/group_$groupId.jpg', jpegBytes);
 
-  Future<String> _upload(String path, Uint8List jpegBytes) async {
+  /// One picture on a post. Every picture gets its own name, so nothing is
+  /// replaced and old links keep working.
+  Future<String> uploadPostImage(String userId, Uint8List jpegBytes) {
+    final name =
+        '${DateTime.now().microsecondsSinceEpoch}_${jpegBytes.length}.jpg';
+    return _upload(postBucket, '$userId/$name', jpegBytes);
+  }
+
+  Future<String> _upload(
+    String bucket,
+    String path,
+    Uint8List jpegBytes,
+  ) async {
     try {
       await _dio.post<dynamic>(
         '/object/$bucket/$path',

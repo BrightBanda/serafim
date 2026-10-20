@@ -1,0 +1,740 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
+import 'package:serafim/src/data/models/circle.dart';
+import 'package:serafim/src/data/models/post.dart';
+import 'package:serafim/src/presentation/view/composer_page.dart';
+import 'package:serafim/src/presentation/view/post_detail_page.dart';
+import 'package:serafim/src/presentation/view/widgets/load_more_button.dart';
+import 'package:serafim/src/presentation/view/widgets/post_card.dart';
+import 'package:serafim/src/providers/circle_providers.dart';
+import 'package:serafim/src/providers/post_providers.dart';
+import 'package:serafim/src/utils/app_top_bar.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
+
+/// One Circle: its posts, what it is about, and who is in it.
+class CircleDetailPage extends ConsumerStatefulWidget {
+  const CircleDetailPage({super.key, required this.circleId});
+
+  final String circleId;
+
+  @override
+  ConsumerState<CircleDetailPage> createState() => _CircleDetailPageState();
+}
+
+class _CircleDetailPageState extends ConsumerState<CircleDetailPage> {
+  int _tab = 0;
+
+  Future<void> _compose() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ComposerPage(circleId: widget.circleId),
+      ),
+    );
+  }
+
+  void _goBack() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = ref.watch(circleDetailProvider(widget.circleId));
+
+    return Scaffold(
+      backgroundColor: AppColors.paper,
+      appBar: AppTopBar(title: 'CIRCLE', onBack: _goBack),
+      body: detail.when(
+        loading: () =>
+            Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        error: (e, _) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              humanError(e),
+              style: AppTextStyles.body,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+        data: (circle) => Column(
+          children: [
+            _Header(circle: circle),
+            _Tabs(index: _tab, onChanged: (i) => setState(() => _tab = i)),
+            Expanded(
+              child: switch (_tab) {
+                0 => _PostsTab(circle: circle),
+                1 => _AboutTab(circle: circle),
+                _ => _MembersTab(circle: circle),
+              },
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: detail.hasValue && detail.value!.isMember
+          ? FloatingActionButton.extended(
+              onPressed: _compose,
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.zero,
+              ),
+              icon: const Icon(Icons.add, size: 18),
+              label: Text('POST', style: AppTextStyles.buttonLabel),
+            )
+          : null,
+    );
+  }
+}
+
+class _Header extends ConsumerWidget {
+  const _Header({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final role = circle.myRole;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  circle.name,
+                  style: AppTextStyles.displayHeading.copyWith(fontSize: 22),
+                ),
+              ),
+              if (role != null)
+                Text(
+                  role.label.toUpperCase(),
+                  style: AppTextStyles.eyebrow.copyWith(fontSize: 9),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Text(
+                '${circle.summary.memberCount} members',
+                style: AppTextStyles.smallDim,
+              ),
+              if (circle.summary.category != null) ...[
+                Text(' · ', style: AppTextStyles.smallDim),
+                Text(circle.summary.category!, style: AppTextStyles.smallDim),
+              ],
+              Text(' · ', style: AppTextStyles.smallDim),
+              Text(
+                circle.summary.visibility.label,
+                style: AppTextStyles.smallDim,
+              ),
+            ],
+          ),
+          if (circle.summary.myRequestPending) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Your request to join is waiting for an Overseer.',
+              style: AppTextStyles.smallDim.copyWith(
+                color: AppColors.primaryPale,
+              ),
+            ),
+          ],
+          if (circle.summary.iAmBanned) ...[
+            const SizedBox(height: 8),
+            Text(
+              'You have been banned from this Circle.',
+              style: AppTextStyles.smallDim.copyWith(color: AppColors.rustPale),
+            ),
+          ],
+          if (!circle.isMember && !circle.summary.iAmBanned) ...[
+            const SizedBox(height: 12),
+            _JoinButton(circle: circle),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _JoinButton extends ConsumerStatefulWidget {
+  const _JoinButton({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  ConsumerState<_JoinButton> createState() => _JoinButtonState();
+}
+
+class _JoinButtonState extends ConsumerState<_JoinButton> {
+  bool _busy = false;
+
+  Future<void> _join() async {
+    setState(() => _busy = true);
+    try {
+      await ref.read(circleJoinProvider.notifier).join(widget.circle.id);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final circle = widget.circle;
+    if (circle.summary.visibility == CircleVisibility.inviteOnly) {
+      return Text('This Circle is invite-only.', style: AppTextStyles.smallDim);
+    }
+    return GestureDetector(
+      onTap: _busy ? null : _join,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          border: Border.all(color: AppColors.line, width: 1.5),
+        ),
+        child: Text(circle.summary.joinLabel, style: AppTextStyles.buttonLabel),
+      ),
+    );
+  }
+}
+
+class _Tabs extends StatelessWidget {
+  const _Tabs({required this.index, required this.onChanged});
+
+  final int index;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['Posts', 'About', 'Members'];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++) ...[
+            GestureDetector(
+              onTap: () => onChanged(i),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: index == i
+                      ? AppColors.paperRaised
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: index == i ? AppColors.primary : AppColors.lineSoft,
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  labels[i].toUpperCase(),
+                  style: AppTextStyles.fieldLabel.copyWith(
+                    color: index == i
+                        ? AppColors.primaryPale
+                        : AppColors.textDim,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PostsTab extends ConsumerWidget {
+  const _PostsTab({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final posts = ref.watch(circlePostsProvider(circle.id));
+
+    return posts.when(
+      loading: () =>
+          Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            humanError(e),
+            style: AppTextStyles.body,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+      data: (page) {
+        if (page.items.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                circle.isMember
+                    ? 'No posts yet. Start the conversation.'
+                    : 'Join this Circle to see its posts.',
+                style: AppTextStyles.body,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 90),
+          children: [
+            for (final post in page.items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: PostCard(
+                  post: post,
+                  onSpark: (on) => ref
+                      .read(sparkProvider.notifier)
+                      .togglePost(post.id, on: on),
+                  onComment: () => openPost(context, post.id),
+                  footer: circle.myRole?.canManage == true
+                      ? _OverseerActions(post: post, circle: circle)
+                      : null,
+                ),
+              ),
+            if (page.hasMore)
+              LoadMoreButton(
+                onLoad: ref
+                    .read(circlePostsProvider(circle.id).notifier)
+                    .loadMore,
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Pin and remove, for a Circle's Overseers.
+class _OverseerActions extends ConsumerWidget {
+  const _OverseerActions({required this.post, required this.circle});
+
+  final Post post;
+  final CircleDetail circle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: () => ref
+              .read(pinProvider.notifier)
+              .toggle(post.id, on: !post.pinned, circleId: circle.id),
+          child: Icon(
+            post.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+            size: 15,
+            color: post.pinned ? AppColors.primaryPale : AppColors.textDim,
+          ),
+        ),
+        const SizedBox(width: 12),
+        GestureDetector(
+          onTap: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              await ref.read(postServiceProvider).delete(post.id);
+              ref.invalidate(circlePostsProvider(circle.id));
+            } catch (e) {
+              messenger.showSnackBar(SnackBar(content: Text(humanError(e))));
+            }
+          },
+          child: Icon(
+            Icons.delete_outline,
+            size: 16,
+            color: AppColors.rustPale,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AboutTab extends ConsumerWidget {
+  const _AboutTab({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final role = circle.myRole;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
+      children: [
+        if (circle.summary.description != null &&
+            circle.summary.description!.isNotEmpty) ...[
+          Text(circle.summary.description!, style: AppTextStyles.fieldInput),
+          const SizedBox(height: 20),
+        ],
+        _Row(label: 'Category', value: circle.summary.category ?? '—'),
+        _Row(label: 'Visibility', value: circle.summary.visibility.label),
+        _Row(label: 'Members', value: '${circle.summary.memberCount}'),
+        _Row(label: 'Created', value: _date(circle.summary.createdAt)),
+        _Row(
+          label: 'Posting',
+          value: circle.postingEnabled ? 'Open' : 'Read only',
+        ),
+        if (circle.rules != null && circle.rules!.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Text('RULES', style: AppTextStyles.eyebrow.copyWith(fontSize: 9)),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.paperAlt,
+              border: Border.all(color: AppColors.lineSoft, width: 1.5),
+            ),
+            child: Text(circle.rules!, style: AppTextStyles.fieldInput),
+          ),
+        ],
+        if (role?.canManage == true) ...[
+          const SizedBox(height: 24),
+          Text('MANAGE', style: AppTextStyles.eyebrow.copyWith(fontSize: 9)),
+          const SizedBox(height: 8),
+          if (circle.pendingRequests.isNotEmpty) ...[
+            _RequestList(circle: circle),
+            const SizedBox(height: 12),
+          ],
+          _MuteRow(circle: circle),
+        ],
+        if (role?.isOwner == true) ...[
+          const SizedBox(height: 12),
+          _DangerRow(circle: circle),
+        ],
+      ],
+    );
+  }
+
+  static String _date(DateTime when) =>
+      '${when.day}/${when.month}/${when.year}';
+}
+
+class _Row extends StatelessWidget {
+  const _Row({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(label, style: AppTextStyles.fieldLabel),
+          ),
+          Expanded(child: Text(value, style: AppTextStyles.fieldInput)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Muting a Circle, so it stops sending notifications.
+class _MuteRow extends ConsumerWidget {
+  const _MuteRow({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.paperAlt,
+        border: Border.all(color: AppColors.lineSoft, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Mute this circle', style: AppTextStyles.fieldInput),
+                const SizedBox(height: 2),
+                Text(
+                  'Stop the notifications it sends you.',
+                  style: AppTextStyles.smallDim,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The people waiting to join.
+class _RequestList extends ConsumerWidget {
+  const _RequestList({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      children: [
+        for (final request in circle.pendingRequests)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.paperAlt,
+              border: Border.all(color: AppColors.lineSoft, width: 1.5),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        request.user.displayName,
+                        style: AppTextStyles.fieldInput.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (request.message != null &&
+                          request.message!.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(request.message!, style: AppTextStyles.smallDim),
+                      ],
+                    ],
+                  ),
+                ),
+                _SmallButton(
+                  label: 'Approve',
+                  onTap: () => ref
+                      .read(circleRequestProvider.notifier)
+                      .approve(circle.id, request.id),
+                ),
+                const SizedBox(width: 6),
+                _SmallButton(
+                  label: 'Decline',
+                  onTap: () => ref
+                      .read(circleRequestProvider.notifier)
+                      .reject(circle.id, request.id),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SmallButton extends StatelessWidget {
+  const _SmallButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.lineSoft, width: 1.5),
+        ),
+        child: Text(label, style: AppTextStyles.fieldLabel),
+      ),
+    );
+  }
+}
+
+/// Deleting a Circle, for its Owner. The name has to be typed back.
+class _DangerRow extends ConsumerWidget {
+  const _DangerRow({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return GestureDetector(
+      onTap: () async {
+        final confirmed = await _confirm(context, circle.name);
+        if (confirmed != true || !context.mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        final navigator = Navigator.of(context);
+        try {
+          await ref
+              .read(circleServiceProvider)
+              .delete(circle.id, confirmName: circle.name);
+          navigator.pop();
+        } catch (e) {
+          messenger.showSnackBar(SnackBar(content: Text(humanError(e))));
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: AppColors.paperAlt,
+          border: Border.all(color: AppColors.rust, width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.delete_outline, size: 16, color: AppColors.rustPale),
+            const SizedBox(width: 10),
+            Text(
+              'Delete this circle',
+              style: AppTextStyles.fieldInput.copyWith(
+                color: AppColors.rustPale,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Asks for the Circle's name before deleting it, so a stray tap cannot
+/// destroy a community.
+Future<bool?> _confirm(BuildContext context, String name) {
+  final controller = TextEditingController();
+  return showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      title: Text(
+        'Delete this circle?',
+        style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Every post in it goes too, and nobody can undo it. '
+            'Type the name to confirm.',
+            style: AppTextStyles.body,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            style: AppTextStyles.fieldInput,
+            cursorColor: AppColors.primaryPale,
+            decoration: InputDecoration(
+              isDense: true,
+              border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
+              hintText: name,
+              hintStyle: AppTextStyles.fieldInput.copyWith(
+                color: AppColors.textDim,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: Text('Cancel', style: AppTextStyles.linkText),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(
+            controller.text.trim().toLowerCase() == name.trim().toLowerCase(),
+          ),
+          child: Text('Delete', style: AppTextStyles.linkText),
+        ),
+      ],
+    ),
+  );
+}
+
+class _MembersTab extends ConsumerWidget {
+  const _MembersTab({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final myRole = circle.myRole;
+    if (circle.members.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Only members can see who is in this Circle.',
+            style: AppTextStyles.body,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
+      itemCount: circle.members.length,
+      itemBuilder: (context, index) {
+        final member = circle.members[index];
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppColors.paperAlt,
+            border: Border.all(color: AppColors.lineSoft, width: 1.5),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      member.user.displayName,
+                      style: AppTextStyles.fieldInput.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '@${member.user.username}',
+                      style: AppTextStyles.smallDim,
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                member.role.label.toUpperCase(),
+                style: AppTextStyles.eyebrow.copyWith(fontSize: 8.5),
+              ),
+              if (myRole?.canRemove(member.role) == true) ...[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => ref
+                      .read(circleMemberProvider.notifier)
+                      .remove(circle.id, member.user.id),
+                  child: Icon(
+                    Icons.remove_circle_outline,
+                    size: 16,
+                    color: AppColors.rustPale,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}

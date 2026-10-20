@@ -166,10 +166,12 @@ class ChatViewModel extends Notifier<ChatState> {
             NotificationKind.friendAccepted => Icons.people_alt_rounded,
             NotificationKind.newFollower => Icons.favorite_rounded,
             NotificationKind.unknown => Icons.notifications_rounded,
+            _ => Icons.groups_rounded,
           },
           accent: switch (kind) {
             NotificationKind.friendAccepted => AppColors.teal,
             NotificationKind.newFollower => AppColors.rust,
+            _ when kind.isCircle => AppColors.teal,
             _ => AppColors.primary,
           },
           title: name,

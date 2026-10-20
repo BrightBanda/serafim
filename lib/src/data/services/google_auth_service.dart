@@ -76,6 +76,37 @@ class GoogleAuthService {
     }
   }
 
+  /// An access token for the app's private folder in the person's Google
+  /// Drive (`drive.appdata`): files there are visible only to this app, so no
+  /// broad Drive access is asked for. Used by the backup feature.
+  Future<String> driveAccessToken() async {
+    if (!googleSignInSupported) {
+      throw const ApiException(
+        "Google Drive backup isn't available on this device. Use Export "
+        'instead.',
+      );
+    }
+    try {
+      await _init();
+      final instance = GoogleSignIn.instance;
+      final account =
+          await instance.attemptLightweightAuthentication() ??
+          await instance.authenticate();
+      final auth = await account.authorizationClient.authorizeScopes(const [
+        'https://www.googleapis.com/auth/drive.appdata',
+      ]);
+      return auth.accessToken;
+    } on GoogleSignInException catch (e) {
+      throw switch (e.code) {
+        GoogleSignInExceptionCode.canceled ||
+        GoogleSignInExceptionCode.interrupted => const GoogleSignInCancelled(),
+        _ => ApiException(
+          'Could not reach Google Drive. ${e.description ?? ''}'.trim(),
+        ),
+      };
+    }
+  }
+
   /// Forgets the chosen account so the picker appears next time.
   Future<void> signOut() async {
     try {

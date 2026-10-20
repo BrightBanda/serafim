@@ -1,3 +1,5 @@
+import 'package:serafim/src/data/services/backup_service.dart';
+import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/services/auth_service.dart';
 import 'package:serafim/src/data/services/attachment_download_service.dart';
@@ -51,3 +53,11 @@ final googleAuthServiceProvider = Provider<GoogleAuthService>((ref) {
     iosClientId: config.googleIosClientId,
   );
 });
+
+/// Backs the local database up to a file or Google Drive, and restores it.
+final backupServiceProvider = Provider<BackupService>(
+  (ref) => BackupService(
+    isar: ref.watch(isarServiceProvider),
+    google: ref.watch(googleAuthServiceProvider),
+  ),
+);

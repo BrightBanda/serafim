@@ -67,3 +67,21 @@ Future<Uint8List?> prepareInsertedImage(
   );
   return shrunk.length <= maxRawInsertBytes ? shrunk : null;
 }
+
+/// Shrinks a picture until it is at most [maxBytes], trying smaller sizes and
+/// lower quality in turn. Returns null if even the smallest attempt is too big.
+Future<Uint8List?> shrinkToLimit(
+  Uint8List bytes, {
+  int maxBytes = 2 * 1024 * 1024,
+}) async {
+  for (final (side, quality) in const [
+    (1600, 80),
+    (1280, 70),
+    (1024, 60),
+    (800, 50),
+  ]) {
+    final out = await shrinkImage(bytes, maxSide: side, quality: quality);
+    if (out.length <= maxBytes) return out;
+  }
+  return null;
+}

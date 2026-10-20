@@ -162,6 +162,7 @@ class _NotificationCard extends StatelessWidget {
     NotificationKind.friendAccepted => Icons.people_alt_rounded,
     NotificationKind.newFollower => Icons.favorite_rounded,
     NotificationKind.unknown => Icons.notifications_rounded,
+    _ => Icons.groups_rounded,
   };
 
   Color get _accent => switch (notification.kind) {
@@ -169,6 +170,7 @@ class _NotificationCard extends StatelessWidget {
     NotificationKind.friendAccepted => AppColors.teal,
     NotificationKind.newFollower => AppColors.rust,
     NotificationKind.unknown => AppColors.primary,
+    _ => AppColors.teal,
   };
 
   @override

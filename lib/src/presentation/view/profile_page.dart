@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/presentation/view/main_screen.dart';
+import 'package:serafim/src/presentation/view/widgets/profile_posts.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
@@ -7,10 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/presentation/view/edit_profile_page.dart';
 import 'package:serafim/src/presentation/view/follow_list_page.dart';
-import 'package:serafim/src/presentation/view/settings/appearance_settings_page.dart';
-import 'package:serafim/src/presentation/view/settings/chat_settings_page.dart';
-import 'package:serafim/src/presentation/view/settings/notification_settings_page.dart';
-import 'package:serafim/src/presentation/view/settings/privacy_settings_page.dart';
 import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
@@ -21,17 +19,11 @@ import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/avatar_picker.dart';
 import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/image_picking.dart';
-import 'package:serafim/src/utils/serafim_button.dart';
-import 'package:serafim/src/utils/setting_tile.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
-
-  static void _open(BuildContext context, Widget page) {
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -46,6 +38,7 @@ class ProfilePage extends ConsumerWidget {
       backgroundColor: AppColors.paper,
       appBar: AppTopBar(
         title: 'USER PROFILE',
+        onBack: () => Navigator.of(context).pop(),
         trailing: AvatarThumb(size: 26, imageProvider: avatar),
       ),
       body: SafeArea(
@@ -160,53 +153,7 @@ class ProfilePage extends ConsumerWidget {
 
               // --- Friends ---
               const _FriendsSection(),
-
-              const SizedBox(height: 24),
-
-              // --- Preferences & Settings ---
-              Text('SETTINGS & PREFERENCES', style: AppTextStyles.eyebrow),
-              const SizedBox(height: 8),
-
-              SettingTile(
-                icon: Icons.security,
-                title: 'Privacy Settings',
-                subtitle: 'Read receipts, friend requests, lock profile',
-                onTap: () => _open(context, const PrivacySettingsPage()),
-              ),
-              const SizedBox(height: 8),
-
-              SettingTile(
-                icon: Icons.notifications_none,
-                title: 'Notification Settings',
-                subtitle: 'Message banners and sounds',
-                onTap: () => _open(context, const NotificationSettingsPage()),
-              ),
-              const SizedBox(height: 8),
-
-              SettingTile(
-                icon: Icons.chat_bubble_outline,
-                title: 'Chat Settings',
-                subtitle: 'Photo quality, how long messages are kept',
-                onTap: () => _open(context, const ChatSettingsPage()),
-              ),
-              const SizedBox(height: 8),
-
-              SettingTile(
-                icon: Icons.palette_outlined,
-                title: 'Theme & Appearance',
-                subtitle: 'Text size',
-                onTap: () => _open(context, const AppearanceSettingsPage()),
-              ),
-
-              const SizedBox(height: 36),
-
-              // --- Logout Action ---
-              SerafimButton(
-                label: 'Log out',
-                //isLoading: auth.isBusy,
-                onPressed: () =>
-                    ref.read(authViewModelProvider.notifier).signOut(),
-              ),
+              if (user != null) ProfilePosts(userId: user.id),
             ],
           ),
         ),
@@ -278,8 +225,13 @@ class _FriendsSection extends ConsumerWidget {
                   ),
                 ),
                 TextButton(
-                  onPressed: () =>
-                      ref.read(navigationNotifierProvider.notifier).setIndex(1),
+                  onPressed: () {
+                    // Profile is a page over the tabs now: close it, then go.
+                    Navigator.of(context).pop();
+                    ref
+                        .read(navigationNotifierProvider.notifier)
+                        .setIndex(discoverTabIndex);
+                  },
                   child: Text('Discover', style: AppTextStyles.linkText),
                 ),
               ],
@@ -288,10 +240,25 @@ class _FriendsSection extends ConsumerWidget {
         else
           Column(
             children: [
-              for (final friend in view.friends) ...[
+              for (final friend in view.friends.take(5)) ...[
                 _FriendRow(friend: friend),
                 const SizedBox(height: 8),
               ],
+              if (view.friends.length > 5)
+                Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => FollowListPage(
+                          title: 'FRIENDS',
+                          provider: friendsProvider,
+                          emptyText: 'No friends yet.',
+                        ),
+                      ),
+                    ),
+                    child: Text('See all', style: AppTextStyles.linkText),
+                  ),
+                ),
             ],
           ),
       ],

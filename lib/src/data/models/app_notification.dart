@@ -5,20 +5,55 @@ enum NotificationKind {
   friendRequest,
   friendAccepted,
   newFollower,
+  circleJoined,
+  circleJoinRequest,
+  circleRequestApproved,
+  circleRequestRejected,
+  circlePostCommented,
+  circleCommentReplied,
+  circleMention,
+  circlePostPinned,
+  circleRoleChanged,
+  circleBanned,
   unknown;
 
   static NotificationKind parse(String? raw) => switch (raw) {
     'friend_request' => NotificationKind.friendRequest,
     'friend_accepted' => NotificationKind.friendAccepted,
     'new_follower' => NotificationKind.newFollower,
+    'circle_joined' => NotificationKind.circleJoined,
+    'circle_join_request' => NotificationKind.circleJoinRequest,
+    'circle_request_approved' => NotificationKind.circleRequestApproved,
+    'circle_request_rejected' => NotificationKind.circleRequestRejected,
+    'circle_post_commented' => NotificationKind.circlePostCommented,
+    'circle_comment_replied' => NotificationKind.circleCommentReplied,
+    'circle_mention' => NotificationKind.circleMention,
+    'circle_post_pinned' => NotificationKind.circlePostPinned,
+    'circle_role_changed' => NotificationKind.circleRoleChanged,
+    'circle_banned' => NotificationKind.circleBanned,
     _ => NotificationKind.unknown,
   };
+
+  /// Whether this is about a Circle.
+  bool get isCircle => name.startsWith('circle');
 
   /// What the other person did, after their name.
   String get action => switch (this) {
     NotificationKind.friendRequest => 'sent you a friend request',
     NotificationKind.friendAccepted => 'accepted your friend request',
     NotificationKind.newFollower => 'started following you',
+    NotificationKind.circleJoined => 'joined your Circle',
+    NotificationKind.circleJoinRequest => 'asked to join your Circle',
+    NotificationKind.circleRequestApproved =>
+      'approved your request to join their Circle',
+    NotificationKind.circleRequestRejected =>
+      'declined your request to join their Circle',
+    NotificationKind.circlePostCommented => 'commented on your post',
+    NotificationKind.circleCommentReplied => 'replied to your comment',
+    NotificationKind.circleMention => 'mentioned you in a Circle',
+    NotificationKind.circlePostPinned => 'pinned your post',
+    NotificationKind.circleRoleChanged => 'changed your role in a Circle',
+    NotificationKind.circleBanned => 'banned you from a Circle',
     NotificationKind.unknown => 'interacted with you',
   };
 
@@ -31,6 +66,7 @@ enum NotificationKind {
     NotificationKind.friendAccepted => 'NEW FRIEND',
     NotificationKind.newFollower => 'NEW FOLLOWER',
     NotificationKind.unknown => 'NOTIFICATION',
+    _ => 'CIRCLES',
   };
 }
 
