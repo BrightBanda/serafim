@@ -43,8 +43,8 @@ class PostListPage extends ConsumerWidget {
                     post: post,
                     onSpark: (on) => ref
                         .read(sparkProvider.notifier)
-                        .togglePost(post.id, on: on),
-                    onComment: () => openPost(context, post.id),
+                        .togglePost(post, on: on),
+                    onComment: () => openPost(context, post.id, focusComment: true),
                     onCircleTap: post.circle == null
                         ? null
                         : () => openCircle(context, post.circle!.id),

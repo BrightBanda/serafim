@@ -37,6 +37,19 @@ class ChatWallpaperView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final layer = _layer();
+    if (wallpaper.opacity >= 1.0) return layer;
+    // Fainter: let the theme colour show through the background.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ColoredBox(color: AppColors.paper),
+        Opacity(opacity: wallpaper.opacity, child: layer),
+      ],
+    );
+  }
+
+  Widget _layer() {
     final value = wallpaper.value;
     switch (wallpaper.kind) {
       case WallpaperKind.doodles:

@@ -226,51 +226,59 @@ class ChatInputBar extends StatelessWidget {
       ),
     );
 
+    // The bar is ALWAYS the second child of the same Column, with a key. The
+    // reply preview appearing above it (or going away) must never rebuild the
+    // text field: that dropped its focus, and with it the keyboard, every time
+    // a reply started after the first one.
     final reply = replyPreview;
-    if (reply == null) return bar;
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
-          decoration: BoxDecoration(
-            color: AppColors.paperRaised,
-            border: Border(top: BorderSide(color: AppColors.line, width: 2)),
-          ),
-          child: Row(
-            children: [
-              Container(width: 3, height: 32, color: AppColors.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Replying to ${reply.author}',
-                      style: AppTextStyles.fieldLabel.copyWith(
-                        color: AppColors.primaryPale,
-                      ),
-                    ),
-                    Text(
-                      reply.snippet,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.body.copyWith(fontSize: 11),
-                    ),
-                  ],
+        if (reply != null)
+          KeyedSubtree(
+            key: const ValueKey('reply-preview'),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+              decoration: BoxDecoration(
+                color: AppColors.paperRaised,
+                border: Border(
+                  top: BorderSide(color: AppColors.line, width: 2),
                 ),
               ),
-              IconButton(
-                tooltip: 'Cancel reply',
-                icon: Icon(Icons.close, size: 18, color: AppColors.textDim),
-                onPressed: reply.onCancel,
+              child: Row(
+                children: [
+                  Container(width: 3, height: 32, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Replying to ${reply.author}',
+                          style: AppTextStyles.fieldLabel.copyWith(
+                            color: AppColors.primaryPale,
+                          ),
+                        ),
+                        Text(
+                          reply.snippet,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.body.copyWith(fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Cancel reply',
+                    icon: Icon(Icons.close, size: 18, color: AppColors.textDim),
+                    onPressed: reply.onCancel,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-        bar,
+        KeyedSubtree(key: const ValueKey('input-bar'), child: bar),
       ],
     );
   }

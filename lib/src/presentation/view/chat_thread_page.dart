@@ -16,6 +16,8 @@ import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/presentation/view/chat_background_page.dart';
+import 'package:serafim/src/presentation/view/forward_page.dart';
+import 'package:serafim/src/presentation/view/image_editor_page.dart';
 import 'package:serafim/src/providers/wallpaper_providers.dart';
 import 'package:serafim/src/utils/chat/chat_background.dart';
 import 'package:serafim/src/utils/chat/chat_bubble.dart';
@@ -187,13 +189,24 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       );
       if (bytes == null || !mounted) return;
 
+      // Crop / draw before sending. The spinner is for the pick, not the edit.
+      setState(() => _attaching = false);
+      final edited = await editImage(
+        context,
+        bytes,
+        maxSide: quality.maxSide,
+        quality: quality.jpegQuality,
+      );
+      if (edited == null || !mounted) return;
+      setState(() => _attaching = true);
+
       await ref
           .read(chatViewModelProvider.notifier)
           .sendMessage(
             roomId: _roomId,
             recipientId: widget.recipientId,
             groupId: widget.groupId,
-            imageBytes: bytes,
+            imageBytes: edited,
             replyToId: _replyingTo?.messageId,
           );
       if (mounted) setState(() => _replyingTo = null);
@@ -382,6 +395,16 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                     'Edit',
                     'edit',
                   ),
+                  MessageAction.reply => tile(
+                    Icons.reply,
+                    'Reply',
+                    'reply',
+                  ),
+                  MessageAction.forward => tile(
+                    Icons.forward,
+                    'Forward',
+                    'forward',
+                  ),
                   MessageAction.delete => tile(
                     Icons.delete_outline,
                     isConfirmed ? 'Delete for everyone' : 'Delete',
@@ -403,6 +426,14 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
         await _saveImage(message, senderLabel);
       case 'edit':
         await _editMessage(message);
+      case 'reply':
+        // The menu is still sliding away; while it is, Flutter hands focus
+        // back to whatever had it before (nothing), which closed the keyboard
+        // straight after opening it. Wait for the menu to be gone.
+        await Future<void>.delayed(const Duration(seconds: 1));
+        if (mounted) _startReply(message);
+      case 'forward':
+        await _forwardMessage(message);
       case 'delete':
         await _deleteFlow(
           message,
@@ -412,8 +443,17 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     }
   }
 
-  Future<void> _editMessage(LocalMessage message) async {
-    final controller = TextEditingController(text: message.textContent ?? '');
+  /// Opens the picker for the chats this message can be forwarded to.
+  Future<void> _forwardMessage(LocalMessage message) async {
+    final navigator = Navigator.of(context);
+    await navigator.push<int>(
+      MaterialPageRoute<int>(
+        builder: (_) => ForwardPage(messages: [message]),
+      ),
+    );
+  }
+
+  Future<void> _editMessage(LocalMessage message) async {    final controller = TextEditingController(text: message.textContent ?? '');
     final newText = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -560,7 +600,23 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       );
       return;
     }
+    // The sticker panel and the keyboard must never be up at the same time.
+    if (_stickersOpen) {
+      setState(() => _stickersOpen = false);
+    }
     setState(() => _replyingTo = message);
+    // Put the keyboard up, so the reply can be written straight away. The
+    // focus has to wait for the frame that shows the reply preview.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _inputFocus.requestFocus();
+      // If something took the focus right back, ask once more.
+      Future<void>.delayed(const Duration(milliseconds: 150), () {
+        if (mounted && _replyingTo != null && !_inputFocus.hasFocus) {
+          _inputFocus.requestFocus();
+        }
+      });
+    });
   }
 
   ReplyQuoteData? _quoteFor(
@@ -1082,6 +1138,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                       ? _mapStatus(message.status)
                                       : null,
                                   deleted: message.isDeleted,
+                                  forwarded: message.forwarded,
                                   footer:
                                       message.type == MessageType.audio &&
                                           !message.isDeleted

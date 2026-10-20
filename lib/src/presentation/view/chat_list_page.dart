@@ -3,10 +3,12 @@ import 'package:serafim/src/presentation/view/main_screen.dart';
 import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
+import 'package:serafim/src/data/models/chat_filter.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/presentation/view/create_group_page.dart';
 import 'package:serafim/src/presentation/view/notifications_page.dart';
+import 'package:serafim/src/providers/chat_filter_providers.dart';
 import 'package:serafim/src/providers/group_providers.dart';
 import 'package:serafim/src/utils/group_nav.dart';
 import 'package:serafim/src/presentation/view/official_chat_page.dart';
@@ -21,6 +23,8 @@ import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/chat/chat_row.dart';
 import 'package:serafim/src/utils/chat/chat_time.dart';
 import 'package:serafim/src/utils/official_badge.dart';
+import 'package:serafim/src/utils/serafim_chip.dart';
+import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -53,8 +57,8 @@ List<PublicUser> filterPeople(List<PublicUser> people, String query) {
 
 /// One row on the chat list: a friend (whose details we have) or someone you
 /// have only exchanged messages with (looked up by id).
-class _Entry {
-  const _Entry(this.id, this.friend, [this.group]);
+class ChatEntry {
+  const ChatEntry(this.id, this.friend, [this.group]);
   final String id;
   final PublicUser? friend;
   final GroupSummary? group;
@@ -62,7 +66,7 @@ class _Entry {
 
 /// Everyone on the list, most recently active first — like any messaging app.
 /// People you have not messaged yet come last, alphabetically.
-List<_Entry> _byRecentActivity({
+List<ChatEntry> byRecentActivity({
   required List<PublicUser> friends,
   required List<String> strangerIds,
   required Map<String, RoomPreview> previews,
@@ -70,11 +74,11 @@ List<_Entry> _byRecentActivity({
   List<GroupSummary> groups = const [],
 }) {
   final entries = [
-    for (final f in friends) _Entry(f.id, f),
-    for (final id in strangerIds) _Entry(id, null),
-    for (final g in groups) _Entry(g.id, null, g),
+    for (final f in friends) ChatEntry(f.id, f),
+    for (final id in strangerIds) ChatEntry(id, null),
+    for (final g in groups) ChatEntry(g.id, null, g),
   ];
-  DateTime? lastOf(_Entry e) => e.group != null
+  DateTime? lastOf(ChatEntry e) => e.group != null
       // A group with no messages yet sorts by when you joined.
       ? previews[e.group!.roomId]?.timestamp ?? e.group!.joinedAt
       : previews[ChatViewModel.buildRoomId(myId, e.id)]?.timestamp;
@@ -91,6 +95,62 @@ List<_Entry> _byRecentActivity({
         );
   });
   return entries;
+}
+
+/// The room a chat is stored under: the group's own id, or a pair of people.
+String roomIdFor(ChatEntry entry, String myId) => entry.group != null
+    ? entry.group!.roomId
+    : ChatViewModel.buildRoomId(myId, entry.id);
+
+/// Keeps only the chats a filter asks for.
+///
+/// Pure, so the rule can be tested without a widget: friends, groups,
+/// unread, or the room ids of a custom filter.
+List<ChatEntry> applyChatFilter(
+  List<ChatEntry> entries,
+  ChatFilter filter,
+  Map<String, RoomPreview> previews,
+  String myId,
+) {
+  return [
+    for (final entry in entries)
+      if (_matchesFilter(entry, filter, previews, myId)) entry,
+  ];
+}
+
+bool _matchesFilter(
+  ChatEntry entry,
+  ChatFilter filter,
+  Map<String, RoomPreview> previews,
+  String myId,
+) {
+  switch (filter.kind) {
+    case ChatFilterKind.all:
+      return true;
+    case ChatFilterKind.friends:
+      return entry.friend != null;
+    case ChatFilterKind.groups:
+      return entry.group != null;
+    case ChatFilterKind.unread:
+      final room = roomIdFor(entry, myId);
+      return (previews[room]?.unread ?? 0) > 0;
+    case ChatFilterKind.custom:
+      return filter.roomIds.contains(roomIdFor(entry, myId));
+  }
+}
+
+/// How many chats have something unread in them.
+int countUnread(
+  List<ChatEntry> entries,
+  Map<String, RoomPreview> previews,
+  String myId,
+) {
+  var n = 0;
+  for (final entry in entries) {
+    final room = roomIdFor(entry, myId);
+    if ((previews[room]?.unread ?? 0) > 0) n++;
+  }
+  return n;
 }
 
 /// Conversations: your friends, plus anyone you have exchanged messages with.
@@ -148,6 +208,129 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     ref.read(navigationNotifierProvider.notifier).setIndex(discoverTabIndex);
   }
 
+  /// Adds a filter of the person's own: a name and the chats in it.
+  Future<void> _addFilter(List<ChatEntry> entries, String myId) async {
+    final result = await showModalBottomSheet<_FilterDraft>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      isScrollControlled: true,
+      builder: (_) => _FilterSheet(entries: entries, myId: myId),
+    );
+    if (result == null || !mounted) return;
+    final name = result.name.trim();
+    if (name.isEmpty) return;
+    final filter = ref
+        .read(chatFiltersProvider.notifier)
+        .add(name, result.roomIds);
+    ref.read(selectedChatFilterProvider.notifier).select(filter.id);
+  }
+
+  /// Rename, change the chats in, or delete one of the person's filters.
+  Future<void> _editFilter(
+    ChatFilter filter,
+    List<ChatEntry> entries,
+    String myId,
+  ) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _SheetTile(
+              icon: Icons.edit_outlined,
+              label: 'Rename',
+              onTap: () => Navigator.pop(sheetContext, 'rename'),
+            ),
+            _SheetTile(
+              icon: Icons.checklist,
+              label: 'Edit chats',
+              onTap: () => Navigator.pop(sheetContext, 'chats'),
+            ),
+            _SheetTile(
+              icon: Icons.delete_outline,
+              label: 'Delete',
+              danger: true,
+              onTap: () => Navigator.pop(sheetContext, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+
+    if (action == 'delete') {
+      ref.read(chatFiltersProvider.notifier).remove(filter.id);
+      if (ref.read(selectedChatFilterProvider) == filter.id) {
+        ref.read(selectedChatFilterProvider.notifier).select(ChatFilter.all.id);
+      }
+      return;
+    }
+
+    if (action == 'rename') {
+      final name = await _askForName(filter.name);
+      if (name == null || name.trim().isEmpty || !mounted) return;
+      ref.read(chatFiltersProvider.notifier).rename(filter.id, name.trim());
+      return;
+    }
+
+    // Edit chats.
+    final result = await showModalBottomSheet<_FilterDraft>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      isScrollControlled: true,
+      builder: (_) => _FilterSheet(
+        entries: entries,
+        myId: myId,
+        name: filter.name,
+        selected: filter.roomIds,
+      ),
+    );
+    if (result == null || !mounted) return;
+    ref
+        .read(chatFiltersProvider.notifier)
+        .setRooms(filter.id, result.roomIds);
+  }
+
+  Future<String?> _askForName(String current) async {
+    final controller = TextEditingController(text: current);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.paperAlt,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+        title: Text('Filter name', style: AppTextStyles.fieldInput),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          style: AppTextStyles.fieldInput,
+          cursorColor: AppColors.primaryPale,
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(borderRadius: BorderRadius.zero),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('Cancel', style: AppTextStyles.linkText),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: Text('Save', style: AppTextStyles.linkText),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return name;
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = ref.watch(currentUserProvider);
@@ -160,6 +343,20 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     final strangerIds = (peersAsync.value ?? const <String>[])
         .where((id) => !friendIds.contains(id))
         .toList();
+
+    // Which filter is showing, and the chats it lets through.
+    final filter = ref.watch(activeChatFilterProvider);
+    final previews = ref.watch(roomPreviewsProvider);
+    final all = byRecentActivity(
+      friends: friends,
+      strangerIds: strangerIds,
+      groups: groups,
+      previews: previews,
+      myId: currentUser?.id ?? '',
+    );
+    final shown = currentUser == null
+        ? all
+        : applyChatFilter(all, filter, previews, currentUser.id);
 
     // Only wait on a spinner when there is genuinely nothing to show. A saved
     // copy of the friends list counts as something.
@@ -205,27 +402,26 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
-                _searching ? 'ALL CHATS' : 'CHAT',
+                _searching ? 'ALL CHATS' : filter.label.toUpperCase(),
                 style: AppTextStyles.eyebrow,
               ),
             ),
-            // Every account has the official chat, pinned first.
-            const OfficialChatItem(),
-            const SizedBox(height: 10),
+            // Every account has the official chat, pinned first. It only
+            // belongs under All: it is not a chat with one person.
+            if (filter.kind == ChatFilterKind.all) ...[
+              const OfficialChatItem(),
+              const SizedBox(height: 10),
+            ],
             if (friends.isEmpty && strangerIds.isEmpty && groups.isEmpty)
               _CenteredMessage(
                 text:
                     'No conversations yet.\nFind people in Discover to start one.',
                 actionLabel: 'Open Discover',
                 onAction: _openDiscover,
-              ),
-            for (final entry in _byRecentActivity(
-              friends: friends,
-              strangerIds: strangerIds,
-              groups: groups,
-              previews: ref.watch(roomPreviewsProvider),
-              myId: currentUser.id,
-            )) ...[
+              )
+            else if (shown.isEmpty)
+              _CenteredMessage(text: _emptyFor(filter)),
+            for (final entry in shown) ...[
               entry.group != null
                   ? _GroupChatItem(group: entry.group!, myId: currentUser.id)
                   : entry.friend != null
@@ -290,6 +486,14 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                     )
                   : const SizedBox(width: double.infinity),
             ),
+            if (currentUser != null)
+              _FilterRow(
+                entries: all,
+                previews: previews,
+                myId: currentUser.id,
+                onAdd: () => _addFilter(all, currentUser.id),
+                onEdit: (filter) => _editFilter(filter, all, currentUser.id),
+              ),
             Expanded(child: body),
           ],
         ),
@@ -430,13 +634,15 @@ class _SearchResults extends StatelessWidget {
 class _CenteredMessage extends StatelessWidget {
   const _CenteredMessage({
     required this.text,
-    required this.actionLabel,
-    required this.onAction,
+    this.actionLabel,
+    this.onAction,
   });
 
   final String text;
-  final String actionLabel;
-  final VoidCallback onAction;
+
+  /// Optional: a filter that shows nothing has nothing to offer to do.
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -447,11 +653,13 @@ class _CenteredMessage extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(text, textAlign: TextAlign.center, style: AppTextStyles.body),
-            const SizedBox(height: 10),
-            TextButton(
-              onPressed: onAction,
-              child: Text(actionLabel, style: AppTextStyles.linkText),
-            ),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: onAction,
+                child: Text(actionLabel!, style: AppTextStyles.linkText),
+              ),
+            ],
           ],
         ),
       ),
@@ -715,3 +923,285 @@ class NewGroupButton extends StatelessWidget {
     );
   }
 }
+
+/// What the add/edit sheet comes back with.
+class _FilterDraft {
+  const _FilterDraft(this.name, this.roomIds);
+  final String name;
+  final Set<String> roomIds;
+}
+
+/// The row of filter chips above the chat list: All, Friends, Unread,
+/// Groups, then any the person made, then a way to add one.
+class _FilterRow extends ConsumerWidget {
+  const _FilterRow({
+    required this.entries,
+    required this.previews,
+    required this.myId,
+    required this.onAdd,
+    required this.onEdit,
+  });
+
+  final List<ChatEntry> entries;
+  final Map<String, RoomPreview> previews;
+  final String myId;
+  final VoidCallback onAdd;
+  final ValueChanged<ChatFilter> onEdit;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(selectedChatFilterProvider);
+    final custom = ref.watch(chatFiltersProvider);
+    final unread = countUnread(entries, previews, myId);
+
+    Widget chip(ChatFilter filter, {String? label, VoidCallback? onLongPress}) =>
+        GestureDetector(
+          onLongPress: onLongPress,
+          child: SerafimChip(
+            label: label ?? filter.label,
+            selected: selected == filter.id,
+            onTap: () =>
+                ref.read(selectedChatFilterProvider.notifier).select(filter.id),
+          ),
+        );
+
+    return SizedBox(
+      height: 46,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        children: [
+          chip(ChatFilter.all),
+          const SizedBox(width: 6),
+          chip(ChatFilter.friends),
+          const SizedBox(width: 6),
+          chip(
+            ChatFilter.unread,
+            label: unread > 0 ? 'Unread $unread' : 'Unread',
+          ),
+          const SizedBox(width: 6),
+          chip(ChatFilter.groups),
+          for (final filter in custom) ...[
+            const SizedBox(width: 6),
+            chip(filter, onLongPress: () => onEdit(filter)),
+          ],
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: onAdd,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.lineSoft, width: 1.5),
+              ),
+              child: Text(
+                '+ Add filter',
+                style: AppTextStyles.body.copyWith(
+                  color: AppColors.textDim,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 10.5,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One row in the add/edit sheet: a chat you can put in the filter.
+class _FilterSheet extends StatefulWidget {
+  const _FilterSheet({
+    required this.entries,
+    required this.myId,
+    this.name = '',
+    this.selected = const {},
+  });
+
+  final List<ChatEntry> entries;
+  final String myId;
+  final String name;
+  final Set<String> selected;
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late final TextEditingController _name = TextEditingController(
+    text: widget.name,
+  );
+  late final Set<String> _rooms = {...widget.selected};
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+              child: TextField(
+                controller: _name,
+                maxLength: 20,
+                style: AppTextStyles.fieldInput,
+                cursorColor: AppColors.primaryPale,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Filter name',
+                  hintStyle: AppTextStyles.fieldInput.copyWith(
+                    color: AppColors.textDim,
+                  ),
+                  border: const OutlineInputBorder(
+                    borderRadius: BorderRadius.zero,
+                  ),
+                  counterStyle: AppTextStyles.smallDim,
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                children: [
+                  for (final entry in widget.entries)
+                    _FilterChatRow(
+                      entry: entry,
+                      roomId: roomIdFor(entry, widget.myId),
+                      selected: _rooms.contains(
+                        roomIdFor(entry, widget.myId),
+                      ),
+                      onChanged: (on) {
+                        final room = roomIdFor(entry, widget.myId);
+                        setState(() {
+                          if (on) {
+                            _rooms.add(room);
+                          } else {
+                            _rooms.remove(room);
+                          }
+                        });
+                      },
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: SerafimButton(
+                label: 'SAVE',
+                onPressed: () => Navigator.pop(
+                  context,
+                  _FilterDraft(_name.text.trim(), _rooms),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FilterChatRow extends StatelessWidget {
+  const _FilterChatRow({
+    required this.entry,
+    required this.roomId,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final ChatEntry entry;
+  final String roomId;
+  final bool selected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final name =
+        entry.friend?.displayName ??
+        entry.group?.name ??
+        entry.id;
+    return GestureDetector(
+      onTap: () => onChanged(!selected),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.primary : Colors.transparent,
+                  border: Border.all(
+                    color: selected ? AppColors.line : AppColors.lineSoft,
+                    width: 1.5,
+                  ),
+                ),
+                child: selected
+                    ? const Icon(Icons.check, size: 14, color: Colors.white)
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                name,
+                style: AppTextStyles.fieldInput,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One row in the "edit filter" sheet.
+class _SheetTile extends StatelessWidget {
+  const _SheetTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? AppColors.rustPale : AppColors.text;
+    return ListTile(
+      leading: Icon(icon, size: 20, color: color),
+      title: Text(
+        label,
+        style: AppTextStyles.body.copyWith(color: color),
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+/// What to say when a filter shows nothing.
+String _emptyFor(ChatFilter filter) => switch (filter.kind) {
+  ChatFilterKind.all => 'No conversations yet.',
+  ChatFilterKind.friends => 'No chats with friends yet.',
+  ChatFilterKind.unread => 'No unread chats.',
+  ChatFilterKind.groups => 'No group chats yet.',
+  ChatFilterKind.custom => 'No chats in this filter.',
+};

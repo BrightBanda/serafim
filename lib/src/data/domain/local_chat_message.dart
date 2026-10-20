@@ -65,6 +65,11 @@ class LocalMessage {
   /// server has not yet been told (socket was down). Flushed on reconnect.
   bool readAckPending = false;
 
+  /// This copy is a message the person forwarded to another chat. Only the
+  /// sender's own copy carries it; the people it was sent to see an ordinary
+  /// message.
+  bool forwarded = false;
+
   @Index()
   late DateTime timestamp;
 }

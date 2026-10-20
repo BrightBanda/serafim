@@ -1,4 +1,4 @@
-enum MessageAction { copy, download, edit, delete }
+enum MessageAction { copy, download, edit, delete, reply, forward }
 
 /// Which long-press actions apply to a message. Kept free of widgets so the
 /// ownership and attachment rules can be unit tested.
@@ -9,6 +9,9 @@ enum MessageAction { copy, download, edit, delete }
 ///   delete dialog additionally offers "delete for everyone" for the
 ///   sender's own messages (see [deleteOptionsFor]).
 /// - A message deleted for everyone can only be cleared from this device.
+/// - Replying to and forwarding both need a message the server has
+///   accepted, so they are offered together and never for a message that is
+///   still sending, has failed, or has been deleted.
 List<MessageAction> availableMessageActions({
   required bool isOutgoing,
   required bool isDeleted,
@@ -21,6 +24,7 @@ List<MessageAction> availableMessageActions({
     if (hasText) MessageAction.copy,
     if (isImage) MessageAction.download,
     if (isOutgoing && !isImage && isConfirmed) MessageAction.edit,
+    if (isConfirmed) ...[MessageAction.reply, MessageAction.forward],
     MessageAction.delete,
   ];
 }

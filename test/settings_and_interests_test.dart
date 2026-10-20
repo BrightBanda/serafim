@@ -270,6 +270,26 @@ void main() {
       'a short swipe does nothing',
       (t) async => expect(await swipe(t, 30), 0),
     );
+    testWidgets('a quick flick of a medium length replies', (t) async {
+      var replies = 0;
+      await t.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SwipeToReply(
+                onReply: () => replies++,
+                child: const SizedBox(width: 200, height: 40, child: Text('hi')),
+              ),
+            ),
+          ),
+        ),
+      );
+      // ~55 px in 40 ms: past the touch slop, short of the slow-drag
+      // threshold, but fast.
+      await t.fling(find.text('hi'), const Offset(-55, 0), 1500);
+      await t.pumpAndSettle();
+      expect(replies, 1);
+    });
     testWidgets('disabled (deleted message) ignores swipes', (t) async {
       expect(await swipe(t, 100, enabled: false), 0);
     });

@@ -854,13 +854,17 @@ class ChatViewModel extends Notifier<ChatState> {
     required List<int> waveform,
     String? replyToId,
     String? groupId,
+    // Set when forwarding: the audio is already on the server, so it is
+    // sent as it is instead of being uploaded again.
+    String? mediaRemoteId,
+    bool forwarded = false,
   }) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
     final tempId = DateTime.now().microsecondsSinceEpoch.toString();
-    final stored = await ref
-        .read(chatMediaStoreProvider)
-        .adoptRecording(tempId, path);
+    final stored = mediaRemoteId == null
+        ? await ref.read(chatMediaStoreProvider).adoptRecording(tempId, path)
+        : path;
 
     final msg = LocalMessage()
       ..messageId = tempId
@@ -870,14 +874,23 @@ class ChatViewModel extends Notifier<ChatState> {
       ..groupId = groupId
       ..textContent = ''
       ..localMediaPath = stored
+      ..mediaRemoteId = mediaRemoteId
       ..durationMs = durationMs
       ..waveform = waveform
       ..replyToId = replyToId
+      ..forwarded = forwarded
       ..type = MessageType.audio
       ..status = MessageStatus.sending
       ..timestamp = DateTime.now().toUtc();
     await ref.read(isarServiceProvider).saveMessage(msg);
-    await _deliverVoice(tempId);
+    if (mediaRemoteId == null) {
+      await _deliverVoice(tempId);
+    } else {
+      // Already uploaded: just tell the server about it.
+      ref
+          .read(webSocketServiceProvider)
+          .sendMessage(await _outgoingPayload(msg));
+    }
   }
 
   /// Tap-to-retry on a voice note that failed to send.
@@ -935,6 +948,96 @@ class ChatViewModel extends Notifier<ChatState> {
     }
   }
 
+  /// Forwards a message to another chat.
+  ///
+  /// The people it goes to see an ordinary message; only the copy on this
+  /// phone is labelled "Forwarded". There is no server change: a forward is
+  /// just a new message with the same content.
+  ///
+  /// For a group, [recipientId] is the group's id and [groupId] is set.
+  /// Returns false when the message cannot be forwarded at all.
+  Future<bool> forwardMessage({
+    required LocalMessage source,
+    required String recipientId,
+    String? groupId,
+  }) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return false;
+    if (source.isDeleted) return false;
+    if (source.status == MessageStatus.sending ||
+        source.status == MessageStatus.failed) {
+      return false;
+    }
+
+    final roomId = groupId != null
+        ? groupRoomId(groupId)
+        : buildRoomId(user.id, recipientId);
+
+    switch (source.type) {
+      case MessageType.text:
+        final text = source.textContent;
+        if (text == null || text.isEmpty) return false;
+        await sendMessage(
+          roomId: roomId,
+          recipientId: recipientId,
+          content: text,
+          groupId: groupId,
+          forwarded: true,
+        );
+        return true;
+
+      case MessageType.sticker:
+        final stickerId = source.textContent;
+        if (stickerId == null || stickerId.isEmpty) return false;
+        await sendSticker(
+          roomId: roomId,
+          recipientId: recipientId,
+          stickerId: stickerId,
+          groupId: groupId,
+          forwarded: true,
+        );
+        return true;
+
+      case MessageType.audio:
+        // The audio is already on the server, so it is sent as it is
+        // rather than uploaded again.
+        final mediaId = source.mediaRemoteId;
+        final path = source.localMediaPath;
+        if (mediaId == null || path == null) return false;
+        await sendVoice(
+          roomId: roomId,
+          recipientId: recipientId,
+          path: path,
+          durationMs: source.durationMs ?? 0,
+          waveform: source.waveform ?? const [],
+          groupId: groupId,
+          mediaRemoteId: mediaId,
+          forwarded: true,
+        );
+        return true;
+
+      case MessageType.image:
+        // The server refuses attachments in groups, so the picker does not
+        // offer them for a picture.
+        if (groupId != null) return false;
+        final path = source.localMediaPath;
+        if (path == null) return false;
+        final file = File(path);
+        if (!await file.exists()) return false;
+        await sendMessage(
+          roomId: roomId,
+          recipientId: recipientId,
+          imageBytes: await file.readAsBytes(),
+          groupId: null,
+          forwarded: true,
+        );
+        return true;
+
+      case MessageType.video:
+        return false;
+    }
+  }
+
   final Set<String> _downloading = {};
 
   /// Fetches a received voice note's audio. Safe to call repeatedly; returns
@@ -970,6 +1073,7 @@ class ChatViewModel extends Notifier<ChatState> {
     required String stickerId,
     String? replyToId,
     String? groupId,
+    bool forwarded = false,
   }) => sendMessage(
     roomId: roomId,
     recipientId: recipientId,
@@ -977,6 +1081,7 @@ class ChatViewModel extends Notifier<ChatState> {
     replyToId: replyToId,
     type: MessageType.sticker,
     groupId: groupId,
+    forwarded: forwarded,
   );
 
   Future<void> sendMessage({
@@ -987,6 +1092,7 @@ class ChatViewModel extends Notifier<ChatState> {
     String? replyToId,
     MessageType? type,
     String? groupId,
+    bool forwarded = false,
   }) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -1009,6 +1115,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ..textContent = content
       ..localMediaPath = mediaPath
       ..replyToId = replyToId
+      ..forwarded = forwarded
       ..type =
           type ?? (mediaPath != null ? MessageType.image : MessageType.text)
       ..status = MessageStatus.sending

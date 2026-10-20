@@ -31,6 +31,10 @@ class ChatBackgroundPage extends ConsumerStatefulWidget {
 
 class _ChatBackgroundPageState extends ConsumerState<ChatBackgroundPage> {
   late ChatWallpaper _selected = ref.read(roomWallpaperProvider(widget.roomId));
+
+  /// How strongly the background shows; kept here so it survives switching
+  /// between backgrounds.
+  late double _opacity = _selected.opacity;
   bool _applyToAll = false;
   bool _picking = false;
   bool _saving = false;
@@ -57,7 +61,11 @@ class _ChatBackgroundPageState extends ConsumerState<ChatBackgroundPage> {
       );
       if (bytes == null) return;
       final path = await ref.read(wallpaperImageStoreProvider).save(bytes);
-      if (mounted) setState(() => _selected = ChatWallpaper.image(path));
+      if (mounted) {
+        setState(
+          () => _selected = ChatWallpaper.image(path, opacity: _opacity),
+        );
+      }
     } catch (error) {
       _tell(humanError(error, fallback: "Couldn't use that photo."));
     } finally {
@@ -89,8 +97,8 @@ class _ChatBackgroundPageState extends ConsumerState<ChatBackgroundPage> {
 
     Widget tile(ChatWallpaper w, String label) => _WallpaperTile(
       label: label,
-      selected: _selected == w,
-      onTap: () => setState(() => _selected = w),
+      selected: _selected.sameBackground(w),
+      onTap: () => setState(() => _selected = w.copyWithOpacity(_opacity)),
       child: ChatWallpaperView(wallpaper: w),
     );
 
@@ -107,7 +115,16 @@ class _ChatBackgroundPageState extends ConsumerState<ChatBackgroundPage> {
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
           children: [
             _Preview(wallpaper: _selected),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
+            _OpacitySlider(
+              value: _opacity,
+              enabled: _selected.supportsOpacity,
+              onChanged: (v) => setState(() {
+                _opacity = v;
+                _selected = _selected.copyWithOpacity(v);
+              }),
+            ),
+            const SizedBox(height: 14),
             const SettingsSectionLabel('Patterns'),
             _TileWrap(
               children: [
@@ -198,6 +215,52 @@ class _ChatBackgroundPageState extends ConsumerState<ChatBackgroundPage> {
   }
 }
 
+/// "Background strength": fades the background toward the theme colour.
+class _OpacitySlider extends StatelessWidget {
+  const _OpacitySlider({
+    required this.value,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final double value;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('BACKGROUND STRENGTH', style: AppTextStyles.eyebrow),
+            const Spacer(),
+            Text(
+              enabled ? '${(value * 100).round()}%' : '–',
+              style: AppTextStyles.smallDim,
+            ),
+          ],
+        ),
+        Slider(
+          value: value.clamp(ChatWallpaper.minOpacity, 1.0),
+          min: ChatWallpaper.minOpacity,
+          max: 1.0,
+          divisions: 16,
+          label: '${(value * 100).round()}%',
+          activeColor: AppColors.primary,
+          onChanged: enabled ? onChanged : null,
+        ),
+        if (!enabled)
+          Text(
+            'Pick a colour, gradient or photo to adjust its strength.',
+            style: AppTextStyles.smallDim,
+          ),
+      ],
+    );
+  }
+}
+
 /// A small chat drawn over the chosen background.
 class _Preview extends StatelessWidget {
   const _Preview({required this.wallpaper});
@@ -207,7 +270,7 @@ class _Preview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 200,
+      height: 220,
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.line, width: 2),
         boxShadow: [

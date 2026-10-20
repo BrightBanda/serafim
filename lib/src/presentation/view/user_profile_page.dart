@@ -136,7 +136,12 @@ class UserProfilePage extends ConsumerWidget {
                 style: AppTextStyles.smallDim,
               ),
             ],
-            ProfilePosts(userId: userId),
+            ProfilePosts(
+              userId: userId,
+              // The server leaves the counts out exactly when the profile is
+              // locked and you are neither the owner nor a friend.
+              locked: user.profileLocked && !isMe && user.friendCount == null,
+            ),
           ],
         ),
       );

@@ -97,6 +97,9 @@ class AppPalette {
 /// constants, so the whole app can switch between light and dark at runtime.
 /// Call [apply] to switch; the app then rebuilds itself (see `SerafimApp`).
 class AppColors {
+  /// The colour of a lit Spark: electric amber, the same in light and dark.
+  static const Color sparkAmber = Color(0xFFFFB300);
+
   AppColors._();
 
   static AppPalette _palette = AppPalette.dark;

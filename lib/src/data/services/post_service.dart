@@ -45,6 +45,7 @@ class PostService {
 
   /// Posts to a Circle, or to your own profile when [circleId] is null.
   Future<Post> create({
+    required String title,
     required String content,
     String? circleId,
     List<String> imageUrls = const [],
@@ -54,6 +55,7 @@ class PostService {
           () => _dio.post<dynamic>(
             '/posts',
             data: {
+              'title': title,
               'content': content,
               if (circleId != null) 'circle_id': circleId,
               if (imageUrls.isNotEmpty) 'image_urls': imageUrls,
@@ -61,6 +63,11 @@ class PostService {
           ),
         ),
       );
+
+  /// How many pictures the person may still share today.
+  Future<ImageQuota> imageQuota() async => ImageQuota.fromJson(
+    await _map(() => _dio.get<dynamic>('/posts/image-quota')),
+  );
 
   Future<Post> detail(String id) async =>
       Post.fromJson(await _map(() => _dio.get<dynamic>('/posts/$id')));

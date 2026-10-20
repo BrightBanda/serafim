@@ -24,6 +24,7 @@ Future<ProviderContainer> make({Map<String, Object> prefs = const {}}) async {
 }
 
 void main() {
+  wallpaperOpacityTests();
   test('encoding round-trips, and junk falls back to doodles', () {
     for (final w in [
       ChatWallpaper.doodles,
@@ -108,5 +109,43 @@ void main() {
         .widgetList<ColoredBox>(find.byType(ColoredBox))
         .where((b) => b.color == ChatWallpaperView.imageScrim);
     expect(scrims, isNotEmpty);
+  });
+}
+
+void wallpaperOpacityTests() {
+  group('wallpaper strength', () {
+    test('an old saved string reads as full strength', () {
+      expect(ChatWallpaper.decode('color:sand').opacity, 1.0);
+      expect(ChatWallpaper.decode('image:/data/x/1.jpg').opacity, 1.0);
+    });
+
+    test('strength round trips and is left off at full', () {
+      final w = ChatWallpaper.gradient('ocean', opacity: 0.6);
+      expect(w.encode(), 'gradient:ocean@0.60');
+      expect(ChatWallpaper.decode(w.encode()), w);
+      expect(ChatWallpaper.color('sand').encode(), 'color:sand');
+    });
+
+    test('a path containing @ keeps its path', () {
+      final w = ChatWallpaper.image('/data/a@b/1.jpg', opacity: 0.5);
+      final back = ChatWallpaper.decode(w.encode());
+      expect(back.value, '/data/a@b/1.jpg');
+      expect(back.opacity, 0.5);
+      expect(
+        ChatWallpaper.decode('image:/data/a@b/1.jpg').value,
+        '/data/a@b/1.jpg',
+      );
+    });
+
+    test('doodles and plain ignore it; others clamp', () {
+      expect(ChatWallpaper.doodles.copyWithOpacity(0.3), ChatWallpaper.doodles);
+      expect(ChatWallpaper.color('sand', opacity: 0).opacity, 0.2);
+      expect(
+        ChatWallpaper.color(
+          'sand',
+        ).sameBackground(ChatWallpaper.color('sand', opacity: 0.5)),
+        isTrue,
+      );
+    });
   });
 }

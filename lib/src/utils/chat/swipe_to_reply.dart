@@ -25,8 +25,13 @@ class SwipeToReply extends StatefulWidget {
 
 class _SwipeToReplyState extends State<SwipeToReply>
     with SingleTickerProviderStateMixin {
-  static const _trigger = 56.0;
-  static const _maxDrag = 84.0;
+  // The drag only starts counting after Flutter's touch slop (~18 px), so the
+  // finger really travels about 18 px more than this. A quick flick also
+  // counts (see [_end]) — a short, fast swipe is how people actually do it.
+  static const _trigger = 40.0;
+  static const _maxDrag = 72.0;
+  static const _flickSpeed = 600.0;
+  static const _flickMin = 16.0;
 
   late final AnimationController _back = AnimationController(
     vsync: this,
@@ -54,7 +59,13 @@ class _SwipeToReplyState extends State<SwipeToReply>
     });
   }
 
-  void _end(DragEndDetails details) => _release(reply: true);
+  void _end(DragEndDetails details) {
+    final speed = (details.primaryVelocity ?? 0).abs();
+    if (!_armed && speed >= _flickSpeed && _dx.abs() >= _flickMin) {
+      _armed = true;
+    }
+    _release(reply: true);
+  }
 
   void _release({required bool reply}) {
     if (!widget.enabled) return;

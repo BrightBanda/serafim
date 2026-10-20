@@ -11,9 +11,18 @@ import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 /// Opens a post's page. Used wherever a [PostCard] is shown.
-Future<void> openPost(BuildContext context, String postId) => Navigator.of(
-  context,
-).push(MaterialPageRoute<void>(builder: (_) => PostDetailPage(postId: postId)));
+///
+/// [focusComment] opens the keyboard on the comment box, which is what
+/// tapping the comment icon should do.
+Future<void> openPost(
+  BuildContext context,
+  String postId, {
+  bool focusComment = false,
+}) => Navigator.of(context).push(
+  MaterialPageRoute<void>(
+    builder: (_) => PostDetailPage(postId: postId, focusComment: focusComment),
+  ),
+);
 
 /// Opens the Circle a post belongs to.
 Future<void> openCircle(BuildContext context, String circleId) =>
@@ -25,9 +34,17 @@ Future<void> openCircle(BuildContext context, String circleId) =>
 
 /// One post with its comments and replies.
 class PostDetailPage extends ConsumerStatefulWidget {
-  const PostDetailPage({super.key, required this.postId});
+  const PostDetailPage({
+    super.key,
+    required this.postId,
+    this.focusComment = false,
+  });
 
   final String postId;
+
+  /// Whether the comment box should take the keyboard as soon as the post
+  /// is on screen.
+  final bool focusComment;
 
   @override
   ConsumerState<PostDetailPage> createState() => _PostDetailPageState();
@@ -35,6 +52,9 @@ class PostDetailPage extends ConsumerStatefulWidget {
 
 class _PostDetailPageState extends ConsumerState<PostDetailPage> {
   final _controller = TextEditingController();
+
+  /// The comment box, so a reply can put the keyboard up.
+  final _focus = FocusNode();
   bool _busy = false;
 
   /// The comment being replied to, if any.
@@ -43,6 +63,7 @@ class _PostDetailPageState extends ConsumerState<PostDetailPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -104,12 +125,14 @@ class _PostDetailPageState extends ConsumerState<PostDetailPage> {
                 children: [
                   PostCard(
                     post: p,
-                    onSpark: (on) => ref
-                        .read(sparkProvider.notifier)
-                        .togglePost(p.id, on: on),
+                    showFullText: true,
+                    onSpark: (on) =>
+                        ref.read(sparkProvider.notifier).togglePost(p, on: on),
+                    onComment: () => _focus.requestFocus(),
                     onCircleTap: p.circle == null
                         ? null
                         : () => openCircle(context, p.circle!.id),
+                    onDeleted: () => Navigator.of(context).pop(),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -165,7 +188,10 @@ class _PostDetailPageState extends ConsumerState<PostDetailPage> {
       comment: c,
       indent: indent,
       canDelete: c.author.id == me || post.author.id == me,
-      onReply: () => setState(() => _replyTo = c),
+      onReply: () {
+        setState(() => _replyTo = c);
+        _focus.requestFocus();
+      },
     );
     return [
       for (final c in top) ...[
@@ -212,6 +238,8 @@ class _PostDetailPageState extends ConsumerState<PostDetailPage> {
               Expanded(
                 child: TextField(
                   controller: _controller,
+                  focusNode: _focus,
+                  autofocus: widget.focusComment,
                   minLines: 1,
                   maxLines: 4,
                   maxLength: PostLimits.commentMax,
@@ -254,7 +282,11 @@ class _CommentTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final color = comment.sparked ? AppColors.primaryPale : AppColors.textDim;
+    // What the person just did shows at once; see SparkController.
+    final shown =
+        ref.watch(sparkOverridesProvider.select((m) => m['c:${comment.id}'])) ??
+        (sparked: comment.sparked, count: comment.sparkCount);
+    final color = shown.sparked ? AppColors.sparkAmber : AppColors.textDim;
     return Padding(
       padding: EdgeInsets.only(left: indent ? 28 : 0, bottom: 10),
       child: Container(
@@ -282,18 +314,18 @@ class _CommentTile extends ConsumerWidget {
                   behavior: HitTestBehavior.opaque,
                   onTap: () => ref
                       .read(sparkProvider.notifier)
-                      .toggleComment(comment.id, on: !comment.sparked),
+                      .toggleComment(comment, on: !shown.sparked),
                   child: Row(
                     children: [
                       Icon(
-                        comment.sparked ? Icons.bolt : Icons.bolt_outlined,
+                        shown.sparked ? Icons.bolt : Icons.bolt_outlined,
                         size: 18,
                         color: color,
                       ),
-                      if (comment.sparkCount > 0) ...[
+                      if (shown.count > 0) ...[
                         const SizedBox(width: 4),
                         Text(
-                          '${comment.sparkCount}',
+                          '${shown.count}',
                           style: AppTextStyles.smallDim.copyWith(color: color),
                         ),
                       ],
@@ -310,6 +342,43 @@ class _CommentTile extends ConsumerWidget {
                   GestureDetector(
                     onTap: () async {
                       final messenger = ScaffoldMessenger.of(context);
+                      final sure = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: AppColors.paperAlt,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.zero,
+                          ),
+                          title: Text(
+                            'Delete this comment?',
+                            style: AppTextStyles.fieldInput.copyWith(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                          ),
+                          content: Text(
+                            "This can't be undone.",
+                            style: AppTextStyles.body,
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(false),
+                              child: Text(
+                                'Cancel',
+                                style: AppTextStyles.linkText,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: Text(
+                                'Delete',
+                                style: AppTextStyles.linkText,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (sure != true) return;
                       try {
                         await ref
                             .read(postServiceProvider)

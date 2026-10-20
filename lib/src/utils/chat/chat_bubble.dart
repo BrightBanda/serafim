@@ -29,6 +29,7 @@ class ChatBubble extends StatelessWidget {
     this.onDeleteImage,
     this.quote,
     this.footer,
+    this.forwarded = false,
   });
 
   /// Shown under the text (e.g. a link preview card).
@@ -42,6 +43,10 @@ class ChatBubble extends StatelessWidget {
 
   /// Deleted for everyone: shows a placeholder instead of the content.
   final bool deleted;
+
+  /// This copy is one the person forwarded to another chat. Only the
+  /// sender's own copy carries the label.
+  final bool forwarded;
 
   /// Press-and-hold on the bubble (message actions).
   final VoidCallback? onLongPress;
@@ -108,6 +113,15 @@ class ChatBubble extends StatelessWidget {
               if (quote != null && !deleted) ...[
                 _ReplyQuote(data: quote!, outgoing: isOut),
                 const SizedBox(height: 6),
+              ],
+              if (forwarded && !deleted) ...[
+                Text(
+                  '↪ Forwarded',
+                  style: AppTextStyles.smallDim.copyWith(
+                    color: isOut ? const Color(0xFFDBE4FB) : AppColors.textDim,
+                  ),
+                ),
+                const SizedBox(height: 3),
               ],
               if (deleted)
                 Text(

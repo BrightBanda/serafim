@@ -5,7 +5,6 @@ import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/interest_picker.dart';
-import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/ui_text_field.dart';
@@ -103,6 +102,21 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
       appBar: AppTopBar(
         title: 'EDIT PROFILE',
         onBack: _saving ? null : () => Navigator.of(context).pop(),
+        trailing: GestureDetector(
+          onTap: _saving ? null : _save,
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: _saving ? AppColors.paperRaised : AppColors.primary,
+              border: Border.all(color: AppColors.line, width: 1.5),
+            ),
+            child: Text(
+              _saving ? 'SAVING…' : 'SAVE',
+              style: AppTextStyles.buttonLabel.copyWith(fontSize: 11),
+            ),
+          ),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -158,11 +172,6 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
                   style: AppTextStyles.body.copyWith(color: AppColors.rustPale),
                 ),
               ],
-              const SizedBox(height: 22),
-              SerafimButton(
-                label: _saving ? 'Saving…' : 'Save changes',
-                onPressed: _saving ? null : _save,
-              ),
             ],
           ),
         ),

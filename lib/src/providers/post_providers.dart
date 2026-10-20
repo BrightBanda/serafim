@@ -105,6 +105,7 @@ class PostComposerController extends AsyncNotifier<Post?> {
 
   /// Posts to a Circle, or to your own profile when [circleId] is null.
   Future<Post?> post({
+    required String title,
     required String content,
     String? circleId,
     List<String> imageUrls = const [],
@@ -113,11 +114,20 @@ class PostComposerController extends AsyncNotifier<Post?> {
     final result = await AsyncValue.guard(() async {
       final created = await ref
           .read(postServiceProvider)
-          .create(content: content, circleId: circleId, imageUrls: imageUrls);
+          .create(
+            title: title,
+            content: content,
+            circleId: circleId,
+            imageUrls: imageUrls,
+          );
       ref.invalidate(feedProvider);
       if (circleId != null) {
         ref.invalidate(circlePostsProvider(circleId));
       }
+      // The profile's own list of posts has to refresh too, or a post you
+      // just wrote does not appear on your profile until you pull to refresh.
+      ref.invalidate(authorPostsProvider);
+      ref.invalidate(postImageQuotaProvider);
       return created;
     });
     state = result;
@@ -129,6 +139,41 @@ final postComposerProvider =
     AsyncNotifierProvider<PostComposerController, Post?>(
       PostComposerController.new,
     );
+
+/// How many pictures the person has shared today, and how many are left.
+///
+/// Re-read after each post, so the counter on the composer stays true.
+final postImageQuotaProvider = FutureProvider.autoDispose<ImageQuota>((
+  ref,
+) async {
+  if (ref.watch(currentAccountIdProvider) == null) {
+    return const ImageQuota(used: 0, limit: PostLimits.dailyImagesMax);
+  }
+  return ref.watch(postServiceProvider).imageQuota();
+});
+
+/// Deletes a post, and refreshes every list it was in.
+class PostDeleteController extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
+
+  Future<bool> delete(String postId) async {
+    var done = false;
+    state = await AsyncValue.guard(() async {
+      await ref.read(postServiceProvider).delete(postId);
+      done = true;
+      ref.invalidate(feedProvider);
+      ref.invalidate(authorPostsProvider);
+      ref.invalidate(circlePostsProvider);
+      ref.invalidate(postProvider(postId));
+    });
+    return done;
+  }
+}
+
+final postDeleteProvider = AsyncNotifierProvider<PostDeleteController, void>(
+  PostDeleteController.new,
+);
 
 /// Comments on a post, or replies to another comment.
 class CommentController extends AsyncNotifier<PostComment?> {
@@ -157,35 +202,92 @@ final commentProvider = AsyncNotifierProvider<CommentController, PostComment?>(
   CommentController.new,
 );
 
-/// Sparks a post, or takes the Spark back.
+/// What the screen shows for a post or comment you have just sparked (or
+/// un-sparked), before the server has answered. Keyed `p:<post id>` and
+/// `c:<comment id>`; when there is no entry, the post's own numbers are shown.
+typedef SparkView = ({bool sparked, int count});
+
+class SparkOverrides extends Notifier<Map<String, SparkView>> {
+  @override
+  Map<String, SparkView> build() => const {};
+
+  void set(String key, SparkView view) => state = {...state, key: view};
+
+  void clear() => state = const {};
+}
+
+final sparkOverridesProvider =
+    NotifierProvider<SparkOverrides, Map<String, SparkView>>(
+      SparkOverrides.new,
+    );
+
+/// Sparks a post or comment, or takes the Spark back.
 ///
-/// The count comes back from the server, so the number on screen is the
-/// server's number and not a guess.
+/// Optimistic: the bolt and the count change the instant you tap, and the
+/// request follows. When the server answers, its number replaces ours; if the
+/// request fails, the old state comes back. Quick repeated taps are folded
+/// into one request for the last thing you asked for.
 class SparkController extends AsyncNotifier<void> {
+  /// What the person last asked for, per key, while a request is running.
+  final Map<String, bool> _wanted = {};
+
   @override
   Future<void> build() async {}
 
-  Future<void> togglePost(String postId, {required bool on}) => _run(
-    postId,
-    () => ref.read(postServiceProvider).sparkPost(postId, on: on),
+  Future<void> togglePost(Post post, {required bool on}) => _toggle(
+    'p:${post.id}',
+    (sparked: post.sparked, count: post.sparkCount),
+    on,
+    (want) => ref.read(postServiceProvider).sparkPost(post.id, on: want),
   );
 
-  Future<void> toggleComment(String commentId, {required bool on}) => _run(
-    commentId,
-    () => ref.read(postServiceProvider).sparkComment(commentId, on: on),
-  );
+  Future<void> toggleComment(PostComment comment, {required bool on}) =>
+      _toggle(
+        'c:${comment.id}',
+        (sparked: comment.sparked, count: comment.sparkCount),
+        on,
+        (want) =>
+            ref.read(postServiceProvider).sparkComment(comment.id, on: want),
+      );
 
-  Future<void> _run(String id, Future<Object?> Function() action) async {
-    state = await AsyncValue.guard(() async {
-      await action();
-      // The posts and comments on screen carry their own counts, so they
-      // have to be re-read for the number to change.
-      ref.invalidate(circlePostsProvider);
-      ref.invalidate(authorPostsProvider);
-      ref.invalidate(feedProvider);
-      ref.invalidate(postCommentsProvider);
-      ref.invalidate(postProvider);
-    });
+  Future<void> _toggle(
+    String key,
+    SparkView base,
+    bool on,
+    Future<SparkResult> Function(bool want) send,
+  ) async {
+    final overrides = ref.read(sparkOverridesProvider.notifier);
+    final shown = ref.read(sparkOverridesProvider)[key] ?? base;
+    if (shown.sparked == on) return;
+
+    // Show it now.
+    overrides.set(key, (
+      sparked: on,
+      count: (shown.count + (on ? 1 : -1)).clamp(0, 1 << 30),
+    ));
+
+    final running = _wanted.containsKey(key);
+    _wanted[key] = on;
+    if (running) return; // the running request will pick up the latest wish
+
+    var confirmed = shown;
+    try {
+      while (true) {
+        final want = _wanted[key]!;
+        if (want == confirmed.sparked) break;
+        final result = await send(want);
+        confirmed = (sparked: result.sparked, count: result.sparkCount);
+        // Only show the server's number if nothing newer was asked for.
+        if (_wanted[key] == want) overrides.set(key, confirmed);
+        if (_wanted[key] == want) break;
+      }
+      state = const AsyncData(null);
+    } catch (error, stack) {
+      overrides.set(key, confirmed); // put the old state back
+      state = AsyncError(error, stack);
+    } finally {
+      _wanted.remove(key);
+    }
   }
 }
 

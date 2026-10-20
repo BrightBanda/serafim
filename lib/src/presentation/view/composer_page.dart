@@ -30,15 +30,40 @@ class ComposerPage extends ConsumerStatefulWidget {
 }
 
 class _ComposerPageState extends ConsumerState<ComposerPage> {
+  /// The heading, like a forum thread.
+  final _title = TextEditingController();
   final _controller = TextEditingController();
   bool _busy = false;
+
+  /// What the busy state is for, so the button can say so: adding pictures
+  /// (choosing and shrinking them, then uploading) or posting.
+  String _working = 'POSTING…';
   String? _error;
 
   /// Pictures chosen so far, already shrunk to fit the 2 MB limit.
   final List<Uint8List> _images = [];
 
-  Future<void> _addImages() async {
-    final room = PostLimits.imagesMax - _images.length;
+  @override
+  void dispose() {
+    _title.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// How many more pictures may be attached.
+  ///
+  /// Two limits apply at once: at most [PostLimits.imagesMax] on one post, and
+  /// at most [PostLimits.dailyImagesMax] a day across all of them. The
+  /// pictures already attached to this draft count towards the daily limit,
+  /// because they go up with the post.
+  int _roomFor(int remaining) {
+    final perPost = PostLimits.imagesMax - _images.length;
+    final perDay = remaining - _images.length;
+    return perPost < perDay ? perPost : perDay;
+  }
+
+  Future<void> _addImages(int remaining) async {
+    final room = _roomFor(remaining);
     if (room <= 0) return;
     setState(() => _error = null);
     try {
@@ -51,7 +76,10 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
           if (f != null) f,
       ];
       if (files.isEmpty) return;
-      setState(() => _busy = true);
+      setState(() {
+        _busy = true;
+        _working = 'ADDING IMAGES…';
+      });
       var skipped = 0;
       for (final file in files.take(room)) {
         final small = await shrinkToLimit(
@@ -79,25 +107,21 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
     }
   }
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
   void _back() {
     if (Navigator.of(context).canPop()) Navigator.of(context).pop();
   }
 
   Future<void> _post() async {
     if (_busy) return;
+    final title = _title.text.trim();
     final text = _controller.text.trim();
-    if (text.isEmpty && _images.isEmpty) {
-      setState(() => _error = 'Say something first.');
+    if (title.isEmpty) {
+      setState(() => _error = 'Add a heading.');
       return;
     }
     setState(() {
       _busy = true;
+      _working = _images.isEmpty ? 'POSTING…' : 'ADDING IMAGES…';
       _error = null;
     });
     try {
@@ -109,9 +133,15 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
           urls.add(await storage.uploadPostImage(me, bytes));
         }
       }
+      if (mounted) setState(() => _working = 'POSTING…');
       final posted = await ref
           .read(postComposerProvider.notifier)
-          .post(content: text, circleId: widget.circleId, imageUrls: urls);
+          .post(
+            title: title,
+            content: text,
+            circleId: widget.circleId,
+            imageUrls: urls,
+          );
       if (!mounted) return;
       if (posted == null) {
         // The controller keeps the failure; show it and stay on the page.
@@ -134,6 +164,12 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
     final circleName =
         widget.circleName ??
         ref.watch(circleDetailProvider(widget.circleId ?? '')).value?.name;
+    final quota = ref.watch(postImageQuotaProvider);
+    final remaining = quota.value?.remaining ?? PostLimits.dailyImagesMax;
+    final used = quota.value?.used ?? 0;
+    final limit = quota.value?.limit ?? PostLimits.dailyImagesMax;
+    final outOfPictures = remaining <= 0;
+    final full = _images.length >= PostLimits.imagesMax;
 
     return Scaffold(
       backgroundColor: AppColors.paper,
@@ -169,8 +205,28 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
               const SizedBox(height: 14),
             ],
             TextField(
-              controller: _controller,
+              controller: _title,
               autofocus: true,
+              maxLength: PostLimits.titleMax,
+              style: AppTextStyles.fieldInput.copyWith(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+              cursorColor: AppColors.primaryPale,
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(
+                  borderRadius: BorderRadius.zero,
+                ),
+                hintText: 'Heading',
+                hintStyle: AppTextStyles.fieldInput.copyWith(
+                  color: AppColors.textDim,
+                ),
+                counterStyle: AppTextStyles.smallDim,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
               maxLines: 8,
               minLines: 5,
               maxLength: PostLimits.contentMax,
@@ -180,7 +236,7 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
                 border: const OutlineInputBorder(
                   borderRadius: BorderRadius.zero,
                 ),
-                hintText: 'What is on your mind?',
+                hintText: 'Break the silence',
                 hintStyle: AppTextStyles.fieldInput.copyWith(
                   color: AppColors.textDim,
                 ),
@@ -191,21 +247,27 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
             Row(
               children: [
                 GestureDetector(
-                  onTap: _busy || _images.length >= PostLimits.imagesMax
+                  onTap: _busy || outOfPictures || full
                       ? null
-                      : _addImages,
+                      : () => _addImages(remaining),
                   child: Row(
                     children: [
                       Icon(
                         Icons.image_outlined,
                         size: 20,
-                        color: AppColors.primaryPale,
+                        color: outOfPictures
+                            ? AppColors.textDim
+                            : AppColors.primaryPale,
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Add pictures (${_images.length}/${PostLimits.imagesMax})',
+                        outOfPictures
+                            ? 'Daily picture limit reached'
+                            : 'Add pictures (${_images.length}/${PostLimits.imagesMax})',
                         style: AppTextStyles.smallDim.copyWith(
-                          color: AppColors.primaryPale,
+                          color: outOfPictures
+                              ? AppColors.rustPale
+                              : AppColors.primaryPale,
                         ),
                       ),
                     ],
@@ -213,6 +275,8 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
                 ),
               ],
             ),
+            const SizedBox(height: 4),
+            Text('Pictures today: $used/$limit', style: AppTextStyles.smallDim),
             if (_images.isNotEmpty) ...[
               const SizedBox(height: 10),
               SizedBox(
@@ -260,7 +324,7 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
             ],
             const SizedBox(height: 20),
             SerafimButton(
-              label: _busy ? 'POSTING…' : 'POST',
+              label: _busy ? _working : 'POST',
               onPressed: _busy ? null : _post,
             ),
           ],

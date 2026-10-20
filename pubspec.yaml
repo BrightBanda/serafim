@@ -55,6 +55,7 @@ dependencies:
   audio_session: ^0.2.4
   crypto: ^3.0.7
   file_picker: ^11.0.3
+  crop_your_image: ^2.0.1
 
 dev_dependencies:
   flutter_test:

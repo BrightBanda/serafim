@@ -298,8 +298,9 @@ class _PostsTab extends ConsumerWidget {
                   post: post,
                   onSpark: (on) => ref
                       .read(sparkProvider.notifier)
-                      .togglePost(post.id, on: on),
-                  onComment: () => openPost(context, post.id),
+                      .togglePost(post, on: on),
+                  onComment: () => openPost(context, post.id, focusComment: true),
+                  canManage: circle.myRole?.canManage == true,
                   footer: circle.myRole?.canManage == true
                       ? _OverseerActions(post: post, circle: circle)
                       : null,
@@ -327,37 +328,17 @@ class _OverseerActions extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: () => ref
-              .read(pinProvider.notifier)
-              .toggle(post.id, on: !post.pinned, circleId: circle.id),
-          child: Icon(
-            post.pinned ? Icons.push_pin : Icons.push_pin_outlined,
-            size: 15,
-            color: post.pinned ? AppColors.primaryPale : AppColors.textDim,
-          ),
-        ),
-        const SizedBox(width: 12),
-        GestureDetector(
-          onTap: () async {
-            final messenger = ScaffoldMessenger.of(context);
-            try {
-              await ref.read(postServiceProvider).delete(post.id);
-              ref.invalidate(circlePostsProvider(circle.id));
-            } catch (e) {
-              messenger.showSnackBar(SnackBar(content: Text(humanError(e))));
-            }
-          },
-          child: Icon(
-            Icons.delete_outline,
-            size: 16,
-            color: AppColors.rustPale,
-          ),
-        ),
-      ],
+    // Only the pin lives here. Removing a post goes through the same
+    // overflow menu every post has, so there is one delete flow.
+    return GestureDetector(
+      onTap: () => ref
+          .read(pinProvider.notifier)
+          .toggle(post.id, on: !post.pinned, circleId: circle.id),
+      child: Icon(
+        post.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+        size: 15,
+        color: post.pinned ? AppColors.primaryPale : AppColors.textDim,
+      ),
     );
   }
 }

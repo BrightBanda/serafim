@@ -38,6 +38,7 @@ class Post {
     required this.pinned,
     this.circle,
     this.kind = 'text',
+    this.title,
     this.imageUrls = const [],
     this.editedAt,
   });
@@ -51,6 +52,10 @@ class Post {
   /// Set when the post is inside a Circle, so the app can show
   /// "Alex Banda · Flutter Developers".
   final CircleBrief? circle;
+
+  /// The heading, like a forum thread. Null on posts written before it
+  /// existed.
+  final String? title;
   final String content;
   final String kind;
   final int sparkCount;
@@ -70,6 +75,7 @@ class Post {
     circle: json['circle'] == null
         ? null
         : CircleBrief.fromJson(json['circle'] as Map<String, dynamic>),
+    title: json['title'] as String?,
     content: json['content'] as String? ?? '',
     kind: json['kind'] as String? ?? 'text',
     imageUrls: [
@@ -165,11 +171,31 @@ class SparkResult {
   );
 }
 
+/// How many pictures the person has shared today, and the daily limit.
+class ImageQuota {
+  const ImageQuota({required this.used, required this.limit});
+
+  final int used;
+  final int limit;
+
+  /// How many are left today. Never negative.
+  int get remaining => (limit - used).clamp(0, limit);
+
+  factory ImageQuota.fromJson(Map<String, dynamic> json) => ImageQuota(
+    used: json['used'] as int? ?? 0,
+    limit: json['limit'] as int? ?? PostLimits.dailyImagesMax,
+  );
+}
+
 /// Limits matching the server.
 class PostLimits {
   PostLimits._();
   static const contentMax = 2000;
   static const commentMax = 1000;
+  static const titleMax = 120;
   static const imagesMax = 4;
   static const imageBytesMax = 2 * 1024 * 1024;
+
+  /// How many pictures one person may share in a day, across all posts.
+  static const dailyImagesMax = 8;
 }

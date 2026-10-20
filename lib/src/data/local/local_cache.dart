@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:serafim/src/data/models/announcement.dart';
 import 'package:serafim/src/data/models/app_user.dart';
+import 'package:serafim/src/data/models/chat_filter.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/data/models/link_preview.dart';
 import 'package:serafim/src/data/models/profile.dart';
@@ -234,6 +235,23 @@ class LocalCache {
 
   Future<void> saveRoomWallpapers(String account, Map<String, String> rooms) =>
       _write(_key(account, 'wallpaper.rooms'), rooms);
+
+  // --- chat filters ---------------------------------------------------------
+
+  /// The custom chat filters the person made. The built-in ones are
+  /// constants and are never stored.
+  List<ChatFilter>? chatFilters(String account) => _read(
+    _key(account, 'chat_filters'),
+    (j) => [
+      for (final f in (j! as List))
+        ChatFilter.fromJson(f as Map<String, dynamic>),
+    ],
+  );
+
+  Future<void> saveChatFilters(String account, List<ChatFilter> filters) =>
+      _write(_key(account, 'chat_filters'), [
+        for (final f in filters) f.toJson(),
+      ]);
 
   Future<void> _setOrRemove(String key, String? value) => value == null
       ? _prefs.remove(key)

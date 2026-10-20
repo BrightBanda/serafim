@@ -36,6 +36,7 @@ class _FakeService extends PostService {
 }
 
 void main() {
+  sparkTests();
   test('circle notification types are recognised', () {
     for (final t in [
       'circle_join_request',
@@ -84,5 +85,66 @@ void main() {
     expect(Post.fromJson(_post('2')).imageUrls, isEmpty);
     expect(PostLimits.imagesMax, 4);
     expect(PostLimits.imageBytesMax, 2 * 1024 * 1024);
+  });
+}
+
+class _SparkService extends PostService {
+  _SparkService() : super(Dio());
+  final calls = <bool>[];
+  bool fail = false;
+
+  @override
+  Future<SparkResult> sparkPost(String postId, {required bool on}) async {
+    calls.add(on);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    if (fail) throw Exception('offline');
+    return SparkResult(sparked: on, sparkCount: on ? 6 : 5, postId: postId);
+  }
+}
+
+void sparkTests() {
+  Post sample() => Post.fromJson({..._post('9'), 'spark_count': 5});
+
+  test('a Spark shows at once, then takes the server count', () async {
+    final fake = _SparkService();
+    final c = ProviderContainer(
+      overrides: [postServiceProvider.overrideWithValue(fake)],
+    );
+    addTearDown(c.dispose);
+
+    final done = c.read(sparkProvider.notifier).togglePost(sample(), on: true);
+    // Before the server has answered:
+    expect(c.read(sparkOverridesProvider)['p:9'], (sparked: true, count: 6));
+    await done;
+    expect(fake.calls, [true]);
+    expect(c.read(sparkOverridesProvider)['p:9'], (sparked: true, count: 6));
+  });
+
+  test('a failed Spark goes back to how it was', () async {
+    final fake = _SparkService()..fail = true;
+    final c = ProviderContainer(
+      overrides: [postServiceProvider.overrideWithValue(fake)],
+    );
+    addTearDown(c.dispose);
+
+    await c.read(sparkProvider.notifier).togglePost(sample(), on: true);
+    expect(c.read(sparkOverridesProvider)['p:9'], (sparked: false, count: 5));
+    expect(c.read(sparkProvider).hasError, isTrue);
+  });
+
+  test('tapping twice quickly sends the last wish, not two guesses', () async {
+    final fake = _SparkService();
+    final c = ProviderContainer(
+      overrides: [postServiceProvider.overrideWithValue(fake)],
+    );
+    addTearDown(c.dispose);
+    final post = sample();
+    final n = c.read(sparkProvider.notifier);
+
+    final first = n.togglePost(post, on: true);
+    final second = n.togglePost(post, on: false); // changed their mind
+    expect(c.read(sparkOverridesProvider)['p:9'], (sparked: false, count: 5));
+    await Future.wait([first, second]);
+    expect(c.read(sparkOverridesProvider)['p:9']?.sparked, isFalse);
   });
 }

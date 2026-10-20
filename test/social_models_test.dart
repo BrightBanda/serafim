@@ -68,36 +68,54 @@ void main() {
       isConfirmed: confirmed,
     );
 
-    test('own text: copy, edit, delete', () {
+    test('own text: copy, edit, reply, forward, delete', () {
       expect(actions(), [
         MessageAction.copy,
         MessageAction.edit,
+        MessageAction.reply,
+        MessageAction.forward,
         MessageAction.delete,
       ]);
     });
-    test("someone else's message: copy and delete (for me), never edit", () {
-      expect(actions(out: false), [MessageAction.copy, MessageAction.delete]);
+    test("someone else's message: copy, reply, forward and delete", () {
+      expect(actions(out: false), [
+        MessageAction.copy,
+        MessageAction.reply,
+        MessageAction.forward,
+        MessageAction.delete,
+      ]);
     });
     test('images can be downloaded and deleted but never edited', () {
       expect(actions(text: false, image: true), [
         MessageAction.download,
+        MessageAction.reply,
+        MessageAction.forward,
         MessageAction.delete,
       ]);
       expect(actions(image: true), isNot(contains(MessageAction.edit)));
       // Received images can be deleted too.
       expect(actions(out: false, text: false, image: true), [
         MessageAction.download,
+        MessageAction.reply,
+        MessageAction.forward,
         MessageAction.delete,
       ]);
     });
-    test('an unsent message cannot be edited, only deleted', () {
+    test('an unsent message cannot be edited, replied to or forwarded', () {
       expect(actions(confirmed: false), [
         MessageAction.copy,
         MessageAction.delete,
       ]);
+      expect(actions(confirmed: false), isNot(contains(MessageAction.forward)));
+      expect(actions(confirmed: false), isNot(contains(MessageAction.reply)));
     });
     test('a message deleted for everyone can only be cleared locally', () {
       expect(actions(deleted: true), [MessageAction.delete]);
+    });
+    test('forward is only offered for a message the server has accepted', () {
+      expect(actions(), contains(MessageAction.forward));
+      expect(actions(confirmed: false), isNot(contains(MessageAction.forward)));
+      expect(actions(deleted: true), isNot(contains(MessageAction.forward)));
     });
   });
 
