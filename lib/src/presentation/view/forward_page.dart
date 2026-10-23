@@ -133,7 +133,7 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
     final friends = ref.watch(friendsViewProvider).friends;
     final groups = ref.watch(myGroupsProvider).value ?? const <GroupSummary>[];
     final previews = ref.watch(roomPreviewsProvider);
-    final peers = ref.watch(conversationPeerIdsProvider).value ?? const <String>[];
+    final peers = ref.watch(conversationPeerIdsProvider);
 
     final recent = me == null
         ? const <ChatEntry>[]

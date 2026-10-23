@@ -250,15 +250,24 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
   }
 
   Widget _cropArea() {
-    return Crop(
-      key: ValueKey(_base),
-      image: _base,
-      controller: _cropController,
-      aspectRatio: _aspect,
-      baseColor: Colors.black,
-      maskColor: Colors.black54,
-      onCropped: _onCropped,
-      onStatusChanged: (_) {},
+    // Inset from the screen edges. The corner handles sit half outside the
+    // crop box, so on a picture as wide as the screen they were on the very
+    // edge, where a phone's back-swipe gesture takes over from your finger.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: Crop(
+        key: ValueKey(_base),
+        image: _base,
+        controller: _cropController,
+        aspectRatio: _aspect,
+        baseColor: Colors.black,
+        maskColor: Colors.black54,
+        // Larger visible handles (the touch area is fixed at 32).
+        cornerDotBuilder: (size, edge) =>
+            const DotControl(color: Colors.white, padding: 6),
+        onCropped: _onCropped,
+        onStatusChanged: (_) {},
+      ),
     );
   }
 
@@ -321,15 +330,25 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
           },
         ),
       );
+      // The shapes scroll sideways if there are too many for the width; the
+      // rotate button stays put at the right.
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           children: [
-            chip('Free', null),
-            chip('1:1', 1),
-            chip('4:3', 4 / 3),
-            chip('16:9', 16 / 9),
-            const Spacer(),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    chip('Free', null),
+                    chip('1:1', 1),
+                    chip('4:3', 4 / 3),
+                    chip('16:9', 16 / 9),
+                  ],
+                ),
+              ),
+            ),
             IconButton(
               tooltip: 'Rotate',
               icon: const Icon(Icons.rotate_90_degrees_cw, color: Colors.white),

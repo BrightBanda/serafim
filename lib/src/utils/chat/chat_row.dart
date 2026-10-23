@@ -19,10 +19,14 @@ class ChatRow extends StatelessWidget {
     this.leading,
     this.nameBadge,
     this.avatarHeroTag,
+    this.typing = false,
   });
 
   final String name;
   final String preview;
+
+  /// Someone is typing here: the preview line says so instead.
+  final bool typing;
   final String time;
   final bool isGroup;
   final bool unread;
@@ -96,13 +100,15 @@ class ChatRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    preview,
+                    typing ? 'typing…' : preview,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.body.copyWith(
                       fontSize: 10,
-                      color: unread ? AppColors.text : null,
-                      fontWeight: unread ? FontWeight.w700 : null,
+                      color: typing
+                          ? AppColors.primaryPale
+                          : (unread ? AppColors.text : null),
+                      fontWeight: typing || unread ? FontWeight.w700 : null,
                     ),
                   ),
                 ],

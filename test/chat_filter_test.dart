@@ -1,3 +1,4 @@
+import 'package:serafim/src/data/domain/local_chat_room.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -19,11 +20,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const me = 'me';
 
-PublicUser person(String id, String name) => PublicUser(
-  id: id,
-  username: id,
-  displayName: name,
-);
+PublicUser person(String id, String name) =>
+    PublicUser(id: id, username: id, displayName: name);
 
 GroupSummary aGroup(String id, String name) => GroupSummary(
   id: id,
@@ -95,9 +93,7 @@ void main() {
       ChatEntry('f1', person('f1', 'A')),
       ChatEntry('s1', null),
     ];
-    final previews = {
-      ChatViewModel.buildRoomId(me, 'f1'): preview(unread: 2),
-    };
+    final previews = {ChatViewModel.buildRoomId(me, 'f1'): preview(unread: 2)};
     expect(countUnread(entries, previews, me), 1);
   });
 
@@ -161,8 +157,8 @@ void main() {
           publicUserProvider.overrideWith(
             (ref, id) => Completer<PublicUser>().future,
           ),
-          conversationPeerIdsProvider.overrideWith((ref) => Stream.value(['s1'])),
-          chatRoomsStreamProvider.overrideWith((ref) => Stream.value(const [])),
+          conversationPeerIdsProvider.overrideWith(() => _FixedPeers(['s1'])),
+          chatRoomsProvider.overrideWith(_NoRooms.new),
           roomMessagesStreamProvider.overrideWith(
             (ref, roomId) => Stream.value(<LocalMessage>[]),
           ),
@@ -196,4 +192,18 @@ class _FakeChat extends ChatViewModel {
   ChatState build() => const ChatState();
   @override
   Future<void> markRoomRead(String roomId) async {}
+}
+
+class _NoRooms extends ChatRoomsNotifier {
+  @override
+  List<LocalChatRoom> build() => const [];
+}
+
+class _FixedPeers extends ConversationPeersNotifier {
+  _FixedPeers(this._ids);
+
+  final List<String> _ids;
+
+  @override
+  List<String> build() => _ids;
 }

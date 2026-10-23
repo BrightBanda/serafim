@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/emoji.dart';
 import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -64,6 +65,30 @@ class ChatBubble extends StatelessWidget {
   /// Delivery status to show under the message. Only meaningful — and only
   /// rendered — for outgoing bubbles; incoming messages never show one.
   final ChatMessageStatus? status;
+
+  /// The message text. A few emoji on their own are drawn large; emoji among
+  /// words are a little larger than the letters.
+  Widget _text(bool isOut) {
+    final style = AppTextStyles.body.copyWith(
+      color: isOut ? Colors.white : AppColors.text,
+      fontSize: 11,
+      height: 1.5,
+    );
+    final only = emojiOnlyCount(message);
+    final jumbo = only == null ? null : jumboEmojiSize(only);
+    if (jumbo != null && imagePath == null) {
+      return Text(
+        message.trim(),
+        style: style.copyWith(fontSize: jumbo, height: 1.2),
+      );
+    }
+    return LinkifiedText(
+      message,
+      style: style,
+      emojiScale: emojiInTextScale,
+      linkColor: isOut ? const Color(0xFFEAF0FF) : AppColors.primaryPale,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -142,11 +167,17 @@ class ChatBubble extends StatelessWidget {
                       onDeleteImage,
                     ),
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 260),
+                      // Photos are big; GIFs and stickers are a small
+                      // thing you glance at, so they are kept small.
+                      constraints: isSmallMedia(imagePath!)
+                          ? const BoxConstraints(maxHeight: 130, maxWidth: 170)
+                          : const BoxConstraints(maxHeight: 260),
                       child: Image.file(
                         File(imagePath!),
-                        fit: BoxFit.cover,
-                        cacheWidth: 800,
+                        fit: isSmallMedia(imagePath!)
+                            ? BoxFit.contain
+                            : BoxFit.cover,
+                        cacheWidth: isSmallMedia(imagePath!) ? 340 : 800,
                         errorBuilder: (_, __, ___) => const Padding(
                           padding: EdgeInsets.all(8),
                           child: Icon(Icons.broken_image_outlined, size: 28),
@@ -156,18 +187,7 @@ class ChatBubble extends StatelessWidget {
                   ),
                   if (message.isNotEmpty) const SizedBox(height: 6),
                 ],
-                if (message.isNotEmpty)
-                  LinkifiedText(
-                    message,
-                    style: AppTextStyles.body.copyWith(
-                      color: isOut ? Colors.white : AppColors.text,
-                      fontSize: 11,
-                      height: 1.5,
-                    ),
-                    linkColor: isOut
-                        ? const Color(0xFFEAF0FF)
-                        : AppColors.primaryPale,
-                  ),
+                if (message.isNotEmpty) _text(isOut),
                 if (footer != null) footer!,
               ],
               if (isOut && status != null && !deleted) ...[
@@ -362,4 +382,11 @@ class _ReplyQuote extends StatelessWidget {
       ),
     );
   }
+}
+
+/// GIFs, WebP and PNG (what keyboards insert as GIFs and stickers) are shown
+/// small; JPEG photos from the camera and gallery are shown large.
+bool isSmallMedia(String path) {
+  final p = path.toLowerCase();
+  return p.endsWith('.gif') || p.endsWith('.webp') || p.endsWith('.png');
 }

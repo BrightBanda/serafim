@@ -1,3 +1,4 @@
+import 'package:serafim/src/data/domain/local_chat_room.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -80,8 +81,8 @@ Future<void> pump(
         publicUserProvider.overrideWith(
           (ref, id) => Completer<PublicUser>().future,
         ),
-        conversationPeerIdsProvider.overrideWith((ref) => Stream.value(peers)),
-        chatRoomsStreamProvider.overrideWith((ref) => Stream.value(const [])),
+        conversationPeerIdsProvider.overrideWith(() => _FixedPeers(peers)),
+        chatRoomsProvider.overrideWith(_NoRooms.new),
         roomMessagesStreamProvider.overrideWith(
           (ref, roomId) => Stream.value(<LocalMessage>[]),
         ),
@@ -359,4 +360,18 @@ void main() {
       },
     );
   });
+}
+
+class _NoRooms extends ChatRoomsNotifier {
+  @override
+  List<LocalChatRoom> build() => const [];
+}
+
+class _FixedPeers extends ConversationPeersNotifier {
+  _FixedPeers(this._ids);
+
+  final List<String> _ids;
+
+  @override
+  List<String> build() => _ids;
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,8 +18,11 @@ final groupServiceProvider = Provider<GroupService>(
 /// The groups you are in. Opens from the copy saved on the phone and
 /// refreshes from the server behind it, like the friends list.
 class MyGroupsController extends AsyncNotifier<List<GroupSummary>> {
+  // Not `async`: with a saved copy this returns a plain list, so the state is
+  // data on the very first read. An `async` build always starts out "loading"
+  // for a frame, which made the chat list's groups pop in.
   @override
-  Future<List<GroupSummary>> build() async {
+  FutureOr<List<GroupSummary>> build() {
     final account = ref.watch(currentAccountIdProvider);
     if (account == null) return const [];
     final saved = ref.read(localCacheProvider).groups(account);

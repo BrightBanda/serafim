@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -20,8 +21,11 @@ import 'package:serafim/src/providers/settings_providers.dart';
 class ProfileViewModel extends AsyncNotifier<Profile?> {
   ProfileService get _profiles => ref.read(profileServiceProvider);
 
+  // Not `async`: with a saved profile this returns it directly, so the state
+  // is data on the first read and the app opens straight onto its screens
+  // instead of flashing the splash for a frame.
   @override
-  Future<Profile?> build() async {
+  FutureOr<Profile?> build() {
     // Keyed on the account id, not the auth status: status flips back to
     // `authenticated` when a *different* person signs in, which would leave
     // the previous account's profile on screen. Watching the id also avoids
@@ -39,8 +43,12 @@ class ProfileViewModel extends AsyncNotifier<Profile?> {
       return saved.profile;
     }
 
+    return _loadFirstTime(accountId);
+  }
+
+  Future<Profile?> _loadFirstTime(String accountId) async {
     final fresh = await _profiles.getMine().timeout(loadTimeout);
-    await cache.saveProfile(accountId, fresh);
+    await ref.read(localCacheProvider).saveProfile(accountId, fresh);
     return fresh;
   }
 

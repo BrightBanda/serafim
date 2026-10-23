@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// A web link found in a message.
@@ -87,7 +88,11 @@ class LinkifiedText extends StatefulWidget {
     super.key,
     required this.style,
     required this.linkColor,
+    this.emojiScale = 1.0,
   });
+
+  /// Emoji are drawn this many times larger than the text around them.
+  final double emojiScale;
 
   final String text;
   final TextStyle style;
@@ -127,14 +132,25 @@ class _LinkifiedTextState extends State<LinkifiedText> {
   @override
   Widget build(BuildContext context) {
     final links = findLinks(widget.text);
-    if (links.isEmpty) return Text(widget.text, style: widget.style);
+    final base = widget.style.fontSize ?? 14;
+    // Plain stretches of text, with their emoji enlarged.
+    List<InlineSpan> plain(String s) => widget.emojiScale == 1.0
+        ? [TextSpan(text: s)]
+        : emojiSizedSpans(s, base, widget.emojiScale);
+    if (links.isEmpty) {
+      return widget.emojiScale == 1.0
+          ? Text(widget.text, style: widget.style)
+          : Text.rich(
+              TextSpan(style: widget.style, children: plain(widget.text)),
+            );
+    }
 
     _disposeRecognizers();
     final spans = <InlineSpan>[];
     var at = 0;
     for (final link in links) {
       if (link.start > at) {
-        spans.add(TextSpan(text: widget.text.substring(at, link.start)));
+        spans.addAll(plain(widget.text.substring(at, link.start)));
       }
       final recognizer = TapGestureRecognizer()..onTap = () => _open(link.uri);
       _recognizers.add(recognizer);
@@ -152,7 +168,7 @@ class _LinkifiedTextState extends State<LinkifiedText> {
       at = link.end;
     }
     if (at < widget.text.length) {
-      spans.add(TextSpan(text: widget.text.substring(at)));
+      spans.addAll(plain(widget.text.substring(at)));
     }
     return Text.rich(TextSpan(style: widget.style, children: spans));
   }

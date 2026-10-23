@@ -26,6 +26,8 @@ class _HarnessState extends State<_Harness> {
     super.dispose();
   }
 
+  void cancel() => setState(() => replyingTo = null);
+
   void reply(String who) {
     replies++;
     setState(() => replyingTo = who);
@@ -108,7 +110,7 @@ void main() {
     expect(tester.element(find.byType(TextField)), same(before));
     expect(state.focus.hasFocus, isTrue);
 
-    state.setState(() => state.replyingTo = null);
+    state.cancel();
     await tester.pumpAndSettle();
     expect(tester.element(find.byType(TextField)), same(before));
   });

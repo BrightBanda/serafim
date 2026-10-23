@@ -150,11 +150,27 @@ final friendIdsProvider = Provider<Set<String>>((ref) {
 });
 
 /// Everyone you have exchanged messages with, friend or not.
-final conversationPeerIdsProvider = StreamProvider<List<String>>((ref) {
-  final myId = ref.watch(currentAccountIdProvider);
-  if (myId == null) return const Stream.empty();
-  return ref.watch(isarServiceProvider).watchConversationPeerIds(myId);
-});
+///
+/// Read from the phone synchronously on the first build (see
+/// [ChatRoomsNotifier] for why), then kept up to date.
+class ConversationPeersNotifier extends Notifier<List<String>> {
+  @override
+  List<String> build() {
+    final myId = ref.watch(currentAccountIdProvider);
+    if (myId == null) return const [];
+    final service = ref.watch(isarServiceProvider);
+    final changes = service
+        .watchConversationPeerIds(myId, fireImmediately: false)
+        .listen((ids) => state = ids);
+    ref.onDispose(changes.cancel);
+    return service.peerIdsNow(myId);
+  }
+}
+
+final conversationPeerIdsProvider =
+    NotifierProvider<ConversationPeersNotifier, List<String>>(
+      ConversationPeersNotifier.new,
+    );
 
 /// Friend and follow commands, applied optimistically: the screen shows the
 /// result of a tap straight away (through [relationOverridesProvider]) while

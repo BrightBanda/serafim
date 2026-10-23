@@ -22,6 +22,43 @@ class IsarService {
     db = database;
   }
 
+  /// The open database, once it is open. Lets the chat list read what is on
+  /// the phone *synchronously* on its very first frame, instead of showing an
+  /// empty list for a moment while a stream delivers it.
+  Isar? get openNow {
+    final isar = Isar.getInstance();
+    return isar != null && isar.isOpen ? isar : null;
+  }
+
+  /// Every conversation's summary row, newest first, read right now. Empty
+  /// until the database is open (see [openNow]).
+  List<LocalChatRoom> roomsNow() =>
+      openNow?.localChatRooms
+          .where()
+          .sortByLastMessageTimestampDesc()
+          .findAllSync() ??
+      const [];
+
+  /// Ids of everyone [myId] has a 1:1 conversation with, read right now.
+  List<String> peerIdsNow(String myId) {
+    final isar = openNow;
+    if (isar == null) return const [];
+    return _peerIdsOf(
+      isar.localMessages
+          .filter()
+          .groupIdIsNull()
+          .distinctByRoomId()
+          .findAllSync(),
+      myId,
+    );
+  }
+
+  static List<String> _peerIdsOf(List<LocalMessage> latest, String myId) =>
+      latest
+          .map((m) => m.senderId == myId ? m.recipientId : m.senderId)
+          .toSet()
+          .toList();
+
   Future<Isar> _initDB() async {
     final dir = await getApplicationDocumentsDirectory();
     if (Isar.instanceNames.isEmpty) {
@@ -422,22 +459,28 @@ class IsarService {
   }
 
   /// Ids of every user this account has exchanged messages with.
-  Stream<List<String>> watchConversationPeerIds(String myId) async* {
+  ///
+  /// With [fireImmediately] false it only reports *changes* — for a caller
+  /// that already has the current answer from [peerIdsNow].
+  Stream<List<String>> watchConversationPeerIds(
+    String myId, {
+    bool fireImmediately = true,
+  }) async* {
     final isar = await db;
-    yield* isar.localMessages.where().watchLazy(fireImmediately: true).asyncMap(
-      (_) async {
-        // 1:1 conversations only; groups are listed from the group list.
-        final latest = await isar.localMessages
-            .filter()
-            .groupIdIsNull()
-            .distinctByRoomId()
-            .findAll();
-        return latest
-            .map((m) => m.senderId == myId ? m.recipientId : m.senderId)
-            .toSet()
-            .toList();
-      },
-    );
+    yield* isar.localMessages
+        .where()
+        .watchLazy(fireImmediately: fireImmediately)
+        .asyncMap(
+          (_) async => _peerIdsOf(
+            // 1:1 conversations only; groups are listed from the group list.
+            await isar.localMessages
+                .filter()
+                .groupIdIsNull()
+                .distinctByRoomId()
+                .findAll(),
+            myId,
+          ),
+        );
   }
 
   // ==========================================
@@ -569,10 +612,12 @@ class IsarService {
   }
 
   /// Watch real-time stream of all active chat rooms sorted by latest activity
-  Stream<List<LocalChatRoom>> watchAllChatRooms() async* {
+  Stream<List<LocalChatRoom>> watchAllChatRooms({
+    bool fireImmediately = true,
+  }) async* {
     final isar = await db;
     yield* isar.localChatRooms.where().sortByLastMessageTimestampDesc().watch(
-      fireImmediately: true,
+      fireImmediately: fireImmediately,
     );
   }
 }

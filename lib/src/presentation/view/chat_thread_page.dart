@@ -17,7 +17,12 @@ import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/presentation/view/chat_background_page.dart';
 import 'package:serafim/src/presentation/view/forward_page.dart';
-import 'package:serafim/src/presentation/view/image_editor_page.dart';
+import 'package:serafim/src/providers/typing_providers.dart';
+import 'package:serafim/src/utils/chat/reply_controller.dart';
+import 'package:serafim/src/utils/chat/typing_bubble.dart';
+import 'package:serafim/src/utils/chat/typing_broadcaster.dart';
+import 'package:serafim/src/utils/settled_sheet.dart';
+import 'package:serafim/src/presentation/view/image_preview_page.dart';
 import 'package:serafim/src/providers/wallpaper_providers.dart';
 import 'package:serafim/src/utils/chat/chat_background.dart';
 import 'package:serafim/src/utils/chat/chat_bubble.dart';
@@ -113,6 +118,17 @@ String _formatMessageTime(BuildContext context, DateTime timestamp) {
 class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     with WidgetsBindingObserver {
   final TextEditingController _messageController = TextEditingController();
+
+  /// Tells the other side "typing…", sparingly (see [TypingBroadcaster]).
+  late final TypingBroadcaster _typing = TypingBroadcaster(
+    send: (typing) => ref
+        .read(chatViewModelProvider.notifier)
+        .sendTyping(
+          recipientId: widget.recipientId,
+          groupId: widget.groupId,
+          typing: typing,
+        ),
+  );
   final ScrollController _scrollController = ScrollController();
 
   /// A photo is being prepared and sent.
@@ -132,7 +148,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   String? _pendingReveal;
 
   /// The message being replied to, while composing.
-  LocalMessage? _replyingTo;
+  late final ReplyController _reply = ReplyController(focusNode: _inputFocus);
 
   /// The sticker panel is open in place of the keyboard.
   bool _stickersOpen = false;
@@ -153,6 +169,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_loadOlderNearTop);
+    _messageController.addListener(
+      () => _typing.textChanged(_messageController.text),
+    );
     _activeRoom = ref.read(activeRoomProvider.notifier);
     _recorder = ref.read(voiceRecorderProvider.notifier);
     _player = ref.read(voicePlayerProvider.notifier);
@@ -189,9 +208,10 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       );
       if (bytes == null || !mounted) return;
 
-      // Crop / draw before sending. The spinner is for the pick, not the edit.
+      // Show the picture first; Edit (crop / draw) is there if wanted. The
+      // spinner is for the pick, not for looking at it.
       setState(() => _attaching = false);
-      final edited = await editImage(
+      final edited = await previewImage(
         context,
         bytes,
         maxSide: quality.maxSide,
@@ -207,9 +227,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             recipientId: widget.recipientId,
             groupId: widget.groupId,
             imageBytes: edited,
-            replyToId: _replyingTo?.messageId,
+            replyToId: _reply.value?.messageId,
           );
-      if (mounted) setState(() => _replyingTo = null);
+      _reply.clear();
       _scheduleScrollToBottom();
     } catch (error) {
       _toast(
@@ -241,6 +261,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     });
     _messageController.dispose();
     _scrollController.dispose();
+    _typing.dispose();
+    _reply.dispose();
     _inputFocus.dispose();
     super.dispose();
   }
@@ -364,7 +386,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     );
     if (actions.isEmpty) return;
 
-    final action = await showModalBottomSheet<String>(
+    final action = await showSettledSheet<String>(
       context: context,
       backgroundColor: AppColors.paperAlt,
       shape: const RoundedRectangleBorder(),
@@ -395,11 +417,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                     'Edit',
                     'edit',
                   ),
-                  MessageAction.reply => tile(
-                    Icons.reply,
-                    'Reply',
-                    'reply',
-                  ),
+                  MessageAction.reply => tile(Icons.reply, 'Reply', 'reply'),
                   MessageAction.forward => tile(
                     Icons.forward,
                     'Forward',
@@ -427,11 +445,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       case 'edit':
         await _editMessage(message);
       case 'reply':
-        // The menu is still sliding away; while it is, Flutter hands focus
-        // back to whatever had it before (nothing), which closed the keyboard
-        // straight after opening it. Wait for the menu to be gone.
-        await Future<void>.delayed(const Duration(seconds: 1));
-        if (mounted) _startReply(message);
+        _startReply(message);
       case 'forward':
         await _forwardMessage(message);
       case 'delete':
@@ -447,13 +461,12 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   Future<void> _forwardMessage(LocalMessage message) async {
     final navigator = Navigator.of(context);
     await navigator.push<int>(
-      MaterialPageRoute<int>(
-        builder: (_) => ForwardPage(messages: [message]),
-      ),
+      MaterialPageRoute<int>(builder: (_) => ForwardPage(messages: [message])),
     );
   }
 
-  Future<void> _editMessage(LocalMessage message) async {    final controller = TextEditingController(text: message.textContent ?? '');
+  Future<void> _editMessage(LocalMessage message) async {
+    final controller = TextEditingController(text: message.textContent ?? '');
     final newText = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -560,9 +573,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     } else {
       await vm.deleteForMe(message.messageId);
     }
-    if (_replyingTo?.messageId == message.messageId) {
-      setState(() => _replyingTo = null);
-    }
+    if (_reply.value?.messageId == message.messageId) _reply.clear();
   }
 
   /// A preview card for the first link in a text message, if any.
@@ -574,11 +585,6 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   }
 
   // ---- replying ----
-
-  bool _canReplyTo(LocalMessage m) =>
-      !m.isDeleted &&
-      m.status != MessageStatus.sending &&
-      m.status != MessageStatus.failed;
 
   String _snippetOf(LocalMessage m) {
     if (m.isDeleted) return 'Message deleted';
@@ -592,7 +598,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   }
 
   void _startReply(LocalMessage message) {
-    if (!_canReplyTo(message)) {
+    if (!_reply.start(message)) {
       _toast(
         message.isDeleted
             ? "You can't reply to a deleted message."
@@ -600,23 +606,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       );
       return;
     }
-    // The sticker panel and the keyboard must never be up at the same time.
-    if (_stickersOpen) {
-      setState(() => _stickersOpen = false);
-    }
-    setState(() => _replyingTo = message);
-    // Put the keyboard up, so the reply can be written straight away. The
-    // focus has to wait for the frame that shows the reply preview.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _inputFocus.requestFocus();
-      // If something took the focus right back, ask once more.
-      Future<void>.delayed(const Duration(milliseconds: 150), () {
-        if (mounted && _replyingTo != null && !_inputFocus.hasFocus) {
-          _inputFocus.requestFocus();
-        }
-      });
-    });
+    // The sticker panel and the keyboard are never up together.
+    if (_stickersOpen) setState(() => _stickersOpen = false);
   }
 
   ReplyQuoteData? _quoteFor(
@@ -662,9 +653,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           path: voice.path,
           durationMs: voice.durationMs,
           waveform: voice.waveform,
-          replyToId: _replyingTo?.messageId,
+          replyToId: _reply.value?.messageId,
         );
-    if (_replyingTo != null) setState(() => _replyingTo = null);
+    _reply.clear();
     _scheduleScrollToBottom();
   }
 
@@ -687,10 +678,10 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           recipientId: widget.recipientId,
           groupId: widget.groupId,
           stickerId: stickerId,
-          replyToId: _replyingTo?.messageId,
+          replyToId: _reply.value?.messageId,
         );
     ref.read(recentStickersProvider.notifier).used(stickerId);
-    if (_replyingTo != null) setState(() => _replyingTo = null);
+    _reply.clear();
     _scheduleScrollToBottom();
   }
 
@@ -729,9 +720,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             roomId: _roomId,
             recipientId: widget.recipientId,
             imageBytes: prepared,
-            replyToId: _replyingTo?.messageId,
+            replyToId: _reply.value?.messageId,
           );
-      if (mounted) setState(() => _replyingTo = null);
+      _reply.clear();
       _scheduleScrollToBottom();
     } catch (error) {
       _toast(humanError(error, fallback: "Couldn't send that."), error: true);
@@ -760,11 +751,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           recipientId: widget.recipientId,
           groupId: widget.groupId,
           content: content,
-          replyToId: _replyingTo?.messageId,
+          replyToId: _reply.value?.messageId,
         );
 
     _messageController.clear();
-    if (_replyingTo != null) setState(() => _replyingTo = null);
+    _reply.clear();
 
     // The message is written to Isar before the socket send,
     // so the stream will update and the scroll will happen.
@@ -1069,20 +1060,33 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                         );
                       }
 
+                      // Who is typing here (never yourself): shown as the
+                      // newest item, at the bottom of the conversation.
+                      final typingNow = [
+                        for (final id in ref.watch(
+                          typingInRoomProvider(roomId),
+                        ))
+                          if (id != currentUserId) _nameOf(id),
+                      ];
+                      final typingRows = typingNow.isEmpty ? 0 : 1;
+
                       return ListView.separated(
                         controller: _scrollController,
                         reverse: true,
 
                         padding: const EdgeInsets.all(14),
 
-                        itemCount: orderedMessages.length,
+                        itemCount: orderedMessages.length + typingRows,
 
                         separatorBuilder: (_, __) {
                           return const SizedBox(height: 10);
                         },
 
                         itemBuilder: (context, index) {
-                          final message = orderedMessages[index];
+                          if (typingRows == 1 && index == 0) {
+                            return TypingBubble(who: typingNow.join(', '));
+                          }
+                          final message = orderedMessages[index - typingRows];
 
                           final isOutgoing =
                               currentUserId != null &&
@@ -1200,34 +1204,39 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                 if (removedFromGroup)
                   const _NotInGroup()
                 else
-                  ChatInputBar(
-                    controller: _messageController,
-                    focusNode: _inputFocus,
-                    onSend: _handleSend,
-                    onAttach: _handleAttach,
-                    attachDisabledReason: attachDisabledReason,
-                    attachBusy: _attaching,
-                    onStickers: _toggleStickers,
-                    stickersOpen: _stickersOpen,
-                    recordingStrip:
-                        ref.watch(voiceRecorderProvider.select((r) => r.active))
-                        ? const RecordingStrip()
-                        : null,
-                    trailing: MicButton(
-                      onRecorded: _sendVoice,
-                      onTell: (m) => _toast(m),
+                  ValueListenableBuilder<LocalMessage?>(
+                    valueListenable: _reply,
+                    builder: (context, replyTarget, _) => ChatInputBar(
+                      controller: _messageController,
+                      focusNode: _inputFocus,
+                      onSend: _handleSend,
+                      onAttach: _handleAttach,
+                      attachDisabledReason: attachDisabledReason,
+                      attachBusy: _attaching,
+                      onStickers: _toggleStickers,
+                      stickersOpen: _stickersOpen,
+                      recordingStrip:
+                          ref.watch(
+                            voiceRecorderProvider.select((r) => r.active),
+                          )
+                          ? const RecordingStrip()
+                          : null,
+                      trailing: MicButton(
+                        onRecorded: _sendVoice,
+                        onTell: (m) => _toast(m),
+                      ),
+                      onContentInserted: (content) =>
+                          _handleInserted(content, attachDisabledReason),
+                      replyPreview: replyTarget == null
+                          ? null
+                          : (
+                              author: replyTarget.senderId == currentUserId
+                                  ? 'yourself'
+                                  : _nameOf(replyTarget.senderId),
+                              snippet: _snippetOf(replyTarget),
+                              onCancel: _reply.clear,
+                            ),
                     ),
-                    onContentInserted: (content) =>
-                        _handleInserted(content, attachDisabledReason),
-                    replyPreview: _replyingTo == null
-                        ? null
-                        : (
-                            author: _replyingTo!.senderId == currentUserId
-                                ? 'yourself'
-                                : _nameOf(_replyingTo!.senderId),
-                            snippet: _snippetOf(_replyingTo!),
-                            onCancel: () => setState(() => _replyingTo = null),
-                          ),
                   ),
                 if (_stickersOpen) StickerPicker(onPick: _sendSticker),
               ],

@@ -20,11 +20,11 @@ import 'package:serafim/src/providers/official_providers.dart';
 import 'package:serafim/src/providers/voice_providers.dart';
 import 'package:serafim/src/providers/group_providers.dart';
 import 'package:serafim/src/data/models/group.dart';
-import 'package:serafim/src/data/domain/local_chat_room.dart';
 import 'package:serafim/src/data/local/isar_service.dart' show previewTextOf;
 import 'package:serafim/src/utils/group_nav.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
+import 'package:serafim/src/providers/typing_providers.dart';
 import 'package:serafim/src/providers/websocket_providers.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/push_providers.dart';
@@ -59,6 +59,27 @@ class ChatViewModel extends Notifier<ChatState> {
       next,
     ) {
       next.whenData((data) {
+        // "Typing…" is live-only: straight to its own small tracker, ahead of
+        // the persistence queue, so it is never delayed behind database writes.
+        final kind = data['type'];
+        if (kind == 'typing') {
+          ref.read(typingProvider.notifier).heard(data);
+          return;
+        }
+        if (kind == 'message') {
+          // Their message arrived, so they are not "typing" it any more.
+          final sender = data['sender_id'] as String?;
+          final me = ref.read(currentAccountIdProvider);
+          if (sender != null && me != null) {
+            final gid = data['group_id'] as String?;
+            ref
+                .read(typingProvider.notifier)
+                .stopped(
+                  gid != null ? groupRoomId(gid) : buildRoomId(me, sender),
+                  sender,
+                );
+          }
+        }
         _eventQueue = _eventQueue
             .then((_) => _persistIncoming(data))
             .catchError((Object error, StackTrace stackTrace) {
@@ -78,6 +99,20 @@ class ChatViewModel extends Notifier<ChatState> {
     );
 
     return const ChatState();
+  }
+
+  /// Tells the other side you started or stopped typing. Live only: if the
+  /// socket is down it is simply dropped (nobody wants a late "typing…").
+  void sendTyping({
+    required String recipientId,
+    String? groupId,
+    required bool typing,
+  }) {
+    ref.read(webSocketServiceProvider).sendMessage({
+      'type': 'typing',
+      if (groupId != null) 'group_id': groupId else 'recipient_id': recipientId,
+      'state': typing,
+    });
   }
 
   Future<void> _applyRetention(int days) async {
@@ -595,8 +630,7 @@ class ChatViewModel extends Notifier<ChatState> {
       final ids = {for (final g in groups) g.id};
       await ref.read(myGroupsProvider.notifier).reload();
 
-      final rooms =
-          ref.read(chatRoomsStreamProvider).value ?? const <LocalChatRoom>[];
+      final rooms = ref.read(chatRoomsProvider);
       for (final room in rooms) {
         if (!isGroupRoom(room.roomId)) continue;
         final gid = room.roomId.substring('group_'.length);

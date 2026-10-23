@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/providers/typing_providers.dart';
 import 'package:serafim/src/presentation/view/main_screen.dart';
 import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -291,9 +292,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
       ),
     );
     if (result == null || !mounted) return;
-    ref
-        .read(chatFiltersProvider.notifier)
-        .setRooms(filter.id, result.roomIds);
+    ref.read(chatFiltersProvider.notifier).setRooms(filter.id, result.roomIds);
   }
 
   Future<String?> _askForName(String current) async {
@@ -335,14 +334,12 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
   Widget build(BuildContext context) {
     final currentUser = ref.watch(currentUserProvider);
     final view = ref.watch(friendsViewProvider);
-    final peersAsync = ref.watch(conversationPeerIdsProvider);
+    final peerIds = ref.watch(conversationPeerIdsProvider);
 
     final friends = view.friends;
     final groups = ref.watch(myGroupsProvider).value ?? const <GroupSummary>[];
     final friendIds = {for (final f in friends) f.id};
-    final strangerIds = (peersAsync.value ?? const <String>[])
-        .where((id) => !friendIds.contains(id))
-        .toList();
+    final strangerIds = peerIds.where((id) => !friendIds.contains(id)).toList();
 
     // Which filter is showing, and the chats it lets through.
     final filter = ref.watch(activeChatFilterProvider);
@@ -632,11 +629,7 @@ class _SearchResults extends StatelessWidget {
 }
 
 class _CenteredMessage extends StatelessWidget {
-  const _CenteredMessage({
-    required this.text,
-    this.actionLabel,
-    this.onAction,
-  });
+  const _CenteredMessage({required this.text, this.actionLabel, this.onAction});
 
   final String text;
 
@@ -726,6 +719,7 @@ class _ChatListItem extends ConsumerWidget {
     // The stored summary for this one conversation: no queries, and this row
     // rebuilds only when its own chat changes.
     final preview = ref.watch(roomPreviewProvider(roomId));
+    final typing = ref.watch(typingInRoomProvider(roomId)).isNotEmpty;
 
     var line = 'Tap to start conversation';
     var time = '';
@@ -743,6 +737,7 @@ class _ChatListItem extends ConsumerWidget {
     return ChatRow(
       name: user.displayName,
       preview: line,
+      typing: typing,
       time: time,
       unread: (preview?.unread ?? 0) > 0,
       imageProvider: avatarImage(user.profilePic),
@@ -861,6 +856,7 @@ class _GroupChatItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final preview = ref.watch(roomPreviewProvider(group.roomId));
+    final typing = ref.watch(typingInRoomProvider(group.roomId)).isNotEmpty;
     var line = '${group.memberCount} members · say hi';
     var time = '';
     if (preview != null) {
@@ -875,6 +871,7 @@ class _GroupChatItem extends ConsumerWidget {
       name: group.name,
       isGroup: true,
       preview: line,
+      typing: typing,
       time: time,
       unread: (preview?.unread ?? 0) > 0,
       imageProvider: avatarImage(group.photoUrl),
@@ -954,16 +951,19 @@ class _FilterRow extends ConsumerWidget {
     final custom = ref.watch(chatFiltersProvider);
     final unread = countUnread(entries, previews, myId);
 
-    Widget chip(ChatFilter filter, {String? label, VoidCallback? onLongPress}) =>
-        GestureDetector(
-          onLongPress: onLongPress,
-          child: SerafimChip(
-            label: label ?? filter.label,
-            selected: selected == filter.id,
-            onTap: () =>
-                ref.read(selectedChatFilterProvider.notifier).select(filter.id),
-          ),
-        );
+    Widget chip(
+      ChatFilter filter, {
+      String? label,
+      VoidCallback? onLongPress,
+    }) => GestureDetector(
+      onLongPress: onLongPress,
+      child: SerafimChip(
+        label: label ?? filter.label,
+        selected: selected == filter.id,
+        onTap: () =>
+            ref.read(selectedChatFilterProvider.notifier).select(filter.id),
+      ),
+    );
 
     return SizedBox(
       height: 46,
@@ -1078,9 +1078,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                     _FilterChatRow(
                       entry: entry,
                       roomId: roomIdFor(entry, widget.myId),
-                      selected: _rooms.contains(
-                        roomIdFor(entry, widget.myId),
-                      ),
+                      selected: _rooms.contains(roomIdFor(entry, widget.myId)),
                       onChanged: (on) {
                         final room = roomIdFor(entry, widget.myId);
                         setState(() {
@@ -1127,10 +1125,7 @@ class _FilterChatRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name =
-        entry.friend?.displayName ??
-        entry.group?.name ??
-        entry.id;
+    final name = entry.friend?.displayName ?? entry.group?.name ?? entry.id;
     return GestureDetector(
       onTap: () => onChanged(!selected),
       behavior: HitTestBehavior.opaque,
@@ -1188,10 +1183,7 @@ class _SheetTile extends StatelessWidget {
     final color = danger ? AppColors.rustPale : AppColors.text;
     return ListTile(
       leading: Icon(icon, size: 20, color: color),
-      title: Text(
-        label,
-        style: AppTextStyles.body.copyWith(color: color),
-      ),
+      title: Text(label, style: AppTextStyles.body.copyWith(color: color)),
       onTap: onTap,
     );
   }
