@@ -86,6 +86,17 @@ class LocalCache {
   Future<void> saveFriends(String account, List<PublicUser> friends) =>
       _write(_key(account, 'friends'), [for (final f in friends) f.toJson()]);
 
+  // --- people you follow (ids only: enough to label a post's Follow button
+  // correctly before the network answers) ------------------------------------
+
+  Set<String>? followingIds(String account) => _read(
+    _key(account, 'followingIds'),
+    (j) => {for (final e in j! as List) e as String},
+  );
+
+  Future<void> saveFollowingIds(String account, Iterable<String> ids) =>
+      _write(_key(account, 'followingIds'), ids.toList());
+
   // --- everyone else you have seen (for people you chat with but are not
   // friends with, so their name and photo show instantly) ---------------------
 
@@ -100,6 +111,18 @@ class LocalCache {
       {};
 
   PublicUser? person(String account, String id) => _people(account)[id];
+
+  /// The people named as Wings (up to six), as last known.
+  List<PublicUser>? wings(String account) => _read(
+    _key(account, 'wings'),
+    (j) => [
+      for (final e in j! as List)
+        PublicUser.fromJson(e as Map<String, dynamic>),
+    ],
+  );
+
+  Future<void> saveWings(String account, List<PublicUser> wings) =>
+      _write(_key(account, 'wings'), [for (final w in wings) w.toJson()]);
 
   Future<void> savePerson(String account, PublicUser person) {
     final people = _people(account)..[person.id] = person;
@@ -253,9 +276,8 @@ class LocalCache {
         for (final f in filters) f.toJson(),
       ]);
 
-  Future<void> _setOrRemove(String key, String? value) => value == null
-      ? _prefs.remove(key)
-      : _prefs.setString(key, value);
+  Future<void> _setOrRemove(String key, String? value) =>
+      value == null ? _prefs.remove(key) : _prefs.setString(key, value);
 
   // --- housekeeping ---------------------------------------------------------
 

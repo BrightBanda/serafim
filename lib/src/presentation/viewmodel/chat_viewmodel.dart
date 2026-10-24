@@ -22,9 +22,15 @@ import 'package:serafim/src/providers/group_providers.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/data/local/isar_service.dart' show previewTextOf;
 import 'package:serafim/src/utils/group_nav.dart';
+import 'package:serafim/src/utils/halo_style.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
+import 'package:serafim/src/presentation/view/draw_together_page.dart';
+import 'package:serafim/src/providers/draw_together_providers.dart';
+import 'package:serafim/src/core/debug_log.dart';
+import 'package:serafim/src/providers/halo_providers.dart';
 import 'package:serafim/src/providers/typing_providers.dart';
+import 'package:serafim/src/providers/wings_providers.dart';
 import 'package:serafim/src/providers/websocket_providers.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/push_providers.dart';
@@ -43,6 +49,14 @@ class ChatState {
     return ChatState(isConnected: isConnected ?? this.isConnected);
   }
 }
+
+/// Whether a new message gets a banner. Banners switched off silence
+/// everyone — except your Wings, when "Wings always get through" is on.
+bool bannerAllowed({
+  required bool bannersOn,
+  required bool fromWing,
+  required bool wingsBreakThrough,
+}) => bannersOn || (fromWing && wingsBreakThrough);
 
 class ChatViewModel extends Notifier<ChatState> {
   /// Every incoming socket event is chained onto this future, so events are
@@ -64,6 +78,18 @@ class ChatViewModel extends Notifier<ChatState> {
         final kind = data['type'];
         if (kind == 'typing') {
           ref.read(typingProvider.notifier).heard(data);
+          return;
+        }
+        // Draw Together: a friend's strokes, or an invitation to draw.
+        if (kind == 'draw') {
+          trace('chat-vm', 'routing draw ${data['op']} to Draw Together');
+          final fresh = ref.read(drawTogetherProvider.notifier).heard(data);
+          if (fresh) unawaited(_alertDrawInvite(data['sender_id'] as String));
+          return;
+        }
+        // A friend lit or put out their halo.
+        if (kind == 'halo') {
+          ref.read(friendHaloProvider.notifier).heard(data);
           return;
         }
         if (kind == 'message') {
@@ -99,6 +125,28 @@ class ChatViewModel extends Notifier<ChatState> {
     );
 
     return const ChatState();
+  }
+
+  /// A friend asked to draw together: a banner that opens the canvas.
+  Future<void> _alertDrawInvite(String senderId) async {
+    final sender = await _senderProfile(senderId);
+    if (!ref.mounted) return;
+    final pic = sender?.profilePic;
+    ref
+        .read(inAppBannerProvider)
+        .show(
+          label: 'DRAW TOGETHER',
+          icon: Icons.draw_outlined,
+          title: sender?.displayName ?? 'A friend',
+          body: 'wants to draw together',
+          avatar: pic != null && pic.isNotEmpty
+              ? CachedNetworkImageProvider(pic)
+              : null,
+          onTap: () {
+            final navigator = ref.read(navigatorKeyProvider).currentState;
+            if (navigator != null) openDrawTogether(navigator);
+          },
+        );
   }
 
   /// Tells the other side you started or stopped typing. Live only: if the
@@ -138,7 +186,15 @@ class ChatViewModel extends Notifier<ChatState> {
     required bool isImage,
   }) async {
     final settings = ref.read(settingsProvider);
-    if (!settings.inAppAlerts) return;
+    // One of your Wings gets through even when banners are off.
+    final isWing = ref.read(wingIdsProvider).contains(senderId);
+    if (!bannerAllowed(
+      bannersOn: settings.inAppAlerts,
+      fromWing: isWing,
+      wingsBreakThrough: settings.wingsBreakThrough,
+    )) {
+      return;
+    }
     if (ref.read(activeRoomProvider) == roomId) return;
 
     // The same message can also arrive as a push; announce it once.
@@ -158,6 +214,9 @@ class ChatViewModel extends Notifier<ChatState> {
     ref
         .read(inAppBannerProvider)
         .show(
+          // Your Wings are marked, so you know it is one of them.
+          label: isWing ? 'WING' : 'NEW MESSAGE',
+          accent: isWing ? haloColor : null,
           title: sender?.displayName ?? 'Someone',
           body: body,
           avatar: pic != null && pic.isNotEmpty
@@ -177,7 +236,10 @@ class ChatViewModel extends Notifier<ChatState> {
             );
           },
         );
-    if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
+    // A banner that got through despite being switched off stays quiet.
+    if (settings.alertSound && settings.inAppAlerts) {
+      SystemSound.play(SystemSoundType.alert);
+    }
   }
 
   /// Banner for a friend request, accepted request or new follower.

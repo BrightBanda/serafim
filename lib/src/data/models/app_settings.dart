@@ -84,6 +84,7 @@ class AppSettings {
     this.sendReadReceipts = true,
     this.inAppAlerts = true,
     this.alertSound = true,
+    this.wingsBreakThrough = true,
     this.imageQuality = ImageQuality.standard,
     this.retentionDays = 0,
     this.textSize = TextSize.normal,
@@ -98,6 +99,9 @@ class AppSettings {
   /// Banner for messages that arrive while you are in another screen.
   final bool inAppAlerts;
   final bool alertSound;
+
+  /// Messages from your Wings still get a banner when banners are off.
+  final bool wingsBreakThrough;
 
   final ImageQuality imageQuality;
 
@@ -119,6 +123,7 @@ class AppSettings {
     bool? sendReadReceipts,
     bool? inAppAlerts,
     bool? alertSound,
+    bool? wingsBreakThrough,
     ImageQuality? imageQuality,
     int? retentionDays,
     TextSize? textSize,
@@ -130,6 +135,7 @@ class AppSettings {
       sendReadReceipts: sendReadReceipts ?? this.sendReadReceipts,
       inAppAlerts: inAppAlerts ?? this.inAppAlerts,
       alertSound: alertSound ?? this.alertSound,
+      wingsBreakThrough: wingsBreakThrough ?? this.wingsBreakThrough,
       imageQuality: imageQuality ?? this.imageQuality,
       retentionDays: retentionDays ?? this.retentionDays,
       textSize: textSize ?? this.textSize,

@@ -41,6 +41,7 @@ class PublicUser {
     this.friendCount,
     this.bio,
     this.profileLocked = false,
+    this.haloUntil,
   });
 
   final String id;
@@ -54,6 +55,10 @@ class PublicUser {
 
   /// They hide their friends, followers and following from other people.
   final bool profileLocked;
+
+  /// Until when their Halo ("free to chat") is lit, as the server last said.
+  /// Only friends are told. May already be in the past; see `haloLitProvider`.
+  final DateTime? haloUntil;
 
   /// Interests both people listed — the only basis for a "why am I seeing
   /// this person" reason.
@@ -98,6 +103,7 @@ class PublicUser {
       friendCount: friendCount,
       bio: bio,
       profileLocked: profileLocked,
+      haloUntil: haloUntil,
     );
   }
 
@@ -117,6 +123,7 @@ class PublicUser {
     'friend_count': friendCount,
     'bio': bio,
     'profile_locked': profileLocked,
+    'halo_until': haloUntil?.toUtc().toIso8601String(),
   };
 
   factory PublicUser.fromJson(Map<String, dynamic> json) {
@@ -140,6 +147,9 @@ class PublicUser {
       friendCount: json['friend_count'] as int?,
       bio: json['bio'] as String?,
       profileLocked: json['profile_locked'] as bool? ?? false,
+      haloUntil: json['halo_until'] is String
+          ? DateTime.tryParse(json['halo_until'] as String)?.toUtc()
+          : null,
     );
   }
 }

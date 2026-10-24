@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/providers/halo_providers.dart';
 import 'package:serafim/src/providers/typing_providers.dart';
+import 'package:serafim/src/providers/wings_providers.dart';
+import 'package:serafim/src/utils/wing_mark.dart';
 import 'package:serafim/src/presentation/view/main_screen.dart';
 import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +30,7 @@ import 'package:serafim/src/utils/official_badge.dart';
 import 'package:serafim/src/utils/serafim_chip.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
+import 'package:serafim/src/utils/text_edit_dialog.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/user_card.dart';
@@ -111,11 +115,12 @@ List<ChatEntry> applyChatFilter(
   List<ChatEntry> entries,
   ChatFilter filter,
   Map<String, RoomPreview> previews,
-  String myId,
-) {
+  String myId, {
+  Set<String> wingIds = const {},
+}) {
   return [
     for (final entry in entries)
-      if (_matchesFilter(entry, filter, previews, myId)) entry,
+      if (_matchesFilter(entry, filter, previews, myId, wingIds)) entry,
   ];
 }
 
@@ -124,10 +129,13 @@ bool _matchesFilter(
   ChatFilter filter,
   Map<String, RoomPreview> previews,
   String myId,
+  Set<String> wingIds,
 ) {
   switch (filter.kind) {
     case ChatFilterKind.all:
       return true;
+    case ChatFilterKind.wings:
+      return entry.friend != null && wingIds.contains(entry.friend!.id);
     case ChatFilterKind.friends:
       return entry.friend != null;
     case ChatFilterKind.groups:
@@ -295,40 +303,16 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     ref.read(chatFiltersProvider.notifier).setRooms(filter.id, result.roomIds);
   }
 
-  Future<String?> _askForName(String current) async {
-    final controller = TextEditingController(text: current);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.paperAlt,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-        title: Text('Filter name', style: AppTextStyles.fieldInput),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 20,
-          style: AppTextStyles.fieldInput,
-          cursorColor: AppColors.primaryPale,
-          decoration: const InputDecoration(
-            isDense: true,
-            border: OutlineInputBorder(borderRadius: BorderRadius.zero),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text('Cancel', style: AppTextStyles.linkText),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: Text('Save', style: AppTextStyles.linkText),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    return name;
-  }
+  Future<String?> _askForName(String current) => showTextEditDialog(
+    context,
+    title: 'Filter name',
+    initial: current,
+    maxLength: 20,
+    titleStyle: AppTextStyles.fieldInput,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+    actionStyle: AppTextStyles.linkText,
+    validate: (text) => text.trim().isEmpty ? 'Give the filter a name.' : null,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -353,7 +337,13 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     );
     final shown = currentUser == null
         ? all
-        : applyChatFilter(all, filter, previews, currentUser.id);
+        : applyChatFilter(
+            all,
+            filter,
+            previews,
+            currentUser.id,
+            wingIds: ref.watch(wingIdsProvider),
+          );
 
     // Only wait on a spinner when there is genuinely nothing to show. A saved
     // copy of the friends list counts as something.
@@ -720,6 +710,7 @@ class _ChatListItem extends ConsumerWidget {
     // rebuilds only when its own chat changes.
     final preview = ref.watch(roomPreviewProvider(roomId));
     final typing = ref.watch(typingInRoomProvider(roomId)).isNotEmpty;
+    final halo = ref.watch(haloLitProvider(haloKey(user)));
 
     var line = 'Tap to start conversation';
     var time = '';
@@ -738,6 +729,8 @@ class _ChatListItem extends ConsumerWidget {
       name: user.displayName,
       preview: line,
       typing: typing,
+      halo: halo,
+      nameBadge: ref.watch(isWingProvider(user.id)) ? const WingMark() : null,
       time: time,
       unread: (preview?.unread ?? 0) > 0,
       imageProvider: avatarImage(user.profilePic),
@@ -1196,4 +1189,6 @@ String _emptyFor(ChatFilter filter) => switch (filter.kind) {
   ChatFilterKind.unread => 'No unread chats.',
   ChatFilterKind.groups => 'No group chats yet.',
   ChatFilterKind.custom => 'No chats in this filter.',
+  ChatFilterKind.wings =>
+    'No Wings yet. Name up to six closest friends in your profile.',
 };

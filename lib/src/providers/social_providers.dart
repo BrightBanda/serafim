@@ -79,10 +79,50 @@ final friendRequestsProvider = FutureProvider<FriendRequests>((ref) {
 });
 
 /// People you follow / people who follow you.
-final followingProvider = FutureProvider<List<PublicUser>>((ref) {
-  if (ref.watch(currentAccountIdProvider) == null) return const [];
-  return ref.watch(socialServiceProvider).following();
+///
+/// The ids of the people you follow are saved on the phone each time, so the
+/// next launch labels Follow buttons correctly before this finishes.
+final followingProvider = FutureProvider<List<PublicUser>>((ref) async {
+  final account = ref.watch(currentAccountIdProvider);
+  if (account == null) return const [];
+  final following = await ref.watch(socialServiceProvider).following();
+  await ref.read(localCacheProvider).saveFollowingIds(account, [
+    for (final u in following) u.id,
+  ]);
+  return following;
 });
+
+/// Ids of everyone you follow: the server's list once it has arrived (kept
+/// while it refreshes), otherwise the copy saved on this phone, otherwise null
+/// — not known yet.
+///
+/// This, not the `isFollowing` inside a post's author, is the truth for Follow
+/// buttons: a post is a snapshot from when the feed loaded, and is not
+/// refetched when you follow or unfollow its author.
+final followingIdsProvider = Provider<Set<String>?>((ref) {
+  final account = ref.watch(currentAccountIdProvider);
+  if (account == null) return null;
+  final fresh = ref.watch(followingProvider).value;
+  if (fresh != null) return {for (final u in fresh) u.id};
+  return ref.read(localCacheProvider).followingIds(account);
+});
+
+/// Whether you follow [user], as best known right now: a tap still on its way,
+/// else your following list (fresh or saved), else what [user] itself says.
+/// Null while the list is still loading for the first time ever, so a button
+/// never shows "Follow" for someone you already follow.
+bool? watchIsFollowing(WidgetRef ref, PublicUser user) {
+  final pending = ref.watch(
+    relationOverridesProvider.select((o) => o.follow[user.id]),
+  );
+  if (pending != null) return pending;
+  final known = ref.watch(
+    followingIdsProvider.select((ids) => ids?.contains(user.id)),
+  );
+  if (known != null) return known;
+  if (ref.watch(followingProvider.select((a) => a.isLoading))) return null;
+  return user.isFollowing; // The list failed and nothing is saved.
+}
 
 final followersProvider = FutureProvider<List<PublicUser>>((ref) {
   if (ref.watch(currentAccountIdProvider) == null) return const [];

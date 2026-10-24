@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/platform/incoming_share.dart';
 import 'package:serafim/src/data/local/isar_service.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/utils/update/update_gate.dart';
@@ -70,6 +71,10 @@ class _SerafimAppState extends ConsumerState<SerafimApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Start taking text shared to Serafim from other apps.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(incomingShareProvider.notifier).attach();
+    });
   }
 
   @override

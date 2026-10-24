@@ -20,6 +20,7 @@ class ChatRow extends StatelessWidget {
     this.nameBadge,
     this.avatarHeroTag,
     this.typing = false,
+    this.halo = false,
   });
 
   final String name;
@@ -27,6 +28,9 @@ class ChatRow extends StatelessWidget {
 
   /// Someone is typing here: the preview line says so instead.
   final bool typing;
+
+  /// The person's halo is lit: a glow around their photo.
+  final bool halo;
   final String time;
   final bool isGroup;
   final bool unread;
@@ -66,12 +70,14 @@ class ChatRow extends StatelessWidget {
                     ? AvatarThumb(
                         isGroup: isGroup,
                         imageProvider: imageProvider,
+                        halo: halo,
                       )
                     : TappableAvatar(
                         image: imageProvider,
                         heroTag: avatarHeroTag!,
                         name: name,
                         isGroup: isGroup,
+                        halo: halo,
                       )),
             const SizedBox(width: 10),
             Expanded(

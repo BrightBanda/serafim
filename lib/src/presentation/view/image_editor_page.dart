@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:serafim/src/utils/image_editor/draw_canvas.dart';
+import 'package:serafim/src/utils/image_editor/draw_toolbar.dart';
 import 'package:serafim/src/utils/image_editor/stroke.dart';
 import 'package:serafim/src/utils/image_shrink.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -61,6 +62,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
   final List<Stroke> _strokes = [];
   int _color = defaultColorIndex;
   int _width = defaultWidthIndex;
+  bool _erasing = false;
 
   /// Width of the picture on screen while drawing (for the export scale).
   double _displayedWidth = 1;
@@ -296,7 +298,9 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
                 _strokes.add(
                   Stroke(
                     color: drawColors[_color],
-                    width: drawWidths[_width],
+                    width:
+                        drawWidths[_width] * (_erasing ? eraserWidthFactor : 1),
+                    erase: _erasing,
                     points: [d.localPosition],
                   ),
                 );
@@ -360,79 +364,20 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
     }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              for (var i = 0; i < drawColors.length; i++)
-                GestureDetector(
-                  key: ValueKey('draw-color-$i'),
-                  onTap: () => setState(() => _color = i),
-                  child: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: drawColors[i],
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: i == _color ? Colors.white : Colors.white24,
-                        width: i == _color ? 3 : 1,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              for (var i = 0; i < drawWidths.length; i++)
-                GestureDetector(
-                  key: ValueKey('draw-size-$i'),
-                  onTap: () => setState(() => _width = i),
-                  child: Container(
-                    width: 44,
-                    height: 36,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: i == _width ? Colors.white : Colors.white24,
-                        width: i == _width ? 2 : 1,
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Container(
-                      width: 8 + i * 6.0,
-                      height: 8 + i * 6.0,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ),
-              const Spacer(),
-              IconButton(
-                key: const ValueKey('draw-undo'),
-                tooltip: 'Undo',
-                icon: const Icon(Icons.undo, color: Colors.white),
-                onPressed: _strokes.isEmpty
-                    ? null
-                    : () => setState(() => _strokes.removeLast()),
-              ),
-              IconButton(
-                key: const ValueKey('draw-clear'),
-                tooltip: 'Clear all',
-                icon: const Icon(Icons.delete_sweep, color: Colors.white),
-                onPressed: _strokes.isEmpty
-                    ? null
-                    : () => setState(_strokes.clear),
-              ),
-            ],
-          ),
-        ],
+      child: DrawToolbar(
+        color: _color,
+        width: _width,
+        // Choosing a colour goes back to the pen.
+        onColor: (i) => setState(() {
+          _color = i;
+          _erasing = false;
+        }),
+        onWidth: (i) => setState(() => _width = i),
+        erasing: _erasing,
+        onEraser: () => setState(() => _erasing = !_erasing),
+        hasStrokes: _strokes.isNotEmpty,
+        onUndo: () => setState(() => _strokes.removeLast()),
+        onClear: () => setState(_strokes.clear),
       ),
     );
   }

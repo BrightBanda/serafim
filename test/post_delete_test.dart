@@ -8,14 +8,16 @@ import 'package:serafim/src/data/services/post_service.dart';
 import 'package:serafim/src/presentation/view/widgets/post_card.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/post_providers.dart';
+import 'package:serafim/src/providers/settings_providers.dart';
+import 'package:serafim/src/providers/social_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/fakes.dart';
 
 const me = 'me';
 
-PublicUser person(String id, String name) => PublicUser(
-  id: id,
-  username: id,
-  displayName: name,
-);
+PublicUser person(String id, String name) =>
+    PublicUser(id: id, username: id, displayName: name);
 
 Post aPost({String authorId = me, String id = 'p1'}) => Post(
   id: id,
@@ -51,8 +53,7 @@ class _FakeService extends PostService {
     String? authorId,
     String? cursor,
     int limit = 20,
-  }) async =>
-      const PostPage(items: []);
+  }) async => const PostPage(items: []);
 }
 
 /// Pumps a [PostCard] as the signed-in person [account].
@@ -67,11 +68,15 @@ Future<void> pumpCard(
   tester.view.physicalSize = const Size(800, 1400);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  SharedPreferences.setMockInitialValues({});
+  final prefs = await SharedPreferences.getInstance();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         currentAccountIdProvider.overrideWithValue(account),
         postServiceProvider.overrideWithValue(service),
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        socialServiceProvider.overrideWithValue(FakeFollowSocial()),
       ],
       child: MaterialApp(
         home: Scaffold(
@@ -131,9 +136,7 @@ void main() {
     expect(service.deleted, isEmpty);
   });
 
-  testWidgets('confirming deletes the post and tells the page', (
-    tester,
-  ) async {
+  testWidgets('confirming deletes the post and tells the page', (tester) async {
     final service = _FakeService();
     var told = false;
     await pumpCard(
@@ -176,9 +179,7 @@ void main() {
     );
     addTearDown(container.dispose);
 
-    final done = await container
-        .read(postDeleteProvider.notifier)
-        .delete('p1');
+    final done = await container.read(postDeleteProvider.notifier).delete('p1');
     expect(done, isFalse);
     expect(container.read(postDeleteProvider).hasError, isTrue);
   });

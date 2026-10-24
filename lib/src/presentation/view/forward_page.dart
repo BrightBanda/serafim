@@ -47,9 +47,20 @@ class _Target {
 /// One message at a time: choosing several messages to send together is out
 /// of scope for now.
 class ForwardPage extends ConsumerStatefulWidget {
-  const ForwardPage({super.key, required this.messages});
+  /// Forwards a message from a chat.
+  const ForwardPage({super.key, required this.messages}) : sharedText = null;
+
+  /// Sends text that another app shared to Serafim (a link, say): the same
+  /// picker, a plain message at the end of it.
+  const ForwardPage.shareText(String this.sharedText, {super.key})
+    : messages = const [];
 
   final List<LocalMessage> messages;
+
+  /// Set when this is a share from another app rather than a forward.
+  final String? sharedText;
+
+  bool get isShare => sharedText != null;
 
   @override
   ConsumerState<ForwardPage> createState() => _ForwardPageState();
@@ -68,7 +79,9 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
   LocalMessage get _message => widget.messages.first;
 
   /// A picture cannot go to a group: the server refuses attachments there.
-  bool get _groupsBlocked => _message.type == MessageType.image;
+  /// (Shared text is plain text, which groups take.)
+  bool get _groupsBlocked =>
+      !widget.isShare && _message.type == MessageType.image;
 
   bool _matches(String haystack) {
     final q = _search.text.trim().toLowerCase();
@@ -97,13 +110,28 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
     final failed = <String>[];
     for (final target in chosen) {
       try {
-        final ok = await ref
-            .read(chatViewModelProvider.notifier)
-            .forwardMessage(
-              source: _message,
-              recipientId: target.recipientId,
-              groupId: target.isGroup ? target.group!.id : null,
-            );
+        final vm = ref.read(chatViewModelProvider.notifier);
+        final groupId = target.isGroup ? target.group!.id : null;
+        final bool ok;
+        if (widget.isShare) {
+          final me = ref.read(currentAccountIdProvider);
+          if (me == null) throw StateError('not signed in');
+          await vm.sendMessage(
+            roomId: groupId != null
+                ? groupRoomId(groupId)
+                : ChatViewModel.buildRoomId(me, target.recipientId),
+            recipientId: target.recipientId,
+            content: widget.sharedText!,
+            groupId: groupId,
+          );
+          ok = true;
+        } else {
+          ok = await vm.forwardMessage(
+            source: _message,
+            recipientId: target.recipientId,
+            groupId: groupId,
+          );
+        }
         if (ok) {
           sent++;
         } else {
@@ -120,8 +148,10 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
       SnackBar(
         content: Text(
           failed.isEmpty
-              ? 'Forwarded to $sent ${sent == 1 ? 'chat' : 'chats'}'
-              : 'Forwarded to $sent. Could not send to ${failed.join(', ')}',
+              ? '${widget.isShare ? 'Sent' : 'Forwarded'} to $sent '
+                    '${sent == 1 ? 'chat' : 'chats'}'
+              : '${widget.isShare ? 'Sent' : 'Forwarded'} to $sent. '
+                    'Could not send to ${failed.join(', ')}',
         ),
       ),
     );
@@ -139,9 +169,9 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
         ? const <ChatEntry>[]
         : byRecentActivity(
             friends: friends,
-            strangerIds: peers.where(
-              (id) => !friends.any((f) => f.id == id),
-            ).toList(),
+            strangerIds: peers
+                .where((id) => !friends.any((f) => f.id == id))
+                .toList(),
             previews: previews,
             myId: me,
           );
@@ -179,7 +209,10 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
 
     return Scaffold(
       backgroundColor: AppColors.paper,
-      appBar: AppTopBar(title: 'FORWARD', onBack: () => Navigator.pop(context)),
+      appBar: AppTopBar(
+        title: widget.isShare ? 'SEND TO' : 'FORWARD',
+        onBack: () => Navigator.pop(context),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -215,6 +248,24 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
                 ),
               ),
             ),
+            if (widget.isShare)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.paperAlt,
+                    border: Border.all(color: AppColors.lineSoft, width: 1.5),
+                  ),
+                  child: Text(
+                    widget.sharedText!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.body,
+                  ),
+                ),
+              ),
             if (_groupsBlocked)
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
@@ -259,15 +310,17 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
                         if (targets.length > recentCount) ...[
                           const SizedBox(height: 12),
                           Text('FRIENDS', style: AppTextStyles.fieldLabel),
-                          for (final t in targets
-                              .skip(recentCount)
-                              .where((t) => !t.isGroup))
+                          for (final t
+                              in targets
+                                  .skip(recentCount)
+                                  .where((t) => !t.isGroup))
                             _row(t),
                           const SizedBox(height: 12),
                           Text('GROUPS', style: AppTextStyles.fieldLabel),
-                          for (final t in targets
-                              .skip(recentCount)
-                              .where((t) => t.isGroup))
+                          for (final t
+                              in targets
+                                  .skip(recentCount)
+                                  .where((t) => t.isGroup))
                             _row(t),
                         ],
                       ],
@@ -297,9 +350,7 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
     final full = !selected && _chosen.length >= forwardMaxTargets;
     return CheckboxListTile(
       value: selected,
-      onChanged: blocked || full
-          ? null
-          : (v) => _toggle(target),
+      onChanged: blocked || full ? null : (v) => _toggle(target),
       activeColor: AppColors.primary,
       contentPadding: EdgeInsets.zero,
       secondary: AvatarThumb(

@@ -45,7 +45,18 @@ class BackupService {
     final dir = await getTemporaryDirectory();
     final stamp = DateTime.now().toIso8601String().substring(0, 10);
     final path = '${dir.path}/serafim-$stamp.isar';
-    await _isar.snapshotTo(path);
+    try {
+      await _isar.snapshotTo(path);
+    } on FileSystemException catch (e) {
+      final file = File(path);
+      if (await file.exists()) await file.delete();
+      // 28 is ENOSPC, "no space left on device".
+      throw ApiException(
+        e.osError?.errorCode == 28
+            ? 'Not enough free space on this phone to make a backup.'
+            : 'Could not prepare the backup on this phone.',
+      );
+    }
     return File(path);
   }
 
@@ -137,9 +148,11 @@ class BackupService {
     );
   });
 
-  /// Uploads the current database, replacing the previous backup.
-  Future<DriveBackup> backUpToDrive() async {
-    final token = await _google.driveAccessToken();
+  /// Uploads the current database, replacing the previous backup. With
+  /// [interactive] false nothing is shown to the person (automatic backups);
+  /// see [GoogleAuthService.driveAccessToken].
+  Future<DriveBackup> backUpToDrive({bool interactive = true}) async {
+    final token = await _google.driveAccessToken(interactive: interactive);
     final snapshot = await _snapshot();
     try {
       final bytes = await snapshot.readAsBytes();

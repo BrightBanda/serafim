@@ -4,11 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/chat_list_page.dart';
 import 'package:serafim/src/presentation/view/circles_page.dart';
 import 'package:serafim/src/presentation/view/discover_page.dart';
+import 'package:serafim/src/core/platform/incoming_share.dart';
 import 'package:serafim/src/presentation/view/feed_page.dart';
+import 'package:serafim/src/presentation/view/forward_page.dart';
 
 import 'package:serafim/src/core/config/feature_flags.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
+import 'package:serafim/src/providers/backup_providers.dart';
 import 'package:serafim/src/providers/push_providers.dart';
 import 'package:serafim/src/providers/update_providers.dart';
 import 'package:serafim/src/utils/update/update_prompt.dart';
@@ -54,6 +57,19 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   @override
   void initState() {
     super.initState();
+    // Something shared to Serafim from another app: choose who gets it. This
+    // screen only exists once signed in, so a share made before that waits.
+    ref.listenManual<String?>(incomingShareProvider, (_, text) {
+      if (text == null) return;
+      ref.read(incomingShareProvider.notifier).consume();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => ForwardPage.shareText(text)),
+        );
+      });
+    }, fireImmediately: true);
+
     // Offer a newer version once per launch (unless dismissed for it).
     ref.listenManual<AsyncValue<UpdateStatus>>(updateCheckProvider, (_, next) {
       final status = next.value;
@@ -69,6 +85,27 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         if (mounted) showUpdatePrompt(context, update);
       });
     }, fireImmediately: true);
+
+    // Automatic backups are checked now and whenever the app comes back, and
+    // say how they went (one started by a tap reports on its own screen).
+    ref.listenManual<AutoBackupState>(autoBackupProvider, (previous, next) {
+      if (previous == null || !previous.running || next.running) return;
+      if (!next.lastRunAutomatic || !mounted) return;
+      final error = next.lastError;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error == null
+                ? 'Automatic backup saved to Google Drive.'
+                : 'Automatic backup failed. $error',
+          ),
+          backgroundColor: error == null ? null : AppColors.rust,
+        ),
+      );
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(autoBackupProvider.notifier).attach();
+    });
   }
 
   /// Tabs actually shown, in the order Feed · Whispers · Discover · Circles.

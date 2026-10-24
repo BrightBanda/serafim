@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:serafim/src/data/models/app_user.dart';
+import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/data/models/auth_session.dart';
+import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/data/services/auth_service.dart';
 import 'package:serafim/src/data/services/session_store.dart';
+import 'package:serafim/src/data/services/social_service.dart';
 import 'package:serafim/src/data/services/user_service.dart';
 
 AuthSession fakeSession({
@@ -96,4 +99,47 @@ class FakeAuthService extends AuthService {
 
   @override
   Future<void> signOut(String accessToken) async => signOutCalls++;
+}
+
+/// A follow backend that remembers who you follow, like the server does.
+/// [listGate], when set, holds back the following list until completed;
+/// [failNext] makes the next follow or unfollow fail with that message.
+class FakeFollowSocial extends SocialService {
+  FakeFollowSocial([Iterable<String> followed = const []])
+    : followed = {...followed},
+      super(Dio());
+
+  final Set<String> followed;
+  final calls = <String>[];
+  Completer<void>? listGate;
+  String? failNext;
+
+  @override
+  Future<List<PublicUser>> following() async {
+    await listGate?.future;
+    return [
+      for (final id in followed)
+        PublicUser(id: id, username: id, displayName: id, isFollowing: true),
+    ];
+  }
+
+  @override
+  Future<void> follow(String userId) async {
+    calls.add('follow $userId');
+    _maybeFail();
+    followed.add(userId);
+  }
+
+  @override
+  Future<void> unfollow(String userId) async {
+    calls.add('unfollow $userId');
+    _maybeFail();
+    followed.remove(userId);
+  }
+
+  void _maybeFail() {
+    final message = failNext;
+    failNext = null;
+    if (message != null) throw ApiException(message);
+  }
 }

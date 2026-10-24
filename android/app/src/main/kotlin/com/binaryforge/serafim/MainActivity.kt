@@ -20,13 +20,53 @@ class MainActivity : FlutterActivity() {
     /** The Dart call waiting for the system installer to finish. */
     private var pendingInstall: MethodChannel.Result? = null
 
+    /** Text another app shared to Serafim, until Dart has picked it up. */
+    private var sharedText: String? = null
+    private var shareChannel: MethodChannel? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         createMessagesChannel()
+        captureShare(intent)
+    }
+
+    /** Serafim is already open and another app shares something to it. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (captureShare(intent)) {
+            val text = sharedText
+            sharedText = null
+            shareChannel?.invokeMethod("shared", text)
+        }
+    }
+
+    /**
+     * Remembers the text of a "share to Serafim" (a link from the browser, say).
+     * Returns whether this intent was one.
+     */
+    private fun captureShare(intent: Intent?): Boolean {
+        if (intent?.action != Intent.ACTION_SEND) return false
+        if (intent.type?.startsWith("text/") != true) return false
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
+        if (text.isNullOrEmpty()) return false
+        sharedText = text
+        return true
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        shareChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL)
+        shareChannel!!.setMethodCallHandler { call, result ->
+            when (call.method) {
+                // What the app was opened with (a cold start), once.
+                "takeShared" -> {
+                    result.success(sharedText)
+                    sharedText = null
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATER_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -183,6 +223,7 @@ class MainActivity : FlutterActivity() {
         // Must match the channel id the backend sends and the manifest default.
         const val MESSAGES_CHANNEL_ID = "messages"
         const val UPDATER_CHANNEL = "serafim/updater"
+        const val SHARE_CHANNEL = "serafim/share"
         private const val INSTALL_REQUEST = 4710
     }
 }

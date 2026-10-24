@@ -7,6 +7,17 @@ class GoogleSignInCancelled implements Exception {
   const GoogleSignInCancelled();
 }
 
+/// Google Drive could only be reached by asking the person (picking an
+/// account, or allowing access), and the caller asked not to. Making one
+/// backup by hand from the backup settings grants it.
+class DriveAccessNeeded extends ApiException {
+  const DriveAccessNeeded()
+    : super(
+        'Serafim needs permission to use Google Drive. Open Backup & Restore '
+        'and back up to Google Drive once to allow it.',
+      );
+}
+
 /// Talks to the Google account picker and returns an ID token. What to do with
 /// the token (exchange it with Supabase) is [AuthService]'s job — Firebase Auth
 /// is intentionally not involved, so there is exactly one source of truth for
@@ -18,6 +29,8 @@ class GoogleAuthService {
   final String iosClientId;
 
   Future<void>? _initialised;
+
+  static const _driveScope = 'https://www.googleapis.com/auth/drive.appdata';
 
   Future<void> _init() {
     return _initialised ??= GoogleSignIn.instance.initialize(
@@ -79,7 +92,11 @@ class GoogleAuthService {
   /// An access token for the app's private folder in the person's Google
   /// Drive (`drive.appdata`): files there are visible only to this app, so no
   /// broad Drive access is asked for. Used by the backup feature.
-  Future<String> driveAccessToken() async {
+  ///
+  /// With [interactive] false nothing is shown to the person — for automatic
+  /// backups — and [DriveAccessNeeded] is thrown when access was never given
+  /// (or has been taken back).
+  Future<String> driveAccessToken({bool interactive = true}) async {
     if (!googleSignInSupported) {
       throw const ApiException(
         "Google Drive backup isn't available on this device. Use Export "
@@ -89,11 +106,18 @@ class GoogleAuthService {
     try {
       await _init();
       final instance = GoogleSignIn.instance;
+      if (!interactive) {
+        final auth = await instance.authorizationClient.authorizationForScopes(
+          const [_driveScope],
+        );
+        if (auth == null) throw const DriveAccessNeeded();
+        return auth.accessToken;
+      }
       final account =
           await instance.attemptLightweightAuthentication() ??
           await instance.authenticate();
       final auth = await account.authorizationClient.authorizeScopes(const [
-        'https://www.googleapis.com/auth/drive.appdata',
+        _driveScope,
       ]);
       return auth.accessToken;
     } on GoogleSignInException catch (e) {

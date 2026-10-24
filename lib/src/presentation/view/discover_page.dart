@@ -149,13 +149,26 @@ class _SearchField extends StatelessWidget {
   }
 }
 
-class _Suggestions extends ConsumerWidget {
+/// How many people Discover shows at first, and how many more each "Show
+/// more" adds.
+const discoverPageSize = 10;
+
+class _Suggestions extends ConsumerStatefulWidget {
   const _Suggestions({required this.onRefresh});
 
   final Future<void> Function() onRefresh;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Suggestions> createState() => _SuggestionsState();
+}
+
+class _SuggestionsState extends ConsumerState<_Suggestions> {
+  int _shown = discoverPageSize;
+
+  Future<void> Function() get onRefresh => widget.onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
     final discover = ref.watch(discoverProvider);
     final requests = ref.watch(friendRequestsProvider).value;
     final incoming = requests?.incoming ?? const <PublicUser>[];
@@ -205,11 +218,17 @@ class _Suggestions extends ConsumerWidget {
                 text: 'No one new to show right now.\nPull down to refresh.',
               ),
             )
-          else
-            for (final user in people) ...[
+          else ...[
+            for (final user in people.take(_shown)) ...[
               UserCard(user: user),
               const SizedBox(height: 10),
             ],
+            if (people.length > _shown)
+              _ShowMore(
+                remaining: people.length - _shown,
+                onTap: () => setState(() => _shown += discoverPageSize),
+              ),
+          ],
         ];
         return scrollable(children);
       },
@@ -217,13 +236,47 @@ class _Suggestions extends ConsumerWidget {
   }
 }
 
-class _SearchResults extends ConsumerWidget {
+/// "Show more" at the bottom of a list that has been cut short.
+class _ShowMore extends StatelessWidget {
+  const _ShowMore({required this.remaining, required this.onTap});
+
+  final int remaining;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: TextButton(
+        onPressed: onTap,
+        child: Text('Show more ($remaining)', style: AppTextStyles.linkText),
+      ),
+    );
+  }
+}
+
+class _SearchResults extends ConsumerStatefulWidget {
   const _SearchResults({required this.query});
 
   final String query;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SearchResults> createState() => _SearchResultsState();
+}
+
+class _SearchResultsState extends ConsumerState<_SearchResults> {
+  int _shown = discoverPageSize;
+
+  String get query => widget.query;
+
+  @override
+  void didUpdateWidget(_SearchResults old) {
+    super.didUpdateWidget(old);
+    // A new search starts again from the top ten.
+    if (old.query != widget.query) _shown = discoverPageSize;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final results = ref.watch(userSearchProvider(query));
 
     return results.when(
@@ -254,11 +307,18 @@ class _SearchResults extends ConsumerWidget {
             ],
           );
         }
+        final shown = people.take(_shown).toList();
+        final more = people.length - shown.length;
         return ListView.separated(
           padding: const EdgeInsets.all(14),
-          itemCount: people.length,
+          itemCount: shown.length + (more > 0 ? 1 : 0),
           separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (_, i) => UserCard(user: people[i]),
+          itemBuilder: (_, i) => i < shown.length
+              ? UserCard(user: shown[i])
+              : _ShowMore(
+                  remaining: more,
+                  onTap: () => setState(() => _shown += discoverPageSize),
+                ),
         );
       },
     );

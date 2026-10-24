@@ -168,16 +168,21 @@ class ChatBubble extends StatelessWidget {
                     ),
                     child: ConstrainedBox(
                       // Photos are big; GIFs and stickers are a small
-                      // thing you glance at, so they are kept small.
-                      constraints: isSmallMedia(imagePath!)
+                      // thing you glance at, so they are kept small. A
+                      // scribble is shown whole, in a square.
+                      constraints: isScribble(imagePath!)
+                          ? const BoxConstraints(maxHeight: 220, maxWidth: 220)
+                          : isSmallMedia(imagePath!)
                           ? const BoxConstraints(maxHeight: 130, maxWidth: 170)
                           : const BoxConstraints(maxHeight: 260),
                       child: Image.file(
                         File(imagePath!),
-                        fit: isSmallMedia(imagePath!)
+                        fit: isSmallMedia(imagePath!) || isScribble(imagePath!)
                             ? BoxFit.contain
                             : BoxFit.cover,
-                        cacheWidth: isSmallMedia(imagePath!) ? 340 : 800,
+                        cacheWidth: isScribble(imagePath!)
+                            ? 520
+                            : (isSmallMedia(imagePath!) ? 340 : 800),
                         errorBuilder: (_, __, ___) => const Padding(
                           padding: EdgeInsets.all(8),
                           child: Icon(Icons.broken_image_outlined, size: 28),
@@ -384,9 +389,14 @@ class _ReplyQuote extends StatelessWidget {
   }
 }
 
+/// A hand-drawn scribble (saved as `<id>.scribble.png`).
+bool isScribble(String path) => path.toLowerCase().endsWith('.scribble.png');
+
 /// GIFs, WebP and PNG (what keyboards insert as GIFs and stickers) are shown
-/// small; JPEG photos from the camera and gallery are shown large.
+/// small; JPEG photos from the camera and gallery are shown large. A scribble
+/// is a PNG too, but a drawing to read, so it is not small.
 bool isSmallMedia(String path) {
   final p = path.toLowerCase();
+  if (isScribble(p)) return false;
   return p.endsWith('.gif') || p.endsWith('.webp') || p.endsWith('.png');
 }

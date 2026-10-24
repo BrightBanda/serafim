@@ -11,6 +11,7 @@ import 'package:serafim/src/utils/image_picking.dart';
 import 'package:serafim/src/utils/member_picker.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
+import 'package:serafim/src/utils/text_edit_dialog.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/user_card.dart';
@@ -143,58 +144,41 @@ class _ContentState extends ConsumerState<_Content> {
     }
   }
 
+  /// Edits a group's name or rules. The dialog saves before it closes, so a
+  /// refusal is shown in it and the text typed is kept.
   Future<String?> _ask({
     required String title,
     required String initial,
     required int maxLength,
+    required Future<String?> Function(String text) save,
     int maxLines = 1,
     String? hint,
-  }) {
-    final controller = TextEditingController(text: initial);
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.paperAlt,
-        title: Text(
-          title,
-          style: AppTextStyles.displayHeading.copyWith(fontSize: 20),
-        ),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: maxLength,
-          maxLines: maxLines,
-          minLines: 1,
-          style: AppTextStyles.fieldInput,
-          cursorColor: AppColors.primary,
-          decoration: InputDecoration(hintText: hint),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    ).whenComplete(controller.dispose);
+    String? Function(String text)? validate,
+  }) async {
+    if (_busy) return null;
+    setState(() => _busy = true);
+    final saved = await showTextEditDialog(
+      context,
+      title: title,
+      initial: initial,
+      maxLength: maxLength,
+      maxLines: maxLines,
+      hint: hint,
+      validate: validate,
+      onSave: save,
+    );
+    if (mounted) setState(() => _busy = false);
+    return saved;
   }
 
   Future<void> _rename() async {
-    final name = await _ask(
+    await _ask(
       title: 'Group name',
       initial: d.summary.name,
       maxLength: GroupLimits.nameMax,
+      validate: (name) => name.trim().isEmpty ? 'A group needs a name.' : null,
+      save: (name) => _actions.updateInfo(d.id, name: name.trim()),
     );
-    if (name == null) return;
-    if (name.trim().isEmpty) {
-      _tell('A group needs a name.');
-      return;
-    }
-    await _guard(() => _actions.updateInfo(d.id, name: name.trim()));
   }
 
   Future<void> _editRules() async {
@@ -204,12 +188,9 @@ class _ContentState extends ConsumerState<_Content> {
       maxLength: GroupLimits.rulesMax,
       maxLines: 8,
       hint: 'Shown to everyone when they join. Leave empty for none.',
+      save: (rules) => _actions.updateInfo(d.id, rules: rules.trim()),
     );
-    if (rules == null) return;
-    await _guard(
-      () => _actions.updateInfo(d.id, rules: rules.trim()),
-      ok: 'Rules updated',
-    );
+    if (rules != null) _tell('Rules updated', error: false);
   }
 
   Future<void> _changePhoto() async {

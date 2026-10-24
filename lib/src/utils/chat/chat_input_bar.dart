@@ -12,6 +12,7 @@ class ChatInputBar extends StatelessWidget {
     this.hintText = 'Speak into the void…',
     this.onSend,
     this.onAttach,
+    this.onScribble,
     this.attachDisabledReason,
     this.attachBusy = false,
     this.replyPreview,
@@ -55,6 +56,10 @@ class ChatInputBar extends StatelessWidget {
 
   /// Shows an attach (image) button when non-null.
   final VoidCallback? onAttach;
+
+  /// Shows a scribble (hand-drawn note) button when non-null. It is sent as a
+  /// picture, so it is held back for the same reason as [onAttach].
+  final VoidCallback? onScribble;
 
   /// When non-null the attach button is dimmed and tapping it explains this
   /// reason instead of picking a file. (The server enforces the rule too.)
@@ -120,6 +125,36 @@ class ChatInputBar extends StatelessWidget {
                               ? AppColors.textDim
                               : AppColors.lineSoft,
                         ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            if (onScribble != null) ...[
+              GestureDetector(
+                key: const ValueKey('scribble-button'),
+                onTap: attachBusy
+                    ? null
+                    : attachDisabledReason == null
+                    ? onScribble
+                    : () => ScaffoldMessenger.of(context)
+                        ..clearSnackBars()
+                        ..showSnackBar(
+                          SnackBar(content: Text(attachDisabledReason!)),
+                        ),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppColors.paperAlt,
+                    border: Border.all(color: AppColors.lineSoft, width: 1.5),
+                  ),
+                  child: Icon(
+                    Icons.draw_outlined,
+                    size: 18,
+                    color: attachDisabledReason == null
+                        ? AppColors.textDim
+                        : AppColors.lineSoft,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),

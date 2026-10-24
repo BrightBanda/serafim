@@ -57,6 +57,14 @@ class NotificationSettingsPage extends ConsumerWidget {
           value: settings.alertSound,
           onChanged: settings.inAppAlerts ? notifier.setAlertSound : null,
         ),
+        SettingsSwitchRow(
+          title: 'Wings always get through',
+          subtitle:
+              'Messages from your Wings still show a banner, even with '
+              'banners turned off.',
+          value: settings.wingsBreakThrough,
+          onChanged: notifier.setWingsBreakThrough,
+        ),
       ],
     );
   }

@@ -3,13 +3,25 @@ import 'package:flutter/material.dart';
 /// One freehand line drawn on a picture. Points are in the coordinates of the
 /// on-screen picture; [width] is the on-screen thickness.
 class Stroke {
-  Stroke({required this.color, required this.width, List<Offset>? points})
-    : points = points ?? [];
+  Stroke({
+    required this.color,
+    required this.width,
+    List<Offset>? points,
+    this.erase = false,
+  }) : points = points ?? [];
 
   final Color color;
   final double width;
   final List<Offset> points;
+
+  /// An eraser stroke: it rubs out the pen strokes under it instead of
+  /// painting. (It never touches the picture or paper underneath.)
+  final bool erase;
 }
+
+/// The eraser is this many times wider than the pen of the same size, since
+/// rubbing out with a fine tip is tedious.
+const double eraserWidthFactor = 2.5;
 
 /// The seven colours to draw with.
 const List<Color> drawColors = [

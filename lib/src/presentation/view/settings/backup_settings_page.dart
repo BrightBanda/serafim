@@ -5,13 +5,15 @@ import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/core/platform/google_support.dart';
 import 'package:serafim/src/data/services/backup_service.dart';
 import 'package:serafim/src/data/services/google_auth_service.dart';
+import 'package:serafim/src/providers/backup_providers.dart';
 import 'package:serafim/src/providers/service_providers.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/settings_widgets.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
-/// Export and import the chat database, and back it up to Google Drive.
+/// Export and import the chat database, and back it up to Google Drive — by
+/// hand, or automatically every week or month.
 class BackupSettingsPage extends ConsumerStatefulWidget {
   const BackupSettingsPage({super.key});
 
@@ -21,9 +23,9 @@ class BackupSettingsPage extends ConsumerStatefulWidget {
 
 class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
   bool _busy = false;
-  DriveBackup? _last;
 
   BackupService get _backup => ref.read(backupServiceProvider);
+  AutoBackupController get _auto => ref.read(autoBackupProvider.notifier);
 
   void _say(String text) {
     if (!mounted) return;
@@ -112,9 +114,18 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
   }
 
   Future<void> _driveBackup() => _run(() async {
-    final done = await _backup.backUpToDrive();
-    if (mounted) setState(() => _last = done);
-    _say('Backed up to Google Drive.');
+    final error = await _auto.backUpNow();
+    _say(error ?? 'Backed up to Google Drive.');
+  });
+
+  Future<void> _setAutomatic(bool on) => _run(() async {
+    final before = ref.read(autoBackupProvider).lastSuccess;
+    final error = await _auto.setEnabled(on);
+    if (error != null) {
+      _say(error);
+    } else if (ref.read(autoBackupProvider).lastSuccess != before) {
+      _say('Backed up to Google Drive. The next one is automatic.');
+    }
   });
 
   Future<void> _driveRestore() async {
@@ -132,17 +143,43 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
       '${t.day}/${t.month}/${t.year} '
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
+  /// What the automatic backup has done, and will do next.
+  String _autoStatus(AutoBackupState auto) {
+    final last = auto.lastSuccess;
+    final lines = <String>[
+      if (auto.lastError != null)
+        'Last try failed: ${auto.lastError}'
+      else if (last != null)
+        'Last backup: ${_when(last)}.',
+      if (auto.enabled)
+        auto.nextDue == null
+            ? 'Next backup: the next time Serafim is open.'
+            : 'Next backup: ${_when(auto.nextDue!)}, or the first time '
+                  'Serafim is open after that.',
+    ];
+    return [
+      ...lines,
+      'Backups are made while Serafim is open: your phone does not let it '
+          'reach Google Drive while it is closed, so a backup that comes due '
+          'then is made the next time you open the app.',
+    ].join('\n');
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auto = ref.watch(autoBackupProvider);
+    final busy = _busy || auto.running;
     return SettingsScaffold(
       title: 'BACKUP & RESTORE',
       children: [
         const SettingsSectionLabel('Save to a file'),
+        // Exporting copies a snapshot, so it never waits for an automatic
+        // backup; restoring replaces the database, so it does.
         SerafimButton(label: 'Export chats', onPressed: _busy ? null : _export),
         const SizedBox(height: 8),
         SerafimButton(
           label: 'Import from file',
-          onPressed: _busy ? null : _import,
+          onPressed: busy ? null : _import,
         ),
         const SettingsNote(
           'A copy of your chats saved outside the app. It survives updates '
@@ -154,22 +191,35 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
           const SettingsSectionLabel('Google Drive'),
           SerafimButton(
             label: 'Back up to Google Drive',
-            onPressed: _busy ? null : _driveBackup,
+            onPressed: busy ? null : _driveBackup,
           ),
           const SizedBox(height: 8),
           SerafimButton(
             label: 'Restore from Google Drive',
-            onPressed: _busy ? null : _driveRestore,
+            onPressed: busy ? null : _driveRestore,
           ),
-          SettingsNote(
-            _last == null
-                ? 'Stored in a private folder only Serafim can see. Each '
-                      'backup replaces the previous one.'
-                : 'Last backup: ${_when(_last!.modified)}. Stored in a '
-                      'private folder only Serafim can see.',
+          const SettingsNote(
+            'Stored in a private folder only Serafim can see. Each backup '
+            'replaces the previous one.',
           ),
+          const SettingsSectionLabel('Automatic backup'),
+          SettingsSwitchRow(
+            title: 'Automatic backup',
+            subtitle: 'Back up to Google Drive on a schedule',
+            value: auto.enabled,
+            onChanged: busy ? null : _setAutomatic,
+          ),
+          if (auto.enabled)
+            for (final f in BackupFrequency.values)
+              SettingsChoiceRow(
+                title: f.label,
+                subtitle: f.description,
+                selected: auto.frequency == f,
+                onTap: () => _auto.setFrequency(f),
+              ),
+          SettingsNote(_autoStatus(auto)),
         ],
-        if (_busy)
+        if (busy)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Center(

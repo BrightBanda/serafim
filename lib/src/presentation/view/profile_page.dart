@@ -12,6 +12,11 @@ import 'package:serafim/src/presentation/view/follow_list_page.dart';
 import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/providers/halo_providers.dart';
+import 'package:serafim/src/providers/wings_providers.dart';
+import 'package:serafim/src/presentation/view/wings_page.dart';
+import 'package:serafim/src/utils/halo_style.dart';
+import 'package:serafim/src/utils/wing_mark.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/user_card.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
@@ -152,6 +157,8 @@ class ProfilePage extends ConsumerWidget {
               const SizedBox(height: 24),
 
               // --- Friends ---
+              const _WingsCard(),
+              const SizedBox(height: 16),
               const _FriendsSection(),
               if (user != null) ProfilePosts(userId: user.id),
             ],
@@ -285,13 +292,14 @@ class _FriendsBox extends StatelessWidget {
   }
 }
 
-class _FriendRow extends StatelessWidget {
+class _FriendRow extends ConsumerWidget {
   const _FriendRow({required this.friend});
 
   final PublicUser friend;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final haloLit = ref.watch(haloLitProvider(haloKey(friend)));
     return GestureDetector(
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -308,6 +316,7 @@ class _FriendRow extends StatelessWidget {
           children: [
             TappableAvatar(
               size: 36,
+              halo: haloLit,
               heroTag: 'friends:${friend.id}',
               name: friend.displayName,
               image: avatarImage(friend.profilePic),
@@ -568,6 +577,60 @@ class UidRow extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Your Wings, n of 6": opens the page to choose them.
+class _WingsCard extends ConsumerWidget {
+  const _WingsCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final wings = ref.watch(wingsProvider);
+    return GestureDetector(
+      key: const ValueKey('wings-card'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const WingsPage())),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.paperAlt,
+          border: Border.all(
+            color: haloColor.withValues(alpha: 0.8),
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            const WingMark(size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'YOUR WINGS (${wings.length}/$maxWings)',
+                    style: AppTextStyles.eyebrow,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    wings.isEmpty
+                        ? 'Name up to six closest friends.'
+                        : wings.map((w) => w.displayName).join(', '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.smallDim,
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.textDim),
+          ],
         ),
       ),
     );

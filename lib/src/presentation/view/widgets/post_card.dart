@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/post_providers.dart';
-import 'package:serafim/src/providers/relation_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/data/models/post.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -58,14 +57,17 @@ class PostCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final circle = post.circle;
     final me = ref.watch(currentAccountIdProvider);
-    // Any follow tap still on its way is laid over what the server said.
-    final author = watchWithPending(ref, post.author);
     // What the person just did shows at once; see SparkController.
     final spark =
         ref.watch(sparkOverridesProvider.select((m) => m['p:${post.id}'])) ??
         (sparked: post.sparked, count: post.sparkCount);
-    final canFollow = me != null && author.id != me;
-    final following = author.isFollowing;
+    // Your following list decides, not the post's own snapshot of its author
+    // (see followingIdsProvider). Null only until the list first arrives.
+    final isFollowing = me == null || post.author.id == me
+        ? null
+        : watchIsFollowing(ref, post.author);
+    final canFollow = isFollowing != null;
+    final following = isFollowing ?? false;
     final isMine = me != null && post.author.id == me;
     final canDelete = isMine || canManage;
 
@@ -104,13 +106,7 @@ class PostCard extends ConsumerWidget {
                           GestureDetector(
                             // Shows the new state at once; tapping "following"
                             // takes the follow back.
-                            onTap: () => following
-                                ? ref
-                                      .read(socialActionsProvider)
-                                      .unfollow(author.id)
-                                : ref
-                                      .read(socialActionsProvider)
-                                      .follow(author.id),
+                            onTap: () => _toggleFollow(context, ref, following),
                             behavior: HitTestBehavior.opaque,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
@@ -240,6 +236,22 @@ class PostCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Follows or unfollows the author. Every card by them updates at once; if
+  /// the server refuses, they all go back and the reason is shown.
+  Future<void> _toggleFollow(
+    BuildContext context,
+    WidgetRef ref,
+    bool following,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final error = await ref
+        .read(socialActionsProvider)
+        .setFollowing(post.author.id, !following);
+    if (error != null) {
+      messenger.showSnackBar(SnackBar(content: Text(error)));
+    }
   }
 
   /// Asks before deleting, then deletes.

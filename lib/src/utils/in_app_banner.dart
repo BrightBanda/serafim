@@ -170,13 +170,27 @@ class _BannerViewState extends State<_BannerView>
           padding: EdgeInsets.fromLTRB(12, top + 8, 12, 0),
           child: Material(
             type: MaterialType.transparency,
-            child: GestureDetector(
-              onTap: _tap,
-              // Flick it up to dismiss.
-              onVerticalDragEnd: (d) {
-                if ((d.primaryVelocity ?? 0) < -150) _close();
+            // Swipe it away to either side to dismiss. It follows the finger
+            // and flies off; letting go early lets it spring back.
+            child: Dismissible(
+              key: const ValueKey('in-app-banner'),
+              direction: DismissDirection.horizontal,
+              dismissThresholds: const {
+                DismissDirection.startToEnd: 0.3,
+                DismissDirection.endToStart: 0.3,
               },
-              child: _card(),
+              onDismissed: (_) {
+                _closing = true;
+                widget.controller.onRemoved?.call();
+              },
+              child: GestureDetector(
+                onTap: _tap,
+                // Flick it up to dismiss.
+                onVerticalDragEnd: (d) {
+                  if ((d.primaryVelocity ?? 0) < -150) _close();
+                },
+                child: _card(),
+              ),
             ),
           ),
         ),

@@ -17,12 +17,17 @@ import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/presentation/view/chat_background_page.dart';
 import 'package:serafim/src/presentation/view/forward_page.dart';
+import 'package:serafim/src/providers/halo_providers.dart';
 import 'package:serafim/src/providers/typing_providers.dart';
 import 'package:serafim/src/utils/chat/reply_controller.dart';
 import 'package:serafim/src/utils/chat/typing_bubble.dart';
 import 'package:serafim/src/utils/chat/typing_broadcaster.dart';
 import 'package:serafim/src/utils/settled_sheet.dart';
+import 'package:serafim/src/utils/text_edit_dialog.dart';
 import 'package:serafim/src/presentation/view/image_preview_page.dart';
+import 'package:serafim/src/presentation/view/draw_together_page.dart';
+import 'package:serafim/src/presentation/view/scribble_page.dart';
+import 'package:serafim/src/providers/draw_together_providers.dart';
 import 'package:serafim/src/providers/wallpaper_providers.dart';
 import 'package:serafim/src/utils/chat/chat_background.dart';
 import 'package:serafim/src/utils/chat/chat_bubble.dart';
@@ -241,6 +246,91 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     }
   }
 
+  /// The pencil: a scribble to send, or a canvas to draw on together.
+  Future<void> _handlePencil() async {
+    if (ref.read(currentUserProvider) == null || _attaching) return;
+    final choice = await showSettledSheet<String>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const ValueKey('pencil-scribble'),
+              leading: const Icon(Icons.draw_outlined),
+              title: Text('Scribble', style: AppTextStyles.body),
+              subtitle: Text(
+                'Draw a quick note and send it',
+                style: AppTextStyles.smallDim,
+              ),
+              onTap: () => Navigator.pop(ctx, 'scribble'),
+            ),
+            ListTile(
+              key: const ValueKey('pencil-together'),
+              leading: const Icon(Icons.people_alt_outlined),
+              title: Text('Draw together', style: AppTextStyles.body),
+              subtitle: Text(
+                'Draw on the same canvas, live',
+                style: AppTextStyles.smallDim,
+              ),
+              onTap: () => Navigator.pop(ctx, 'together'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'together') {
+      await _startDrawTogether();
+    } else if (choice == 'scribble') {
+      await _handleScribble();
+    }
+  }
+
+  Future<void> _startDrawTogether() async {
+    final session = ref.read(drawTogetherProvider.notifier);
+    if (session.busy) {
+      // Already drawing with someone: go back to it.
+      await openDrawTogether(Navigator.of(context));
+      return;
+    }
+    if (!session.invite(widget.recipientId)) {
+      _toast("Couldn't start. Check your connection.", error: true);
+      return;
+    }
+    await openDrawTogether(Navigator.of(context));
+  }
+
+  /// A hand-drawn note: draw it, then it goes out like a picture.
+  Future<void> _handleScribble() async {
+    if (ref.read(currentUserProvider) == null || _attaching) return;
+    final png = await scribble(context);
+    if (png == null || !mounted) return;
+    setState(() => _attaching = true);
+    try {
+      await ref
+          .read(chatViewModelProvider.notifier)
+          .sendMessage(
+            roomId: _roomId,
+            recipientId: widget.recipientId,
+            groupId: widget.groupId,
+            imageBytes: png,
+            replyToId: _reply.value?.messageId,
+          );
+      _reply.clear();
+      _scheduleScrollToBottom();
+    } catch (error) {
+      _toast(
+        humanError(error, fallback: "Couldn't send that scribble."),
+        error: true,
+      );
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+  }
+
   @override
   void dispose() {
     final room = _registeredRoom;
@@ -298,6 +388,12 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   }
 
   /// Who sent [senderId]'s messages, as shown in this chat.
+  /// Whether this friend's halo is lit ("free to chat").
+  bool _friendHaloLit() {
+    final friend = ref.watch(knownPersonProvider(widget.recipientId));
+    return friend != null && ref.watch(haloLitProvider(haloKey(friend)));
+  }
+
   String _nameOf(String senderId) {
     final gid = widget.groupId;
     if (gid == null) return widget.contactName;
@@ -465,46 +561,25 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     );
   }
 
+  /// Edits one of our messages. The dialog stays open until the edit has
+  /// been sent, and shows why if it could not be.
   Future<void> _editMessage(LocalMessage message) async {
-    final controller = TextEditingController(text: message.textContent ?? '');
-    final newText = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.paperAlt,
-        title: Text(
-          'Edit message',
-          style: AppTextStyles.displayHeading.copyWith(fontSize: 20),
-        ),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          minLines: 1,
-          maxLines: 5,
-          maxLength: 4000,
-          style: AppTextStyles.fieldInput,
-          cursorColor: AppColors.primary,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+    final original = message.textContent ?? '';
+    await showTextEditDialog(
+      context,
+      title: 'Edit message',
+      initial: original,
+      maxLines: 5,
+      maxLength: 4000,
+      validate: (text) =>
+          text.trim().isEmpty ? 'A message cannot be empty.' : null,
+      onSave: (text) async {
+        if (text.trim() == original) return null; // Nothing changed.
+        return ref
+            .read(chatViewModelProvider.notifier)
+            .editMessage(message.messageId, text);
+      },
     );
-    controller.dispose();
-
-    if (newText == null || newText.trim() == (message.textContent ?? '')) {
-      return;
-    }
-    final error = await ref
-        .read(chatViewModelProvider.notifier)
-        .editMessage(message.messageId, newText);
-    if (error != null) _toast(error, error: true);
   }
 
   /// Asks how to delete: for me, or (own sent messages) for everyone.
@@ -961,6 +1036,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                 TappableAvatar(
                   size: 30,
                   isGroup: widget.isGroup,
+                  halo: !widget.isGroup && _friendHaloLit(),
                   heroTag: 'thread:${widget.recipientId}',
                   name: widget.contactName,
                   image:
@@ -1211,6 +1287,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                       focusNode: _inputFocus,
                       onSend: _handleSend,
                       onAttach: _handleAttach,
+                      onScribble: _handlePencil,
                       attachDisabledReason: attachDisabledReason,
                       attachBusy: _attaching,
                       onStickers: _toggleStickers,

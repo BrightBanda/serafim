@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:serafim/src/presentation/view/widgets/profile_posts.dart';
+import 'package:serafim/src/utils/wing_toggle.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -107,6 +108,13 @@ class UserProfilePage extends ConsumerWidget {
                       showMessage: !fromChat,
                     ),
                   ),
+                  if (user.isFriend && !isMe) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.center,
+                      child: WingToggle(user: user),
+                    ),
+                  ],
                 ],
               ),
             ),

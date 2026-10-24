@@ -1,5 +1,6 @@
 // lib/src/providers/websocket_providers.dart
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/services/websocket_service.dart';
 import 'package:serafim/src/providers/app_providers.dart'; // Contains appConfigProvider
@@ -10,8 +11,20 @@ import 'package:serafim/src/providers/network_providers.dart';
 final webSocketServiceProvider = Provider<WebSocketService>((ref) {
   final service = WebSocketService();
 
+  // Coming back to the app is when a dead link must be replaced, so a message
+  // that arrived meanwhile shows up at once.
+  final observer = _ResumeObserver(service);
+  try {
+    WidgetsBinding.instance.addObserver(observer);
+  } catch (_) {
+    // No Flutter binding (a plain unit test): nothing to observe.
+  }
+
   // Clean up when the provider is disposed
   ref.onDispose(() {
+    try {
+      WidgetsBinding.instance.removeObserver(observer);
+    } catch (_) {}
     service.disconnect();
   });
 
@@ -48,3 +61,24 @@ final webSocketStreamProvider = StreamProvider<Map<String, dynamic>>((ref) {
 
   return wsService.messageStream ?? const Stream.empty();
 });
+
+/// Tells the socket when the app leaves and returns.
+class _ResumeObserver with WidgetsBindingObserver {
+  _ResumeObserver(this._service);
+
+  final WebSocketService _service;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        _service.onAppPaused();
+      case AppLifecycleState.resumed:
+        _service.onAppResumed();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        break;
+    }
+  }
+}

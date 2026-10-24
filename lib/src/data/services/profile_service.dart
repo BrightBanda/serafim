@@ -33,11 +33,48 @@ class ProfileService {
   Future<Profile> update(ProfileUpdateRequest request) =>
       _request('PUT', '/profile/me', body: request.toJson());
 
+  /// `PUT /profile/me/halo`: lights your Halo for [minutes]. Returns when it
+  /// will go out. [wingsOnly] limits who sees it to your Wings.
+  Future<DateTime> lightHalo(int minutes, {bool wingsOnly = false}) async {
+    final until = await _halo(
+      'PUT',
+      body: {'minutes': minutes, 'audience': wingsOnly ? 'wings' : 'friends'},
+    );
+    if (until == null) {
+      throw const ApiException('The server sent an unexpected response.');
+    }
+    return until;
+  }
+
+  /// `DELETE /profile/me/halo`: puts it out.
+  Future<void> dimHalo() async {
+    await _halo('DELETE');
+  }
+
+  Future<DateTime?> _halo(String method, {Map<String, dynamic>? body}) async {
+    try {
+      final response = await _dio.request<dynamic>(
+        '/profile/me/halo',
+        data: body,
+        options: Options(method: method),
+      );
+      final data = response.data;
+      final until = data is Map<String, dynamic> ? data['halo_until'] : null;
+      return until is String ? DateTime.tryParse(until)?.toUtc() : null;
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
   /// `GET /profile/{username}` — any signed-in user may read any profile.
   Future<Profile> getByUsername(String username) =>
       _request('GET', '/profile/${Uri.encodeComponent(username)}');
 
-  Future<Profile> _request(String method, String path, {Map<String, dynamic>? body}) async {
+  Future<Profile> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
     try {
       final response = await _dio.request<dynamic>(
         path,

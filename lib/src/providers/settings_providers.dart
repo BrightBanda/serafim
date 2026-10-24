@@ -44,6 +44,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
   static const _readReceipts = 'settings.readReceipts';
   static const _alerts = 'settings.inAppAlerts';
   static const _sound = 'settings.alertSound';
+  static const _wingsThrough = 'settings.wingsBreakThrough';
   static const _quality = 'settings.imageQuality';
   static const _retention = 'settings.retentionDays';
   static const _textSize = 'settings.textSize';
@@ -60,6 +61,7 @@ class SettingsNotifier extends Notifier<AppSettings> {
       sendReadReceipts: p.getBool(_readReceipts) ?? true,
       inAppAlerts: p.getBool(_alerts) ?? true,
       alertSound: p.getBool(_sound) ?? true,
+      wingsBreakThrough: p.getBool(_wingsThrough) ?? true,
       imageQuality: ImageQuality.parse(p.getString(_quality)),
       retentionDays: p.getInt(_retention) ?? 0,
       textSize: TextSize.parse(p.getString(_textSize)),
@@ -77,6 +79,11 @@ class SettingsNotifier extends Notifier<AppSettings> {
   void setInAppAlerts(bool value) {
     state = state.copyWith(inAppAlerts: value);
     _prefs.setBool(_alerts, value);
+  }
+
+  void setWingsBreakThrough(bool value) {
+    state = state.copyWith(wingsBreakThrough: value);
+    _prefs.setBool(_wingsThrough, value);
   }
 
   void setAlertSound(bool value) {

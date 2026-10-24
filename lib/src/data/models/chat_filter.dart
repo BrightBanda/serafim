@@ -1,6 +1,6 @@
 /// A filter on the chat list: All, Friends, Unread, Groups, or one the
 /// person made themselves.
-enum ChatFilterKind { all, friends, unread, groups, custom }
+enum ChatFilterKind { all, friends, unread, groups, custom, wings }
 
 /// A named set of chats.
 ///
@@ -36,8 +36,14 @@ class ChatFilter {
     kind: ChatFilterKind.groups,
   );
 
+  static const wings = ChatFilter(
+    id: 'wings',
+    name: 'Wings',
+    kind: ChatFilterKind.wings,
+  );
+
   /// The built-ins, in the order they are shown.
-  static const builtIns = [all, friends, unread, groups];
+  static const builtIns = [all, wings, friends, unread, groups];
 
   final String id;
   final String name;

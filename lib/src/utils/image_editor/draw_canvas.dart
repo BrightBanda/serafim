@@ -19,6 +19,16 @@ class StrokePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final img = image;
     if (img != null) canvas.drawImage(img, Offset.zero, Paint());
+
+    // The pen strokes live in a layer of their own, so an eraser stroke clears
+    // them and nothing else — never the picture or paper underneath.
+    final needsLayer = strokes.any((s) => s.erase);
+    if (needsLayer) canvas.saveLayer(Offset.zero & size, Paint());
+    _paintStrokes(canvas);
+    if (needsLayer) canvas.restore();
+  }
+
+  void _paintStrokes(Canvas canvas) {
     for (final s in strokes) {
       if (s.points.isEmpty) continue;
       final paint = Paint()
@@ -28,6 +38,7 @@ class StrokePainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round
         ..strokeWidth = s.width * scale
         ..isAntiAlias = true;
+      if (s.erase) paint.blendMode = BlendMode.clear;
       final pts = [for (final p in s.points) p * scale];
       if (pts.length == 1) {
         // A tap: a dot.

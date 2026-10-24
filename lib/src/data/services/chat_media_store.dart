@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:serafim/src/utils/image_editor/scribble.dart';
 
 /// On-device storage for chat image attachments. Images never go to cloud
 /// storage; the Isar row keeps the path (`localMediaPath`) and the bytes live
@@ -59,7 +60,11 @@ String imageExtension(Uint8List bytes) {
   }
 
   if (starts(const [0x47, 0x49, 0x46, 0x38])) return 'gif';
-  if (starts(const [0x89, 0x50, 0x4E, 0x47])) return 'png';
+  if (starts(const [0x89, 0x50, 0x4E, 0x47])) {
+    // A scribble is a PNG with a label inside; it is kept under its own name
+    // so the chat can show it as a drawing.
+    return hasScribbleMarker(bytes) ? 'scribble.png' : 'png';
+  }
   if (starts(const [0x52, 0x49, 0x46, 0x46]) &&
       starts(const [0x57, 0x45, 0x42, 0x50], 8)) {
     return 'webp';

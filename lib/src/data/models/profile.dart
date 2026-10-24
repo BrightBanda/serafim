@@ -27,6 +27,8 @@ class Profile {
     this.bio,
     this.lockProfile = false,
     this.groupAddPrivacy = GroupAddPrivacy.everyone,
+    this.haloUntil,
+    this.haloAudience = 'friends',
   });
 
   final String userId;
@@ -40,6 +42,12 @@ class Profile {
   /// Privacy: when true, other people cannot see this user's friends,
   /// followers or following.
   final bool lockProfile;
+
+  /// Until when your own Halo is lit, or null when it is off.
+  final DateTime? haloUntil;
+
+  /// Who sees it: `friends` or `wings`.
+  final String haloAudience;
 
   /// A short self-description, or null when there is none.
   final String? bio;
@@ -60,6 +68,8 @@ class Profile {
     'bio': bio,
     'lock_profile': lockProfile,
     'group_add_privacy': groupAddPrivacy.name,
+    'halo_until': haloUntil?.toUtc().toIso8601String(),
+    'halo_audience': haloAudience,
     'created_at': createdAt.toUtc().toIso8601String(),
     'updated_at': updatedAt.toUtc().toIso8601String(),
   };
@@ -80,6 +90,10 @@ class Profile {
       groupAddPrivacy: GroupAddPrivacy.parse(
         json['group_add_privacy'] as String?,
       ),
+      haloUntil: json['halo_until'] is String
+          ? DateTime.tryParse(json['halo_until'] as String)?.toUtc()
+          : null,
+      haloAudience: json['halo_audience'] as String? ?? 'friends',
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );

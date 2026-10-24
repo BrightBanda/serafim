@@ -245,7 +245,11 @@ class TappableAvatar extends StatelessWidget {
     required this.name,
     this.size = 38,
     this.isGroup = false,
+    this.halo = false,
   });
+
+  /// Their halo is lit.
+  final bool halo;
 
   final ImageProvider? image;
   final String heroTag;
@@ -273,6 +277,7 @@ class TappableAvatar extends StatelessWidget {
             size: size,
             imageProvider: image,
             isGroup: isGroup,
+            halo: halo,
           ),
         ),
       ),
