@@ -211,23 +211,6 @@ void smile(
   );
 }
 
-/// A tongue hanging from a point.
-void tongueAt(
-  Canvas c,
-  DoodleInk ink,
-  Offset at, {
-  double w = 4,
-  double h = 6,
-}) {
-  final t = Path()
-    ..moveTo(at.dx - w / 2, at.dy)
-    ..lineTo(at.dx - w / 2, at.dy + h * 0.6)
-    ..quadraticBezierTo(at.dx, at.dy + h * 1.3, at.dx + w / 2, at.dy + h * 0.6)
-    ..lineTo(at.dx + w / 2, at.dy);
-  c.drawPath(t, ink.pink);
-  c.drawPath(t, ink.line);
-}
-
 void blush(Canvas c, DoodleInk ink, {double dx = 9, double y = 3}) {
   c.drawCircle(Offset(-dx, y), 2.0, ink.pink);
   c.drawCircle(Offset(dx, y), 2.0, ink.pink);

@@ -6,9 +6,11 @@ import 'package:serafim/src/presentation/view/settings/chat_settings_page.dart';
 import 'package:serafim/src/presentation/view/settings/notification_settings_page.dart';
 import 'package:serafim/src/presentation/view/settings/privacy_settings_page.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/providers/update_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/setting_tile.dart';
+import 'package:serafim/src/utils/settings_widgets.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -99,6 +101,9 @@ class SettingsPage extends ConsumerWidget {
               subtitle: 'Export chats, back up to Google Drive',
               onTap: () => _open(context, const BackupSettingsPage()),
             ),
+            const SizedBox(height: 24),
+            const SettingsSectionLabel('About'),
+            const _AboutCard(),
             const SizedBox(height: 36),
             SerafimButton(
               label: 'Log out',
@@ -106,6 +111,57 @@ class SettingsPage extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Which version this is, and who made it.
+class _AboutCard extends ConsumerWidget {
+  const _AboutCard();
+
+  static const developer = 'daylight';
+  static const year = '2026';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Read from the installed app (Android), so it is always the real one.
+    final installed = ref.watch(installedVersionProvider);
+    final version = installed.when(
+      data: (v) => v == null ? 'Unknown' : '${v.name} (build ${v.code})',
+      loading: () => '…',
+      error: (_, __) => 'Unknown',
+    );
+
+    Widget row(String label, String value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Text(label, style: AppTextStyles.smallDim),
+          const Spacer(),
+          Text(
+            value,
+            style: AppTextStyles.body.copyWith(
+              color: AppColors.text,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.paperAlt,
+        border: Border.all(color: AppColors.lineSoft, width: 1.5),
+      ),
+      child: Column(
+        children: [
+          row('Version', version),
+          row('Developer', developer),
+          row('Year', year),
+        ],
       ),
     );
   }

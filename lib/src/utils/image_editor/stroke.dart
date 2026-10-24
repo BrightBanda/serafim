@@ -19,10 +19,6 @@ class Stroke {
   final bool erase;
 }
 
-/// The eraser is this many times wider than the pen of the same size, since
-/// rubbing out with a fine tip is tedious.
-const double eraserWidthFactor = 2.5;
-
 /// The seven colours to draw with.
 const List<Color> drawColors = [
   Color(0xFFFFFFFF), // white
@@ -39,6 +35,15 @@ const List<double> drawWidths = [3, 8, 16];
 
 const int defaultColorIndex = 2; // red
 const int defaultWidthIndex = 1; // medium
+
+/// The three eraser sizes, in the same units as [drawWidths]: bigger than
+/// the pens, since rubbing out wants room.
+const List<double> eraserWidths = [8, 20, 44];
+const int defaultEraserIndex = 1; // medium
+
+/// The line width for size [index] of the pen, or of the eraser.
+double strokeWidthFor(int index, {required bool erase}) =>
+    erase ? eraserWidths[index] : drawWidths[index];
 
 /// How much to multiply on-screen lengths by to get picture pixels, so a line
 /// that looks 8 px thick on a 360 px wide screen is 8 × (image / 360) px in the

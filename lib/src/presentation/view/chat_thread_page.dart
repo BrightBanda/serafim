@@ -27,6 +27,7 @@ import 'package:serafim/src/utils/text_edit_dialog.dart';
 import 'package:serafim/src/presentation/view/image_preview_page.dart';
 import 'package:serafim/src/presentation/view/draw_together_page.dart';
 import 'package:serafim/src/presentation/view/scribble_page.dart';
+import 'package:serafim/src/presentation/view/widgets/shared_post_card.dart';
 import 'package:serafim/src/providers/draw_together_providers.dart';
 import 'package:serafim/src/providers/wallpaper_providers.dart';
 import 'package:serafim/src/utils/chat/chat_background.dart';
@@ -463,8 +464,10 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   }) async {
     if (message.isDeleted) return;
 
-    // A sticker's "text" is its id, not something to copy or edit.
-    final text = message.type == MessageType.sticker
+    // A sticker's or shared post's "text" is its id, not something to copy
+    // or edit.
+    final text =
+        message.type == MessageType.sticker || message.type == MessageType.post
         ? ''
         : message.textContent ?? '';
     final isImage =
@@ -665,6 +668,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     if (m.isDeleted) return 'Message deleted';
     if (m.type == MessageType.sticker) return '🙂 Sticker';
     if (m.type == MessageType.audio) return '🎤 Voice message';
+    if (m.type == MessageType.post) return '📝 Post';
     final text = (m.textContent ?? '').trim();
     if (m.type == MessageType.image) {
       return text.isEmpty ? '📷 Photo' : '📷 $text';
@@ -1207,7 +1211,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                     byId,
                                     currentUserId,
                                   ),
-                                  message: message.textContent ?? '',
+                                  // A shared post's text is its id: the card
+                                  // below shows the post instead.
+                                  message: message.type == MessageType.post
+                                      ? ''
+                                      : message.textContent ?? '',
                                   imagePath: message.type == MessageType.image
                                       ? message.localMediaPath
                                       : null,
@@ -1243,6 +1251,18 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                               )
                                               .downloadVoice(message.messageId),
                                         )
+                                      : message.type == MessageType.post &&
+                                            !message.isDeleted
+                                      ? SharedPostCard(
+                                          postId: message.textContent ?? '',
+                                          outgoing: isOutgoing,
+                                          onLongPress: () =>
+                                              _showMessageActions(
+                                                message,
+                                                isOutgoing: isOutgoing,
+                                                senderLabel: who,
+                                              ),
+                                        )
                                       : _linkPreviewFor(message, isOutgoing),
                                   onLongPress: () => _showMessageActions(
                                     message,
@@ -1277,6 +1297,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                   ),
                 ),
 
+                if (widget.groupId == null)
+                  DrawInviteBar(peerId: widget.recipientId),
                 if (removedFromGroup)
                   const _NotInGroup()
                 else

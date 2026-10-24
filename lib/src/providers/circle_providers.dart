@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/circle.dart';
 import 'package:serafim/src/data/services/circle_service.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
@@ -12,15 +13,6 @@ final circleServiceProvider = Provider<CircleService>(
 final myCirclesProvider = FutureProvider<List<CircleSummary>>((ref) async {
   if (ref.watch(currentAccountIdProvider) == null) return const [];
   return ref.watch(circleServiceProvider).mine();
-});
-
-/// One of your Circles by id, from the list (null if you are not in it).
-final myCircleProvider = Provider.family<CircleSummary?, String>((ref, id) {
-  final circles = ref.watch(myCirclesProvider).value ?? const <CircleSummary>[];
-  for (final c in circles) {
-    if (c.id == id) return c;
-  }
-  return null;
 });
 
 /// Circles to look at. [section] is `for_you` or `popular`.
@@ -203,18 +195,30 @@ class CircleSettingsController extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
-  Future<void> setMuted(String circleId, bool muted) => _run(
-    circleId,
-    () => ref
-        .read(circleServiceProvider)
-        .notificationSettings(circleId, muted: muted),
-  );
-
-  Future<void> _run(String circleId, Future<Object?> Function() action) async {
-    state = await AsyncValue.guard(() async {
-      await action();
+  /// Changes the given switches. Returns null when saved, or why not.
+  Future<String?> change(
+    String circleId, {
+    bool? muted,
+    bool? posts,
+    bool? replies,
+    bool? mentions,
+  }) async {
+    try {
+      await ref
+          .read(circleServiceProvider)
+          .notificationSettings(
+            circleId,
+            muted: muted,
+            notifyPosts: posts,
+            notifyReplies: replies,
+            notifyMentions: mentions,
+          );
       ref.invalidate(circleDetailProvider(circleId));
-    });
+      ref.invalidate(myCirclesProvider);
+      return null;
+    } catch (error) {
+      return humanError(error);
+    }
   }
 }
 

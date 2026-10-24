@@ -197,7 +197,7 @@ void main() {
     service.connect('http://x', 'me', token);
     await settle(t);
     final heard = <String>[];
-    service.messageStream!.listen((m) => heard.add(m['type'] as String));
+    service.events.listen((m) => heard.add(m['type'] as String));
 
     opened.single.serverSays({'type': 'pong'});
     opened.single.serverSays({'type': 'message'});

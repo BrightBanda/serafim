@@ -59,7 +59,12 @@ class WebSocketService {
   void _log(String message) => trace('ws', message);
 
   WebSocketChannel? _channel;
-  StreamController<Map<String, dynamic>>? _controller;
+
+  /// Every frame from the server, across reconnects and accounts. Created
+  /// with the service and closed only by [disconnect], so a subscriber keeps
+  /// hearing events however often the link is replaced.
+  final StreamController<Map<String, dynamic>> _events =
+      StreamController<Map<String, dynamic>>.broadcast();
   Timer? _reconnectTimer;
   Timer? _heartbeat;
   Timer? _deadline;
@@ -74,8 +79,9 @@ class WebSocketService {
   bool _heardSincePing = true;
   DateTime? _pausedAt;
 
-  /// Returns a stream of incoming WebSocket JSON messages
-  Stream<Map<String, dynamic>>? get messageStream => _controller?.stream;
+  /// Incoming frames from the server (decoded JSON), plus a
+  /// `{'type': 'status', 'status': 'disconnected'}` when the link drops.
+  Stream<Map<String, dynamic>> get events => _events.stream;
 
   /// Whether a socket is currently open (it may still turn out to be dead).
   bool get hasChannel => _channel != null;
@@ -90,7 +96,6 @@ class WebSocketService {
     _tokenProvider = tokenProvider;
     _isExplicitDisconnect = false;
 
-    _controller ??= StreamController<Map<String, dynamic>>.broadcast();
     _heartbeat?.cancel();
     _heartbeat = Timer.periodic(heartbeatEvery, (_) => _ping());
     _attempt = 0;
@@ -158,7 +163,7 @@ class WebSocketService {
             _pongSeen = true;
             return;
           }
-          _controller?.add(decoded);
+          if (!_events.isClosed) _events.add(decoded);
         },
         onError: (error) {
           _log('error: $error');
@@ -181,8 +186,8 @@ class WebSocketService {
   /// Lets listeners know the link dropped; the server only ever announces
   /// 'connected', so without this the UI would claim to be online forever.
   void _notifyDisconnected() {
-    if (_isExplicitDisconnect) return;
-    _controller?.add({'type': 'status', 'status': 'disconnected'});
+    if (_isExplicitDisconnect || _events.isClosed) return;
+    _events.add({'type': 'status', 'status': 'disconnected'});
   }
 
   /// Tries again after the next wait in [backoff].
@@ -256,6 +261,18 @@ class WebSocketService {
     return false;
   }
 
+  /// Closes the link and stops reconnecting (someone signed out), but keeps
+  /// [events] open for whoever signs in next.
+  void close() {
+    _isExplicitDisconnect = true;
+    _reconnectTimer?.cancel();
+    _heartbeat?.cancel();
+    _deadline?.cancel();
+    _channel?.sink.close();
+    _channel = null;
+    _lastUserId = null;
+  }
+
   /// Disconnects the socket explicitly (stops auto-reconnect)
   void disconnect() {
     _isExplicitDisconnect = true;
@@ -263,8 +280,7 @@ class WebSocketService {
     _heartbeat?.cancel();
     _deadline?.cancel();
     _channel?.sink.close();
-    _controller?.close();
+    _events.close();
     _channel = null;
-    _controller = null;
   }
 }

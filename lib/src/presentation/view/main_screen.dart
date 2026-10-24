@@ -108,7 +108,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     });
   }
 
-  /// Tabs actually shown, in the order Feed · Whispers · Discover · Circles.
+  /// Tabs actually shown, in the order Feed · Chats · Discover · Circles.
   /// Feed and Circles only appear when their feature is on — a tab that
   /// cannot do anything is worse than no tab. Profile is not a tab: it lives
   /// in the menu at the right of every top bar.
@@ -197,7 +197,7 @@ final List<AppBottomNavItem> _navItems = [
   const AppBottomNavItem(
     icon: Icons.chat_bubble_outline,
     selectedIcon: Icons.chat_bubble,
-    label: 'Whispers',
+    label: 'Chats',
   ),
   const AppBottomNavItem(
     icon: Icons.explore_outlined,

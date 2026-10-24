@@ -4,7 +4,8 @@ part 'local_chat_message.g.dart';
 
 /// New values go at the END: the index is what is stored on the device.
 /// `audio` is a voice note; `sticker` keeps its sticker id in [textContent].
-enum MessageType { text, image, video, audio, sticker }
+/// Stored by position: add new kinds at the end only.
+enum MessageType { text, image, video, audio, sticker, post }
 
 enum MessageStatus { sending, sent, delivered, read, failed }
 

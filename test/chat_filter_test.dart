@@ -13,6 +13,7 @@ import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/presentation/view/chat_list_page.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/providers/chat_list_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
@@ -185,6 +186,78 @@ void main() {
     expect(find.text('Noisy Stranger'), findsOneWidget);
     expect(find.text('Readable Friend'), findsNothing);
   });
+
+  testWidgets('holding a chat offers clear, view profile and remove', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final cleared = <String>[];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        retry: noAutoRetry,
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          currentUserProvider.overrideWithValue(
+            AppUser(id: me, isActive: true, createdAt: DateTime.utc(2026)),
+          ),
+          currentAccountIdProvider.overrideWithValue(me),
+          friendsProvider.overrideWith(
+            (ref) => [person('f1', 'Ann'), person('f2', 'Bo')],
+          ),
+          conversationPeerIdsProvider.overrideWith(() => _FixedPeers([])),
+          chatRoomsProvider.overrideWith(_NoRooms.new),
+          roomPreviewsProvider.overrideWithValue({}),
+          chatViewModelProvider.overrideWith(_FakeChat.new),
+          chatListActionsProvider.overrideWith(
+            (ref) => _RecordingActions(ref, cleared),
+          ),
+        ],
+        child: const MaterialApp(home: ChatListPage()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    Future<void> choose(String name, String option, String confirm) async {
+      await tester.longPress(find.text(name));
+      await tester.pumpAndSettle();
+      expect(find.text('Clear chat'), findsOneWidget);
+      expect(find.text('View profile'), findsOneWidget);
+      expect(find.text('Remove chat'), findsOneWidget);
+      await tester.tap(find.text(option));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(confirm));
+      await tester.pumpAndSettle();
+    }
+
+    // Clearing keeps the chat on the list.
+    await choose('Bo', 'Clear chat', 'Clear');
+    expect(cleared, [ChatViewModel.buildRoomId(me, 'f2')]);
+    expect(find.text('Bo'), findsOneWidget);
+
+    // Removing clears it and takes it off, and that is remembered.
+    await choose('Ann', 'Remove chat', 'Remove');
+    final annRoom = ChatViewModel.buildRoomId(me, 'f1');
+    expect(cleared.last, annRoom);
+    expect(find.text('Ann'), findsNothing);
+    expect(find.text('Bo'), findsOneWidget);
+    expect(LocalCache(prefs).removedChats(me).keys, [annRoom]);
+  });
+}
+
+/// Records what was cleared instead of touching a database.
+class _RecordingActions extends ChatListActions {
+  _RecordingActions(super.ref, this.cleared);
+
+  final List<String> cleared;
+
+  @override
+  Future<void> clear(String roomId) async => cleared.add(roomId);
 }
 
 class _FakeChat extends ChatViewModel {

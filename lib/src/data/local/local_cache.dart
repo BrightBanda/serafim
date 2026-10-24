@@ -281,6 +281,23 @@ class LocalCache {
 
   // --- housekeeping ---------------------------------------------------------
 
+  /// Chats the person removed from their list, by room id, with when. A chat
+  /// comes back once something newer arrives in it.
+  Map<String, DateTime> removedChats(String account) =>
+      _read(_key(account, 'removedChats'), (j) {
+        final map = j! as Map<String, dynamic>;
+        return {
+          for (final e in map.entries)
+            e.key: DateTime.fromMillisecondsSinceEpoch(e.value as int),
+        };
+      }) ??
+      {};
+
+  Future<void> saveRemovedChats(String account, Map<String, DateTime> rooms) =>
+      _write(_key(account, 'removedChats'), {
+        for (final e in rooms.entries) e.key: e.value.millisecondsSinceEpoch,
+      });
+
   /// Forgets everything stored for [account] (sign-out, or the account is gone).
   Future<void> clear(String account) async {
     final prefix = '$_version.$account.';

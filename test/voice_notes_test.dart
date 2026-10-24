@@ -344,7 +344,7 @@ void main() {
           currentUserProvider.overrideWithValue(
             AppUser(id: 'me', isActive: true, createdAt: DateTime.utc(2026)),
           ),
-          webSocketStreamProvider.overrideWith((ref) => const Stream.empty()),
+          webSocketEventsProvider.overrideWith((ref) => const Stream.empty()),
           webSocketServiceProvider.overrideWithValue(socket),
           mediaServiceProvider.overrideWithValue(media),
           chatMediaStoreProvider.overrideWithValue(TempStore(dir)),

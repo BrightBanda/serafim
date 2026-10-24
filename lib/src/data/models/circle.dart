@@ -92,6 +92,48 @@ const circleCategories = <String>[
 DateTime? _date(Object? raw) =>
     raw is String ? DateTime.tryParse(raw)?.toUtc() : null;
 
+/// A member's own notification switches for one Circle.
+class CircleNotificationSettings {
+  const CircleNotificationSettings({
+    this.muted = false,
+    this.posts = true,
+    this.replies = true,
+    this.mentions = true,
+  });
+
+  /// Nothing at all from this Circle (it still shows under Joined).
+  final bool muted;
+
+  /// New posts, and comments on your posts.
+  final bool posts;
+
+  /// Replies to your comments.
+  final bool replies;
+
+  /// Being mentioned.
+  final bool mentions;
+
+  CircleNotificationSettings copyWith({
+    bool? muted,
+    bool? posts,
+    bool? replies,
+    bool? mentions,
+  }) => CircleNotificationSettings(
+    muted: muted ?? this.muted,
+    posts: posts ?? this.posts,
+    replies: replies ?? this.replies,
+    mentions: mentions ?? this.mentions,
+  );
+
+  factory CircleNotificationSettings.fromJson(Map<String, dynamic> json) =>
+      CircleNotificationSettings(
+        muted: json['muted'] as bool? ?? false,
+        posts: json['notify_posts'] as bool? ?? true,
+        replies: json['notify_replies'] as bool? ?? true,
+        mentions: json['notify_mentions'] as bool? ?? true,
+      );
+}
+
 /// A Circle as a card (backend `CircleSummary`).
 class CircleSummary {
   const CircleSummary({
@@ -107,6 +149,7 @@ class CircleSummary {
     this.joinedAt,
     this.myRequestPending = false,
     this.iAmBanned = false,
+    this.myNotifications,
   });
 
   final String id;
@@ -127,6 +170,10 @@ class CircleSummary {
 
   /// True when the Circle has banned this person.
   final bool iAmBanned;
+
+  /// Your notification switches for it. Null when you are not a member (or
+  /// the server is too old to say; then everything is on).
+  final CircleNotificationSettings? myNotifications;
 
   bool get isMember => myRole != null;
 
@@ -153,7 +200,29 @@ class CircleSummary {
     joinedAt: _date(json['joined_at']),
     myRequestPending: json['my_request_pending'] as bool? ?? false,
     iAmBanned: json['i_am_banned'] as bool? ?? false,
+    myNotifications: json['my_notifications'] is Map<String, dynamic>
+        ? CircleNotificationSettings.fromJson(
+            json['my_notifications'] as Map<String, dynamic>,
+          )
+        : null,
   );
+}
+
+/// Who takes over a Circle when its owner, [leavingId], leaves: the
+/// longest-standing Overseer, else the longest-standing member. Null when
+/// nobody else is in it (then the Circle is deleted). The same rule the server
+/// applies, so the app can say who it will be before it happens.
+CircleMemberInfo? circleSuccessor(
+  List<CircleMemberInfo> members,
+  String leavingId,
+) {
+  final others = [
+    for (final m in members)
+      if (m.user.id != leavingId) m,
+  ]..sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
+  if (others.isEmpty) return null;
+  return others.where((m) => m.role == CircleRole.overseer).firstOrNull ??
+      others.first;
 }
 
 /// One person in a Circle.

@@ -75,8 +75,16 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
                     const SerafimMark(size: 30),
                     const SizedBox(width: 10),
                   ],
-                  Text(title, style: AppTextStyles.logo),
-                  const Spacer(),
+                  // Takes the room the buttons leave, and shortens rather
+                  // than pushing them off a narrow phone (or large text).
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: AppTextStyles.logo,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
                 if (trailing != null) trailing!,
               ],

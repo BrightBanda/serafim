@@ -15,6 +15,14 @@ enum NotificationKind {
   circlePostPinned,
   circleRoleChanged,
   circleBanned,
+  circleNewPost,
+
+  // About posts outside Circles, and Sparks anywhere.
+  friendPosted,
+  postCommented,
+  commentReplied,
+  postSparked,
+  commentSparked,
   unknown;
 
   static NotificationKind parse(String? raw) => switch (raw) {
@@ -31,11 +39,33 @@ enum NotificationKind {
     'circle_post_pinned' => NotificationKind.circlePostPinned,
     'circle_role_changed' => NotificationKind.circleRoleChanged,
     'circle_banned' => NotificationKind.circleBanned,
+    'circle_new_post' => NotificationKind.circleNewPost,
+    'friend_posted' => NotificationKind.friendPosted,
+    'post_commented' => NotificationKind.postCommented,
+    'comment_replied' => NotificationKind.commentReplied,
+    'post_sparked' => NotificationKind.postSparked,
+    'comment_sparked' => NotificationKind.commentSparked,
     _ => NotificationKind.unknown,
   };
 
   /// Whether this is about a Circle.
   bool get isCircle => name.startsWith('circle');
+
+  /// Whether it is about a post or comment (in a Circle or not), so opening
+  /// it goes to that post.
+  bool get isAboutPost => switch (this) {
+    NotificationKind.friendPosted ||
+    NotificationKind.circleNewPost ||
+    NotificationKind.postCommented ||
+    NotificationKind.circlePostCommented ||
+    NotificationKind.commentReplied ||
+    NotificationKind.circleCommentReplied ||
+    NotificationKind.circleMention ||
+    NotificationKind.circlePostPinned ||
+    NotificationKind.postSparked ||
+    NotificationKind.commentSparked => true,
+    _ => false,
+  };
 
   /// What the other person did, after their name.
   String get action => switch (this) {
@@ -54,6 +84,12 @@ enum NotificationKind {
     NotificationKind.circlePostPinned => 'pinned your post',
     NotificationKind.circleRoleChanged => 'changed your role in a Circle',
     NotificationKind.circleBanned => 'banned you from a Circle',
+    NotificationKind.circleNewPost => 'posted in a Circle you are in',
+    NotificationKind.friendPosted => 'shared a new post',
+    NotificationKind.postCommented => 'commented on your post',
+    NotificationKind.commentReplied => 'replied to your comment',
+    NotificationKind.postSparked => 'sparked your post',
+    NotificationKind.commentSparked => 'sparked your comment',
     NotificationKind.unknown => 'interacted with you',
   };
 
@@ -65,6 +101,10 @@ enum NotificationKind {
     NotificationKind.friendRequest => 'FRIEND REQUEST',
     NotificationKind.friendAccepted => 'NEW FRIEND',
     NotificationKind.newFollower => 'NEW FOLLOWER',
+    NotificationKind.friendPosted => 'NEW POST',
+    NotificationKind.postCommented ||
+    NotificationKind.commentReplied => 'COMMENTS',
+    NotificationKind.postSparked || NotificationKind.commentSparked => 'SPARKS',
     NotificationKind.unknown => 'NOTIFICATION',
     _ => 'CIRCLES',
   };
@@ -78,6 +118,8 @@ class AppNotification {
     required this.isRead,
     required this.createdAt,
     required this.actor,
+    this.circleId,
+    this.postId,
   });
 
   final String id;
@@ -88,6 +130,13 @@ class AppNotification {
   /// Who did it.
   final PublicUser actor;
 
+  /// The Circle a Circle notification is about, when the server says.
+  final String? circleId;
+
+  /// The post it is about (a comment, a reply, a mention, a pin), when the
+  /// server says. Opening the notification goes straight to it.
+  final String? postId;
+
   String get text => kind.describe(actor.displayName);
 
   AppNotification copyWith({bool? isRead}) => AppNotification(
@@ -96,6 +145,8 @@ class AppNotification {
     isRead: isRead ?? this.isRead,
     createdAt: createdAt,
     actor: actor,
+    circleId: circleId,
+    postId: postId,
   );
 
   factory AppNotification.fromJson(Map<String, dynamic> json) {
@@ -105,6 +156,17 @@ class AppNotification {
       isRead: json['is_read'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String).toUtc(),
       actor: PublicUser.fromJson(json['actor'] as Map<String, dynamic>),
+      circleId: idIn(json, 'circle_id'),
+      postId: idIn(json, 'post_id'),
     );
+  }
+
+  /// An id from a notification payload, at the top level or inside its
+  /// `data` map; ids may arrive as strings or numbers.
+  static String? idIn(Map<String, dynamic> json, String key) {
+    final data = json['data'];
+    final raw = json[key] ?? (data is Map ? data[key] : null);
+    final id = raw?.toString();
+    return id == null || id.isEmpty ? null : id;
   }
 }

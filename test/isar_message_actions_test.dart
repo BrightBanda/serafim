@@ -103,6 +103,64 @@ void main() {
     expect((await service.getMessageById('a'))!.textContent, isNull);
   });
 
+  group('clear chat', () {
+    test('removes every message and its files, keeping tombstones for sent '
+        'ones and dropping unsent ones', () async {
+      final file = File('${dir.path}/pic.jpg')..writeAsBytesSync([1]);
+      await service.saveMessage(msg('a'));
+      await service.saveMessage(
+        msg('img', sender: me, recipient: peer, minute: 1)
+          ..type = MessageType.image
+          ..localMediaPath = file.path,
+      );
+      await service.saveMessage(
+        msg(
+          'tmp',
+          sender: me,
+          recipient: peer,
+          status: MessageStatus.sending,
+          minute: 2,
+        ),
+      );
+      await service.saveMessage(msg('other', minute: 3)..roomId = 'me_someone');
+
+      await service.clearRoomForMe(room);
+
+      // Server-known messages stay as hidden, empty tombstones, so a resync
+      // cannot bring them back.
+      for (final id in ['a', 'img']) {
+        final m = (await service.getMessageById(id))!;
+        expect(m.isHiddenForMe, isTrue);
+        expect(m.textContent, isNull);
+        expect(m.localMediaPath, isNull);
+      }
+      expect(file.existsSync(), isFalse);
+      // Never sent: gone, so it is not retried.
+      expect(await service.getMessageById('tmp'), isNull);
+      // The chat has nothing to show; another chat is untouched.
+      expect(await isar.localChatRooms.getByRoomId(room), isNull);
+      expect(await isar.localChatRooms.getByRoomId('me_someone'), isNotNull);
+      expect((await service.getMessageById('other'))!.textContent, 'hi');
+    });
+
+    test('a later edit does not bring a cleared message back', () async {
+      await service.saveMessage(msg('a'));
+      await service.clearRoomForMe(room);
+      await service.applyEdit('a', 'zombie', DateTime.utc(2026, 1, 2));
+      expect((await service.getMessageById('a'))!.textContent, isNull);
+      expect(await isar.localChatRooms.getByRoomId(room), isNull);
+    });
+
+    test('a new message after clearing shows as usual', () async {
+      await service.saveMessage(msg('a'));
+      await service.clearRoomForMe(room);
+      await service.saveMessage(msg('b', text: 'new', minute: 5));
+      final row = (await isar.localChatRooms.getByRoomId(room))!;
+      expect(row.lastMessageText, 'new');
+      expect(row.unreadCount, 1);
+    });
+  });
+
   test('edit/delete of an unknown message is a harmless no-op', () async {
     await service.applyEdit('nope', 'x', DateTime.utc(2026));
     await service.applyDelete('nope');
@@ -303,7 +361,10 @@ void main() {
       final older = await service.getMessagesByIds(['m1', 'nope']);
       expect(older.keys, ['m1']);
       expect(
-        await service.countMessagesAtOrAfter(room, DateTime.utc(2026, 1, 1, 10, 7)),
+        await service.countMessagesAtOrAfter(
+          room,
+          DateTime.utc(2026, 1, 1, 10, 7),
+        ),
         3,
       );
     });

@@ -147,7 +147,7 @@ void main() {
     });
   });
 
-  group('the Whispers filter', () {
+  group('the Chats filter', () {
     List<ChatEntry> entries() => [
       ChatEntry('a', _p('a')),
       ChatEntry('b', _p('b')),

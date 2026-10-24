@@ -75,7 +75,7 @@ const int jumboEmojiMax = 6;
 /// should be drawn like ordinary text. Fewer emoji, bigger.
 double? jumboEmojiSize(int count) {
   if (count < 1 || count > jumboEmojiMax) return null;
-  return count <= 3 ? 38 : 28;
+  return count <= 3 ? 26 : 20;
 }
 
 /// How much larger emoji are drawn inside ordinary text.

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -31,8 +32,9 @@ enum _Mode { crop, draw }
 
 /// Crop and draw on a picture before it is sent.
 ///
-/// Drawing is applied to the picture before cropping: switching from Draw to
-/// Crop bakes the lines in first, so a crop can never slide them out of place.
+/// Each mode's work is kept when you switch: going from Draw to Crop bakes the
+/// lines into the picture (so a crop can never slide them out of place), and
+/// going from Crop to Draw applies the crop (so you draw on what you chose).
 class ImageEditorPage extends StatefulWidget {
   const ImageEditorPage({
     super.key,
@@ -59,9 +61,18 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
   final _cropController = CropController();
   double? _aspect;
 
+  /// The area chosen in Crop, in picture pixels (null until the crop box is
+  /// laid out). Applied when leaving Crop, unless it is the whole picture.
+  Rect? _cropRect;
+
+  /// Set while a crop is being applied on the way to Draw, rather than as
+  /// the final picture.
+  Completer<Uint8List?>? _applying;
+
   final List<Stroke> _strokes = [];
   int _color = defaultColorIndex;
   int _width = defaultWidthIndex;
+  int _eraserWidth = defaultEraserIndex;
   bool _erasing = false;
 
   /// Width of the picture on screen while drawing (for the export scale).
@@ -92,7 +103,44 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
   Future<void> _setMode(_Mode mode) async {
     if (mode == _mode || _busy) return;
     if (_mode == _Mode.draw && _strokes.isNotEmpty) await _bakeStrokes();
+    if (_mode == _Mode.crop && _cropChanged) {
+      // Keep the crop: without this, Draw showed (and Done sent) the whole
+      // picture, and coming back to Crop started over.
+      if (!await _applyCrop()) return;
+    }
     if (mounted) setState(() => _mode = mode);
+  }
+
+  /// Whether the crop box covers less than the whole picture.
+  bool get _cropChanged {
+    final rect = _cropRect;
+    final image = _decoded;
+    if (rect == null || image == null) return false;
+    const slack = 1.0; // rounding in the crop box
+    return rect.left > slack ||
+        rect.top > slack ||
+        rect.right < image.width - slack ||
+        rect.bottom < image.height - slack;
+  }
+
+  /// Makes the chosen crop the picture. False if it could not be done (the
+  /// person is told, and stays in Crop).
+  Future<bool> _applyCrop() async {
+    setState(() => _busy = true);
+    final applying = _applying = Completer<Uint8List?>();
+    _cropController.crop(); // answers in _onCropped
+    final cropped = await applying.future;
+    _applying = null;
+    if (cropped == null) {
+      if (mounted) setState(() => _busy = false);
+      return false;
+    }
+    _base = cropped;
+    _cropRect = null;
+    _edited = true;
+    await _decode();
+    if (mounted) setState(() => _busy = false);
+    return true;
   }
 
   /// Draws the lines into the picture itself and starts a clean slate.
@@ -119,6 +167,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
     try {
       _base = await compute(_rotate90, _base);
       _edited = true;
+      _cropRect = null; // the crop box starts over on the turned picture
       _cropController.image = _base;
       await _decode();
     } finally {
@@ -143,6 +192,15 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
   }
 
   Future<void> _onCropped(CropResult result) async {
+    final applying = _applying;
+    if (applying != null) {
+      // Leaving Crop for Draw: hand the picture back to _applyCrop.
+      if (result case CropSuccess(:final croppedImage)) {
+        applying.complete(croppedImage);
+        return;
+      }
+      applying.complete(null);
+    }
     switch (result) {
       case CropSuccess(:final croppedImage):
         await _finish(croppedImage);
@@ -268,6 +326,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
         cornerDotBuilder: (size, edge) =>
             const DotControl(color: Colors.white, padding: 6),
         onCropped: _onCropped,
+        onMoved: (_, imageRect) => _cropRect = imageRect,
         onStatusChanged: (_) {},
       ),
     );
@@ -298,8 +357,10 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
                 _strokes.add(
                   Stroke(
                     color: drawColors[_color],
-                    width:
-                        drawWidths[_width] * (_erasing ? eraserWidthFactor : 1),
+                    width: strokeWidthFor(
+                      _erasing ? _eraserWidth : _width,
+                      erase: _erasing,
+                    ),
                     erase: _erasing,
                     points: [d.localPosition],
                   ),
@@ -373,6 +434,8 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
           _erasing = false;
         }),
         onWidth: (i) => setState(() => _width = i),
+        eraserWidth: _eraserWidth,
+        onEraserWidth: (i) => setState(() => _eraserWidth = i),
         erasing: _erasing,
         onEraser: () => setState(() => _erasing = !_erasing),
         hasStrokes: _strokes.isNotEmpty,

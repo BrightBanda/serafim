@@ -315,7 +315,9 @@ class IsarService {
     });
   }
 
-  /// The sender edited a message. No-op for unknown/deleted rows.
+  /// The sender edited a message. No-op for unknown/deleted rows, and for ones
+  /// hidden on this device (deleted for me, or a cleared chat): an edit must
+  /// not bring their text back.
   Future<void> applyEdit(
     String messageId,
     String content,
@@ -327,7 +329,7 @@ class IsarService {
           .filter()
           .messageIdEqualTo(messageId)
           .findFirst();
-      if (msg == null || msg.isDeleted) return;
+      if (msg == null || msg.isDeleted || msg.isHiddenForMe) return;
       msg.textContent = content;
       msg.editedAt = editedAt;
       await isar.localMessages.put(msg);
@@ -382,6 +384,45 @@ class IsarService {
       await _syncRoom(isar, msg.roomId);
     });
     await _deleteFile(mediaPath);
+  }
+
+  /// "Clear chat": every message in [roomId] goes from this device, with its
+  /// files. Like [hideMessageForMe], messages the server knows about keep a
+  /// hidden tombstone, so a resync cannot bring them back; ones that never
+  /// left this phone (sending or failed) are removed outright, so they are not
+  /// retried either. Nobody else's copy is touched.
+  Future<void> clearRoomForMe(String roomId) async {
+    final isar = await db;
+    final paths = <String>[];
+    await isar.writeTxn(() async {
+      final all = await isar.localMessages
+          .filter()
+          .roomIdEqualTo(roomId)
+          .findAll();
+      final unsent = <int>[];
+      final hidden = <LocalMessage>[];
+      for (final m in all) {
+        if (m.localMediaPath != null) paths.add(m.localMediaPath!);
+        if (m.status == MessageStatus.sending ||
+            m.status == MessageStatus.failed) {
+          unsent.add(m.id);
+        } else if (!m.isHiddenForMe) {
+          hidden.add(
+            m
+              ..isHiddenForMe = true
+              ..textContent = null
+              ..localMediaPath = null
+              ..type = MessageType.text,
+          );
+        }
+      }
+      await isar.localMessages.deleteAll(unsent);
+      await isar.localMessages.putAll(hidden);
+      await _syncRoom(isar, roomId);
+    });
+    for (final p in paths) {
+      await _deleteFile(p);
+    }
   }
 
   /// Retention: removes messages older than [cutoff] and their image files.
@@ -626,6 +667,7 @@ class IsarService {
 /// "text" is not meant to be read (a sticker's id, a voice note).
 String? previewTextOf(LocalMessage m) => switch (m.type) {
   MessageType.sticker => '🙂 Sticker',
+  MessageType.post => '📝 Post',
   MessageType.audio => '🎤 Voice message',
   _ => m.textContent,
 };

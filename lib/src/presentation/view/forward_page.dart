@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/widgets/shared_post_card.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/data/models/group.dart';
@@ -48,19 +49,31 @@ class _Target {
 /// of scope for now.
 class ForwardPage extends ConsumerStatefulWidget {
   /// Forwards a message from a chat.
-  const ForwardPage({super.key, required this.messages}) : sharedText = null;
+  const ForwardPage({super.key, required this.messages})
+    : sharedText = null,
+      sharedPostId = null;
 
   /// Sends text that another app shared to Serafim (a link, say): the same
   /// picker, a plain message at the end of it.
   const ForwardPage.shareText(String this.sharedText, {super.key})
-    : messages = const [];
+    : messages = const [],
+      sharedPostId = null;
+
+  /// Shares a post: each chat gets a card that opens it (see
+  /// ChatViewModel.sharePost).
+  const ForwardPage.sharePost(String this.sharedPostId, {super.key})
+    : messages = const [],
+      sharedText = null;
 
   final List<LocalMessage> messages;
 
   /// Set when this is a share from another app rather than a forward.
   final String? sharedText;
 
-  bool get isShare => sharedText != null;
+  /// Set when this is a post being shared.
+  final String? sharedPostId;
+
+  bool get isShare => sharedText != null || sharedPostId != null;
 
   @override
   ConsumerState<ForwardPage> createState() => _ForwardPageState();
@@ -116,14 +129,25 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
         if (widget.isShare) {
           final me = ref.read(currentAccountIdProvider);
           if (me == null) throw StateError('not signed in');
-          await vm.sendMessage(
-            roomId: groupId != null
-                ? groupRoomId(groupId)
-                : ChatViewModel.buildRoomId(me, target.recipientId),
-            recipientId: target.recipientId,
-            content: widget.sharedText!,
-            groupId: groupId,
-          );
+          final roomId = groupId != null
+              ? groupRoomId(groupId)
+              : ChatViewModel.buildRoomId(me, target.recipientId);
+          final postId = widget.sharedPostId;
+          if (postId != null) {
+            await vm.sharePost(
+              roomId: roomId,
+              recipientId: target.recipientId,
+              postId: postId,
+              groupId: groupId,
+            );
+          } else {
+            await vm.sendMessage(
+              roomId: roomId,
+              recipientId: target.recipientId,
+              content: widget.sharedText!,
+              groupId: groupId,
+            );
+          }
           ok = true;
         } else {
           ok = await vm.forwardMessage(
@@ -258,12 +282,18 @@ class _ForwardPageState extends ConsumerState<ForwardPage> {
                     color: AppColors.paperAlt,
                     border: Border.all(color: AppColors.lineSoft, width: 1.5),
                   ),
-                  child: Text(
-                    widget.sharedText!,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.body,
-                  ),
+                  // What they will see: the post's card, or the text.
+                  child: widget.sharedPostId != null
+                      ? SharedPostCard(
+                          postId: widget.sharedPostId!,
+                          outgoing: true,
+                        )
+                      : Text(
+                          widget.sharedText!,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.body,
+                        ),
                 ),
               ),
             if (_groupsBlocked)

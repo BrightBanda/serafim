@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:serafim/src/utils/notification_bell.dart';
 import 'package:serafim/src/data/models/circle.dart';
 import 'package:serafim/src/data/models/post.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -175,6 +177,29 @@ void main() {
     expect(find.text('Flutter Devs'), findsOneWidget);
     expect(find.text('JOINED'), findsOneWidget);
     expect(find.text('FOR YOU'), findsOneWidget);
+  });
+
+  testWidgets('the Circles bar has the notification bell and fits a narrow '
+      'phone', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          currentAccountIdProvider.overrideWithValue('me'),
+          circleServiceProvider.overrideWithValue(FakeCircles()),
+        ],
+        child: const MaterialApp(home: CirclesPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(NotificationBell), findsOneWidget);
+    expect(find.text('NEW'), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: 'no overflow at 320 px');
+    // And the title is whole, not shortened.
+    final title = tester.renderObject<RenderParagraph>(find.text('CIRCLES'));
+    expect(title.didExceedMaxLines, isFalse);
   });
 
   testWidgets('joining from the tab calls the server', (tester) async {

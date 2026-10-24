@@ -25,6 +25,7 @@ import 'package:serafim/src/utils/group_nav.dart';
 import 'package:serafim/src/utils/halo_style.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
+import 'package:serafim/src/providers/post_providers.dart';
 import 'package:serafim/src/presentation/view/draw_together_page.dart';
 import 'package:serafim/src/providers/draw_together_providers.dart';
 import 'package:serafim/src/core/debug_log.dart';
@@ -68,53 +69,13 @@ class ChatViewModel extends Notifier<ChatState> {
 
   @override
   ChatState build() {
-    ref.listen<AsyncValue<Map<String, dynamic>>>(webSocketStreamProvider, (
-      previous,
-      next,
-    ) {
-      next.whenData((data) {
-        // "Typing…" is live-only: straight to its own small tracker, ahead of
-        // the persistence queue, so it is never delayed behind database writes.
-        final kind = data['type'];
-        if (kind == 'typing') {
-          ref.read(typingProvider.notifier).heard(data);
-          return;
-        }
-        // Draw Together: a friend's strokes, or an invitation to draw.
-        if (kind == 'draw') {
-          trace('chat-vm', 'routing draw ${data['op']} to Draw Together');
-          final fresh = ref.read(drawTogetherProvider.notifier).heard(data);
-          if (fresh) unawaited(_alertDrawInvite(data['sender_id'] as String));
-          return;
-        }
-        // A friend lit or put out their halo.
-        if (kind == 'halo') {
-          ref.read(friendHaloProvider.notifier).heard(data);
-          return;
-        }
-        if (kind == 'message') {
-          // Their message arrived, so they are not "typing" it any more.
-          final sender = data['sender_id'] as String?;
-          final me = ref.read(currentAccountIdProvider);
-          if (sender != null && me != null) {
-            final gid = data['group_id'] as String?;
-            ref
-                .read(typingProvider.notifier)
-                .stopped(
-                  gid != null ? groupRoomId(gid) : buildRoomId(me, sender),
-                  sender,
-                );
-          }
-        }
-        _eventQueue = _eventQueue
-            .then((_) => _persistIncoming(data))
-            .catchError((Object error, StackTrace stackTrace) {
-              _log(
-                'Unhandled error in socket event queue: $error\n$stackTrace',
-              );
-            });
-      });
-    });
+    // The connection follows whoever is signed in; listening keeps it open.
+    ref.listen(webSocketEventsProvider, (_, __) {});
+    // Frames are taken straight from the socket, not through a provider
+    // listener: Riverpod pauses listeners of covered screens, which held live
+    // frames (a Draw Together answer, "typing…") until the page on top closed.
+    final events = ref.read(webSocketEventsProvider).listen(_onSocketEvent);
+    ref.onDispose(events.cancel);
 
     // Retention: clear old local messages at startup and whenever the choice
     // changes.
@@ -125,6 +86,49 @@ class ChatViewModel extends Notifier<ChatState> {
     );
 
     return const ChatState();
+  }
+
+  /// One frame from the server.
+  void _onSocketEvent(Map<String, dynamic> data) {
+    // "Typing…" is live-only: straight to its own small tracker, ahead of
+    // the persistence queue, so it is never delayed behind database writes.
+    final kind = data['type'];
+    if (kind == 'typing') {
+      ref.read(typingProvider.notifier).heard(data);
+      return;
+    }
+    // Draw Together: a friend's strokes, or an invitation to draw.
+    if (kind == 'draw') {
+      trace('chat-vm', 'routing draw ${data['op']} to Draw Together');
+      final fresh = ref.read(drawTogetherProvider.notifier).heard(data);
+      if (fresh) unawaited(_alertDrawInvite(data['peer_id'] as String));
+      return;
+    }
+    // A friend lit or put out their halo.
+    if (kind == 'halo') {
+      ref.read(friendHaloProvider.notifier).heard(data);
+      return;
+    }
+    if (kind == 'message') {
+      // Their message arrived, so they are not "typing" it any more.
+      final sender = data['sender_id'] as String?;
+      final me = ref.read(currentAccountIdProvider);
+      if (sender != null && me != null) {
+        final gid = data['group_id'] as String?;
+        ref
+            .read(typingProvider.notifier)
+            .stopped(
+              gid != null ? groupRoomId(gid) : buildRoomId(me, sender),
+              sender,
+            );
+      }
+    }
+    _eventQueue = _eventQueue.then((_) => _persistIncoming(data)).catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      _log('Unhandled error in socket event queue: $error\n$stackTrace');
+    });
   }
 
   /// A friend asked to draw together: a banner that opens the canvas.
@@ -258,19 +262,8 @@ class ChatViewModel extends Notifier<ChatState> {
         .read(inAppBannerProvider)
         .show(
           label: kind.bannerLabel,
-          icon: switch (kind) {
-            NotificationKind.friendRequest => Icons.person_add_alt_1_rounded,
-            NotificationKind.friendAccepted => Icons.people_alt_rounded,
-            NotificationKind.newFollower => Icons.favorite_rounded,
-            NotificationKind.unknown => Icons.notifications_rounded,
-            _ => Icons.groups_rounded,
-          },
-          accent: switch (kind) {
-            NotificationKind.friendAccepted => AppColors.teal,
-            NotificationKind.newFollower => AppColors.rust,
-            _ when kind.isCircle => AppColors.teal,
-            _ => AppColors.primary,
-          },
+          icon: notificationIcon(kind),
+          accent: notificationAccent(kind),
           title: name,
           body: kind.action[0].toUpperCase() + kind.action.substring(1),
           avatar: pic != null && pic.isNotEmpty
@@ -278,7 +271,21 @@ class ChatViewModel extends Notifier<ChatState> {
               : null,
           onTap: () {
             final navigator = ref.read(navigatorKeyProvider).currentState;
-            if (navigator != null) openNotificationsWithNavigator(navigator);
+            if (navigator == null) return;
+            final circleId = AppNotification.idIn(data, 'circle_id');
+            final postId = AppNotification.idIn(data, 'post_id');
+            // Straight to the post or Circle when the server says which;
+            // otherwise the list, as before.
+            if (circleId == null && postId == null) {
+              openNotificationsWithNavigator(navigator);
+            } else {
+              openNotificationTarget(
+                navigator,
+                kind: kind,
+                circleId: circleId,
+                postId: postId,
+              );
+            }
           },
         );
     if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
@@ -397,6 +404,7 @@ class ChatViewModel extends Notifier<ChatState> {
 
           final isSticker = data['kind'] == 'sticker';
           final isVoice = data['kind'] == 'voice';
+          final isPost = data['kind'] == 'post';
           final msg = LocalMessage()
             ..messageId = messageId
             ..roomId = roomId
@@ -408,6 +416,8 @@ class ChatViewModel extends Notifier<ChatState> {
             ..replyToId = data['reply_to'] as String?
             ..type = isSticker
                 ? MessageType.sticker
+                : isPost
+                ? MessageType.post
                 : isVoice
                 ? MessageType.audio
                 : mediaPath != null
@@ -573,6 +583,10 @@ class ChatViewModel extends Notifier<ChatState> {
 
         case 'notification':
           ref.invalidate(notificationsProvider);
+          // A comment, reply or Spark on a post: if it is open, it updates
+          // now rather than after a restart.
+          final postId = AppNotification.idIn(data, 'post_id');
+          if (postId != null) refreshPost(ref, postId);
           _alertNotification(data);
           break;
 
@@ -649,6 +663,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ..replyToId = data['reply_to'] as String?
       ..type = switch (kind) {
         'sticker' when !deleted => MessageType.sticker,
+        'post' when !deleted => MessageType.post,
         'voice' when !deleted => MessageType.audio,
         _ => MessageType.text,
       }
@@ -808,6 +823,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ...target,
       "content": msg.textContent ?? '',
       if (msg.type == MessageType.sticker) "kind": "sticker",
+      if (msg.type == MessageType.post) "kind": "post",
       if (attachment != null) "attachment": attachment,
       if (attachment != null)
         "attachment_type": path!.endsWith('.gif') ? 'gif' : 'image',
@@ -1082,6 +1098,18 @@ class ChatViewModel extends Notifier<ChatState> {
         );
         return true;
 
+      case MessageType.post:
+        final postId = source.textContent;
+        if (postId == null || postId.isEmpty) return false;
+        await sharePost(
+          roomId: roomId,
+          recipientId: recipientId,
+          postId: postId,
+          groupId: groupId,
+          forwarded: true,
+        );
+        return true;
+
       case MessageType.sticker:
         final stickerId = source.textContent;
         if (stickerId == null || stickerId.isEmpty) return false;
@@ -1161,6 +1189,24 @@ class ChatViewModel extends Notifier<ChatState> {
       _downloading.remove(messageId);
     }
   }
+
+  /// Shares a post into a chat. Only its id travels: each person's app
+  /// fetches the post with their own account, so they see it only if they
+  /// may, and no picture links end up in the chat.
+  Future<void> sharePost({
+    required String roomId,
+    required String recipientId,
+    required String postId,
+    String? groupId,
+    bool forwarded = false,
+  }) => sendMessage(
+    roomId: roomId,
+    recipientId: recipientId,
+    content: postId,
+    type: MessageType.post,
+    groupId: groupId,
+    forwarded: forwarded,
+  );
 
   /// Sends a sticker by its id (`pack/name`); the art ships with the app.
   Future<void> sendSticker({

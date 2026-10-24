@@ -16,6 +16,7 @@ class ChatRow extends StatelessWidget {
     this.unread = false,
     this.imageProvider,
     this.onTap,
+    this.onLongPress,
     this.leading,
     this.nameBadge,
     this.avatarHeroTag,
@@ -37,6 +38,9 @@ class ChatRow extends StatelessWidget {
   final ImageProvider? imageProvider;
   final VoidCallback? onTap;
 
+  /// Press and hold: the chat's options (clear, view profile, remove).
+  final VoidCallback? onLongPress;
+
   /// Replaces the avatar (the official chat shows the SERAFIM logo).
   final Widget? leading;
 
@@ -50,6 +54,7 @@ class ChatRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
         decoration: BoxDecoration(

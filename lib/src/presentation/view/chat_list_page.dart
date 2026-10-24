@@ -11,8 +11,11 @@ import 'package:serafim/src/data/models/chat_filter.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/presentation/view/create_group_page.dart';
-import 'package:serafim/src/presentation/view/notifications_page.dart';
 import 'package:serafim/src/providers/chat_filter_providers.dart';
+import 'package:serafim/src/providers/chat_list_providers.dart';
+import 'package:serafim/src/presentation/view/group_info_page.dart';
+import 'package:serafim/src/presentation/view/user_profile_page.dart';
+import 'package:serafim/src/utils/settled_sheet.dart';
 import 'package:serafim/src/providers/group_providers.dart';
 import 'package:serafim/src/utils/group_nav.dart';
 import 'package:serafim/src/presentation/view/official_chat_page.dart';
@@ -20,11 +23,11 @@ import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/presentation/viewmodel/navigation_notifier.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
-import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/providers/official_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/chat/chat_row.dart';
+import 'package:serafim/src/utils/notification_bell.dart';
 import 'package:serafim/src/utils/chat/chat_time.dart';
 import 'package:serafim/src/utils/official_badge.dart';
 import 'package:serafim/src/utils/serafim_chip.dart';
@@ -328,13 +331,22 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     // Which filter is showing, and the chats it lets through.
     final filter = ref.watch(activeChatFilterProvider);
     final previews = ref.watch(roomPreviewsProvider);
-    final all = byRecentActivity(
-      friends: friends,
-      strangerIds: strangerIds,
-      groups: groups,
-      previews: previews,
-      myId: currentUser?.id ?? '',
-    );
+    // Chats removed with a long press stay off until something new arrives.
+    final removed = ref.watch(removedChatsProvider);
+    final all = [
+      for (final entry in byRecentActivity(
+        friends: friends,
+        strangerIds: strangerIds,
+        groups: groups,
+        previews: previews,
+        myId: currentUser?.id ?? '',
+      ))
+        if (!isChatRemoved(
+          removed[roomIdFor(entry, currentUser?.id ?? '')],
+          previews[roomIdFor(entry, currentUser?.id ?? '')]?.timestamp,
+        ))
+          entry,
+    ];
     final shown = currentUser == null
         ? all
         : applyChatFilter(
@@ -424,6 +436,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     return Scaffold(
       backgroundColor: AppColors.paper,
       appBar: AppTopBar(
+        title: 'CHATS',
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -736,6 +749,135 @@ class _ChatListItem extends ConsumerWidget {
       imageProvider: avatarImage(user.profilePic),
       avatarHeroTag: 'chats:${user.id}',
       onTap: () => openChatWith(context, user),
+      onLongPress: () => showChatOptions(
+        context,
+        ref,
+        roomId: roomId,
+        name: user.displayName,
+        profileLabel: 'View profile',
+        openProfile: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => UserProfilePage(userId: user.id),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// What pressing and holding a chat offers: clear it, open the person's
+/// profile (or the group's info), or remove it from the list. Clearing and
+/// removing only affect this device, and both ask first.
+Future<void> showChatOptions(
+  BuildContext context,
+  WidgetRef ref, {
+  required String roomId,
+  required String name,
+  required String profileLabel,
+  required VoidCallback openProfile,
+}) async {
+  final choice = await showSettledSheet<String>(
+    context: context,
+    backgroundColor: AppColors.paperAlt,
+    shape: const RoundedRectangleBorder(),
+    builder: (sheet) {
+      Widget option(
+        String value,
+        IconData icon,
+        String label, {
+        Color? color,
+      }) => ListTile(
+        leading: Icon(icon, color: color ?? AppColors.primaryPale),
+        title: Text(
+          label,
+          style: AppTextStyles.body.copyWith(
+            color: color ?? AppColors.text,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        onTap: () => Navigator.pop(sheet, value),
+      );
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.eyebrow,
+              ),
+            ),
+            option('clear', Icons.cleaning_services_outlined, 'Clear chat'),
+            option('profile', Icons.person_outline_rounded, profileLabel),
+            option(
+              'remove',
+              Icons.delete_outline_rounded,
+              'Remove chat',
+              color: AppColors.rust,
+            ),
+          ],
+        ),
+      );
+    },
+  );
+  if (choice == null || !context.mounted) return;
+  if (choice == 'profile') {
+    openProfile();
+    return;
+  }
+
+  final clearing = choice == 'clear';
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      backgroundColor: AppColors.paperAlt,
+      title: Text(
+        clearing ? 'Clear this chat?' : 'Remove this chat?',
+        style: AppTextStyles.displayHeading.copyWith(fontSize: 20),
+      ),
+      content: Text(
+        clearing
+            ? 'Every message with $name is deleted from this phone. '
+                  'They keep their copy.'
+            : 'The messages are deleted from this phone and the chat leaves '
+                  'your list. It comes back if a new message arrives.',
+        style: AppTextStyles.body,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialog, false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialog, true),
+          child: Text(clearing ? 'Clear' : 'Remove'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+
+  final messenger = ScaffoldMessenger.of(context);
+  final actions = ref.read(chatListActionsProvider);
+  try {
+    if (clearing) {
+      await actions.clear(roomId);
+    } else {
+      await actions.remove(roomId);
+    }
+    messenger.showSnackBar(
+      SnackBar(content: Text(clearing ? 'Chat cleared.' : 'Chat removed.')),
+    );
+  } catch (error) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(humanError(error, fallback: "Couldn't do that.")),
+        backgroundColor: AppColors.rust,
+      ),
     );
   }
 }
@@ -765,76 +907,6 @@ class OfficialChatItem extends ConsumerWidget {
       time: latest == null ? '' : formatChatListTime(context, latest.createdAt),
       unread: unread,
       onTap: () => openOfficialChat(context),
-    );
-  }
-}
-
-/// Bell in the top bar with the number of unread notifications.
-class NotificationBell extends ConsumerWidget {
-  const NotificationBell({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final unread = ref.watch(unreadNotificationCountProvider);
-    final label = unread > 99 ? '99+' : '$unread';
-
-    return Semantics(
-      button: true,
-      label: unread == 0 ? 'Notifications' : 'Notifications, $unread unread',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(builder: (_) => const NotificationsPage()),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: AppColors.paper,
-                  border: Border.all(
-                    color: unread > 0 ? AppColors.primary : AppColors.lineSoft,
-                    width: 1.5,
-                  ),
-                ),
-                child: Icon(
-                  unread > 0
-                      ? Icons.notifications_active
-                      : Icons.notifications_none,
-                  size: 14,
-                  color: unread > 0 ? AppColors.primaryPale : AppColors.textDim,
-                ),
-              ),
-              if (unread > 0)
-                Positioned(
-                  right: -6,
-                  top: -6,
-                  child: Container(
-                    constraints: const BoxConstraints(minWidth: 16),
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    height: 16,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppColors.rust,
-                      border: Border.all(color: AppColors.line, width: 1.5),
-                    ),
-                    child: Text(
-                      label,
-                      style: AppTextStyles.fieldLabel.copyWith(
-                        fontSize: 8,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -875,6 +947,18 @@ class _GroupChatItem extends ConsumerWidget {
         color: AppColors.tealPale,
       ),
       onTap: () => openGroupChat(context, group),
+      onLongPress: () => showChatOptions(
+        context,
+        ref,
+        roomId: group.roomId,
+        name: group.name,
+        profileLabel: 'Group info',
+        openProfile: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => GroupInfoPage(groupId: group.id),
+          ),
+        ),
+      ),
     );
   }
 }

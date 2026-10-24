@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:serafim/src/presentation/view/chat_list_page.dart'
-    show NotificationBell;
+import 'package:serafim/src/utils/notification_bell.dart';
 import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
@@ -23,8 +22,8 @@ class FeedPage extends ConsumerWidget {
     final feed = ref.watch(feedProvider);
     return Scaffold(
       backgroundColor: AppColors.paper,
+      // The brand bar: the Serafim logo and name.
       appBar: const AppTopBar(
-        title: 'FEED',
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [NotificationBell(), ProfileMenuButton()],

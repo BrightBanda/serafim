@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/app_notification.dart';
+import 'package:serafim/src/presentation/view/circle_detail_page.dart';
+import 'package:serafim/src/presentation/view/post_detail_page.dart';
 import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
@@ -18,7 +20,61 @@ void openNotificationsWithNavigator(NavigatorState navigator) {
   );
 }
 
-/// Friend requests, accepted requests and new followers, newest first.
+/// Opens what a notification is about: the post (a comment, reply, mention
+/// or pin), else its Circle, else the person who did it. Shared by the
+/// notifications page, the in-app banner and push notifications.
+Future<void> openNotificationTarget(
+  NavigatorState navigator, {
+  required NotificationKind kind,
+  String? actorId,
+  String? circleId,
+  String? postId,
+}) {
+  final Widget page;
+  if (postId != null) {
+    page = PostDetailPage(postId: postId);
+  } else if (circleId != null && kind != NotificationKind.circleBanned) {
+    // Someone banned can no longer see the Circle.
+    page = CircleDetailPage(circleId: circleId);
+  } else if (actorId != null) {
+    page = UserProfilePage(userId: actorId);
+  } else {
+    page = const NotificationsPage();
+  }
+  return navigator.push(MaterialPageRoute<void>(builder: (_) => page));
+}
+
+/// The icon for a kind of notification, here and on the banner.
+IconData notificationIcon(NotificationKind kind) => switch (kind) {
+  NotificationKind.friendRequest => Icons.person_add_alt_1_rounded,
+  NotificationKind.friendAccepted => Icons.people_alt_rounded,
+  NotificationKind.newFollower => Icons.favorite_rounded,
+  NotificationKind.friendPosted => Icons.article_rounded,
+  NotificationKind.circleNewPost => Icons.forum_rounded,
+  NotificationKind.postCommented ||
+  NotificationKind.circlePostCommented => Icons.mode_comment_rounded,
+  NotificationKind.commentReplied ||
+  NotificationKind.circleCommentReplied => Icons.reply_rounded,
+  NotificationKind.postSparked || NotificationKind.commentSparked => Icons.bolt,
+  NotificationKind.unknown => Icons.notifications_rounded,
+  _ => Icons.groups_rounded,
+};
+
+/// The colour that goes with [notificationIcon].
+Color notificationAccent(NotificationKind kind) => switch (kind) {
+  NotificationKind.friendRequest => AppColors.primary,
+  NotificationKind.friendAccepted => AppColors.teal,
+  NotificationKind.newFollower => AppColors.rust,
+  NotificationKind.postSparked ||
+  NotificationKind.commentSparked => AppColors.sparkAmber,
+  NotificationKind.friendPosted ||
+  NotificationKind.postCommented ||
+  NotificationKind.commentReplied => AppColors.primary,
+  NotificationKind.unknown => AppColors.primary,
+  _ => AppColors.teal,
+};
+
+/// Friend requests, follows, posts, comments and Sparks, newest first.
 /// Unread ones are highlighted; swipe one sideways to remove it.
 class NotificationsPage extends ConsumerWidget {
   const NotificationsPage({super.key});
@@ -43,10 +99,12 @@ class NotificationsPage extends ConsumerWidget {
     }
 
     Future<void> open(AppNotification n) async {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => UserProfilePage(userId: n.actor.id),
-        ),
+      openNotificationTarget(
+        Navigator.of(context),
+        kind: n.kind,
+        actorId: n.actor.id,
+        circleId: n.circleId,
+        postId: n.postId,
       );
       final error = await controller.markRead(n.id);
       if (error != null && context.mounted) _tell(context, error);
@@ -86,8 +144,8 @@ class NotificationsPage extends ConsumerWidget {
         const _Message(
           icon: Icons.notifications_none_rounded,
           text:
-              "You're all caught up.\nFriend requests and new followers "
-              'will show up here.',
+              "You're all caught up.\nFriend requests, new posts, comments "
+              'and Sparks will show up here.',
         ),
       ]);
     } else {
@@ -157,21 +215,9 @@ class _NotificationCard extends StatelessWidget {
   final AppNotification notification;
   final VoidCallback onTap;
 
-  IconData get _icon => switch (notification.kind) {
-    NotificationKind.friendRequest => Icons.person_add_alt_1_rounded,
-    NotificationKind.friendAccepted => Icons.people_alt_rounded,
-    NotificationKind.newFollower => Icons.favorite_rounded,
-    NotificationKind.unknown => Icons.notifications_rounded,
-    _ => Icons.groups_rounded,
-  };
+  IconData get _icon => notificationIcon(notification.kind);
 
-  Color get _accent => switch (notification.kind) {
-    NotificationKind.friendRequest => AppColors.primary,
-    NotificationKind.friendAccepted => AppColors.teal,
-    NotificationKind.newFollower => AppColors.rust,
-    NotificationKind.unknown => AppColors.primary,
-    _ => AppColors.teal,
-  };
+  Color get _accent => notificationAccent(notification.kind);
 
   @override
   Widget build(BuildContext context) {

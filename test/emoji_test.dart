@@ -38,10 +38,10 @@ void main() {
     });
 
     test('fewer emoji are bigger; a wall of them is ordinary text', () {
-      expect(jumboEmojiSize(1), 38);
-      expect(jumboEmojiSize(3), 38);
-      expect(jumboEmojiSize(4), 28);
-      expect(jumboEmojiSize(6), 28);
+      expect(jumboEmojiSize(1), 26);
+      expect(jumboEmojiSize(3), 26);
+      expect(jumboEmojiSize(4), 20);
+      expect(jumboEmojiSize(6), 20);
       expect(jumboEmojiSize(7), isNull);
       expect(jumboEmojiSize(0), isNull);
     });
@@ -72,7 +72,7 @@ void main() {
     }
 
     testWidgets('three emoji alone are drawn large', (t) async {
-      expect(await sizeOf(t, '😀😀😀'), 38);
+      expect(await sizeOf(t, '😀😀😀'), 26);
     });
 
     testWidgets('a word and an emoji are ordinary-sized text', (t) async {

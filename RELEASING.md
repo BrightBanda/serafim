@@ -19,6 +19,11 @@ time they allow "Install unknown apps" for Serafim.
   different app.
 - **Tag format.** `v<version>+<code>`, e.g. `v1.2.0+5`. The in-app checker
   relies on it.
+- **Keep the symbols.** Releases are obfuscated (smaller), so a stack trace
+  from one is unreadable without `release-symbols/<version>/`, which
+  `tool/release.sh` writes. It is not committed: back it up with the
+  keystore. Read a trace with
+  `flutter symbolize -i trace.txt -d release-symbols/<version>/app.android-arm64.symbols`.
 - **One APK per release**, `serafim-<version>.apk`, for both 64-bit and
   32-bit ARM phones (32-bit covers many itel and Android Go models). Attach
   only that one `.apk`: app versions before 1.0.2 take the first `.apk` on

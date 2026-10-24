@@ -6,6 +6,7 @@ import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/post_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/data/models/post.dart';
+import 'package:serafim/src/presentation/view/forward_page.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/user_card.dart';
@@ -217,19 +218,37 @@ class PostCard extends ConsumerWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              _Action(
-                icon: spark.sparked ? Icons.bolt : Icons.bolt_outlined,
-                label: '${spark.count}',
-                active: spark.sparked,
-                onTap: onSpark == null ? null : () => onSpark!(!spark.sparked),
+              // Wraps onto a second line rather than overflowing on a narrow
+              // phone with long counts.
+              Expanded(
+                child: Wrap(
+                  spacing: 12,
+                  children: [
+                    _Action(
+                      icon: spark.sparked ? Icons.bolt : Icons.bolt_outlined,
+                      label: countLabel(spark.count, 'Spark'),
+                      active: spark.sparked,
+                      onTap: onSpark == null
+                          ? null
+                          : () => onSpark!(!spark.sparked),
+                    ),
+                    _Action(
+                      icon: Icons.mode_comment_outlined,
+                      label: countLabel(post.commentCount, 'Comment'),
+                      onTap: onComment,
+                    ),
+                    _Action(
+                      icon: Icons.share_outlined,
+                      label: 'Share',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ForwardPage.sharePost(post.id),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 18),
-              _Action(
-                icon: Icons.mode_comment_outlined,
-                label: '${post.commentCount}',
-                onTap: onComment,
-              ),
-              const Spacer(),
               if (footer != null) footer!,
             ],
           ),
@@ -334,6 +353,13 @@ class _Avatar extends StatelessWidget {
   }
 }
 
+/// "Spark", "1 Spark", "12 Sparks": the action's name after its count.
+String countLabel(int count, String noun) => switch (count) {
+  0 => noun,
+  1 => '1 $noun',
+  _ => '$count ${noun}s',
+};
+
 class _Action extends StatelessWidget {
   const _Action({
     required this.icon,
@@ -355,22 +381,20 @@ class _Action extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: Padding(
         // A roomy tap target, not just the icon.
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 28, color: color),
-            if (label != '0') ...[
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: AppTextStyles.fieldInput.copyWith(
-                  color: color,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: AppTextStyles.fieldInput.copyWith(
+                color: color,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
               ),
-            ],
+            ),
           ],
         ),
       ),
@@ -378,20 +402,38 @@ class _Action extends StatelessWidget {
   }
 }
 
-/// A post's pictures: one large, or a row you can scroll along. Tap to look
-/// closer.
-class PostImages extends StatelessWidget {
+/// A post's pictures: one large, or several you swipe through. With more than
+/// one, the edge of the next picture shows, a "2/4" counter sits on the
+/// picture and dots run underneath, so it is obvious there is more to see.
+/// Tap to look closer.
+class PostImages extends StatefulWidget {
   const PostImages({super.key, required this.urls});
 
   final List<String> urls;
 
-  /// The height of the row of pictures.
-  static const rowHeight = 180.0;
+  /// How much of the row one picture takes: the rest is the next one
+  /// peeking in, the cue that the row scrolls.
+  static const viewportFraction = 0.88;
 
-  /// The width of one picture in the row.
-  static const tileWidth = 180.0;
+  @override
+  State<PostImages> createState() => _PostImagesState();
+}
 
-  void _open(BuildContext context, int index) {
+class _PostImagesState extends State<PostImages> {
+  late final PageController _pages = PageController(
+    viewportFraction: PostImages.viewportFraction,
+  );
+  int _index = 0;
+
+  List<String> get urls => widget.urls;
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
+
+  void _open(int index) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => _ImageViewer(urls: urls, initial: index),
@@ -418,46 +460,119 @@ class PostImages extends StatelessWidget {
     if (urls.length == 1) {
       return AspectRatio(
         aspectRatio: 4 / 3,
-        child: GestureDetector(
-          onTap: () => _open(context, 0),
-          child: _image(0),
-        ),
+        child: GestureDetector(onTap: () => _open(0), child: _image(0)),
       );
     }
-    return SizedBox(
-      height: rowHeight,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: urls.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
-        itemBuilder: (context, i) => GestureDetector(
-          onTap: () => _open(context, i),
-          child: SizedBox(width: tileWidth, child: _image(i)),
+    return Column(
+      children: [
+        AspectRatio(
+          aspectRatio: 4 / 3,
+          child: Stack(
+            children: [
+              PageView.builder(
+                key: const ValueKey('post-images'),
+                controller: _pages,
+                padEnds: false,
+                itemCount: urls.length,
+                onPageChanged: (i) => setState(() => _index = i),
+                itemBuilder: (context, i) => Padding(
+                  // A small gap, so the next picture reads as a separate one.
+                  padding: EdgeInsets.only(right: i == urls.length - 1 ? 0 : 6),
+                  child: GestureDetector(
+                    onTap: () => _open(i),
+                    child: _image(i),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${_index + 1}/${urls.length}',
+                      style: AppTextStyles.smallDim.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Row(
+          key: const ValueKey('post-image-dots'),
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < urls.length; i++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: i == _index ? 16 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: i == _index ? AppColors.primary : AppColors.lineSoft,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
 
-class _ImageViewer extends StatelessWidget {
+/// The pictures full screen, to swipe through and zoom, with "2 of 4" on top
+/// when there are several.
+class _ImageViewer extends StatefulWidget {
   const _ImageViewer({required this.urls, required this.initial});
 
   final List<String> urls;
   final int initial;
 
   @override
+  State<_ImageViewer> createState() => _ImageViewerState();
+}
+
+class _ImageViewerState extends State<_ImageViewer> {
+  late final PageController _pages = PageController(
+    initialPage: widget.initial,
+  );
+  late int _index = widget.initial;
+
+  @override
+  void dispose() {
+    _pages.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final count = widget.urls.length;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        title: count > 1 ? Text('${_index + 1} of $count') : null,
       ),
       body: PageView.builder(
-        controller: PageController(initialPage: initial),
-        itemCount: urls.length,
+        controller: _pages,
+        itemCount: count,
+        onPageChanged: (i) => setState(() => _index = i),
         itemBuilder: (_, i) => InteractiveViewer(
-          child: Center(child: CachedNetworkImage(imageUrl: urls[i])),
+          child: Center(child: CachedNetworkImage(imageUrl: widget.urls[i])),
         ),
       ),
     );

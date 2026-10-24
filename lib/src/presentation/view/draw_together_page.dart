@@ -31,6 +31,7 @@ class DrawTogetherPage extends ConsumerStatefulWidget {
 class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
   int _color = 1;
   int _width = defaultWidthIndex;
+  int _eraserWidth = defaultEraserIndex;
   bool _erasing = false;
   double _side = 1;
   bool _sending = false;
@@ -167,8 +168,22 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
             ),
             DrawStatus.waiting => _Notice(
               busy: true,
-              text: 'Waiting for $name to join…',
+              text: session.id == null
+                  ? 'Inviting $name…'
+                  : 'Waiting for $name to join…',
               actionLabel: 'Cancel',
+              onAction: () => _leave(session),
+            ),
+            DrawStatus.joining => _Notice(
+              busy: true,
+              text: 'Joining $name…',
+              actionLabel: 'Cancel',
+              onAction: () => _leave(session),
+            ),
+            // Ended before it started (declined, expired): just the reason.
+            DrawStatus.ended when session.strokes.isEmpty => _Notice(
+              text: session.endedBecause ?? 'It ended.',
+              actionLabel: 'Close',
               onAction: () => _leave(session),
             ),
             _ => _canvas(session, name),
@@ -208,7 +223,7 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
                             ? null
                             : (d) => _notifier.beginStroke(
                                 color: drawColors[_color],
-                                widthIndex: _width,
+                                widthIndex: _erasing ? _eraserWidth : _width,
                                 erase: _erasing,
                                 point: _norm(d.localPosition),
                               ),
@@ -232,6 +247,24 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
                         ),
                       ),
                     ),
+                    if (session.peerAway && !ended)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          color: Colors.black87,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          child: Text(
+                            '$name lost their connection. Waiting for them…',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
                     if (ended)
                       Positioned.fill(
                         child: Container(
@@ -267,6 +300,8 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
                 _erasing = false;
               }),
               onWidth: (i) => setState(() => _width = i),
+              eraserWidth: _eraserWidth,
+              onEraserWidth: (i) => setState(() => _eraserWidth = i),
               erasing: _erasing,
               onEraser: () => setState(() => _erasing = !_erasing),
               hasStrokes: session.strokes.any((s) => s.mine),
@@ -389,6 +424,54 @@ class _Notice extends StatelessWidget {
               actionLabel,
               style: const TextStyle(color: Colors.white70),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// In a chat with someone who has asked to draw together: a bar to join (or
+/// say not now), so a missed banner does not mean a missed invitation.
+class DrawInviteBar extends ConsumerWidget {
+  const DrawInviteBar({super.key, required this.peerId});
+
+  final String peerId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(drawTogetherProvider);
+    if (session == null ||
+        session.peerId != peerId ||
+        session.status != DrawStatus.invited) {
+      return const SizedBox.shrink();
+    }
+    final name =
+        ref.watch(knownPersonProvider(peerId))?.displayName ?? 'Your friend';
+    return Container(
+      key: const ValueKey('draw-invite-bar'),
+      color: AppColors.paperRaised,
+      padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+      child: Row(
+        children: [
+          Icon(Icons.draw_outlined, size: 18, color: AppColors.primaryPale),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$name wants to draw together',
+              style: AppTextStyles.body.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          TextButton(
+            onPressed: () => ref.read(drawTogetherProvider.notifier).decline(),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () {
+              ref.read(drawTogetherProvider.notifier).join();
+              openDrawTogether(Navigator.of(context));
+            },
+            child: const Text('JOIN'),
           ),
         ],
       ),

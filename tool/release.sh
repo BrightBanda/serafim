@@ -39,7 +39,12 @@ mkdir -p build/release
 # it). A single file means nobody can download the wrong one.
 FILES=()
 echo "==> Building Serafim $NAME (code $CODE) for arm64-v8a + armeabi-v7a"
-flutter build apk --release --target-platform android-arm,android-arm64 "${DEFINES[@]}"
+# Obfuscated, with the debugging symbols kept out of the APK: about 15%
+# smaller code. Keep release-symbols/<version>/ — it is the only way to read a
+# stack trace from this build (flutter symbolize -i <trace> -d <symbols file>).
+SYMBOLS="release-symbols/${NAME}"
+flutter build apk --release --target-platform android-arm,android-arm64 \
+  --obfuscate --split-debug-info="$SYMBOLS" "${DEFINES[@]}"
 APK=build/app/outputs/flutter-apk/app-release.apk
 if [[ -n "$APKSIGNER" ]]; then
   CERT=$("$APKSIGNER" verify --print-certs "$APK" | grep 'certificate DN' || true)
@@ -57,6 +62,7 @@ echo
 echo "  version name : $NAME"
 echo "  version code : $CODE"
 echo "  tag          : $TAG"
+echo "  symbols      : $SYMBOLS (keep these; back them up with the keystore)"
 for OUT in "${FILES[@]}"; do
   echo
   echo "  file         : $OUT"

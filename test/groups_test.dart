@@ -196,7 +196,7 @@ void main() {
             AppUser(id: 'me', isActive: true, createdAt: DateTime.utc(2026)),
           ),
           currentAccountIdProvider.overrideWithValue('me'),
-          webSocketStreamProvider.overrideWith((ref) => socketIn.stream),
+          webSocketEventsProvider.overrideWith((ref) => socketIn.stream),
           webSocketServiceProvider.overrideWithValue(socket),
           groupServiceProvider.overrideWithValue(groups),
         ],

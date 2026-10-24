@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:serafim/src/presentation/view/image_editor_page.dart';
@@ -65,6 +66,63 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('draw-undo')));
     await tester.pump();
     expect(undo().onPressed, isNull);
+  });
+
+  testWidgets('a crop is kept when switching to Draw, and is what is sent', (
+    tester,
+  ) async {
+    Uint8List? sent;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async {
+              sent = await Navigator.of(context).push<Uint8List>(
+                MaterialPageRoute(
+                  builder: (_) => ImageEditorPage(bytes: _png(200, 100)),
+                ),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    Future<void> settleReal() async {
+      // Decoding and cropping use real codecs, which need real time.
+      for (var i = 0; i < 6; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 150)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+
+    await settleReal();
+
+    // Choose the left half of the picture.
+    tester.widget<Crop>(find.byType(Crop)).controller!.area =
+        const Rect.fromLTWH(0, 0, 100, 100);
+    await tester.pump();
+
+    // Go and draw, then finish from Draw.
+    await tester.tap(find.text('Draw'));
+    await settleReal();
+    final shown = tester.widget<RawImage>(find.byType(RawImage)).image!;
+    // The crop library rounds to the pixel: 100 × 100, give or take one.
+    expect(
+      shown.width,
+      inInclusiveRange(99, 101),
+      reason: 'Draw shows the crop',
+    );
+    expect(shown.height, inInclusiveRange(99, 101));
+
+    await tester.tap(find.text('DONE'));
+    await settleReal();
+    final out = img.decodeImage(sent!)!;
+    expect(out.width, inInclusiveRange(99, 101), reason: 'the crop is sent');
+    expect(out.height, inInclusiveRange(99, 101));
   });
 
   test('flattening keeps the picture size and paints the stroke', () async {

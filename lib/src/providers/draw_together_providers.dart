@@ -10,10 +10,14 @@ import 'package:serafim/src/utils/image_editor/stroke.dart';
 
 /// Draw Together: two friends draw on one canvas, live.
 ///
-/// Everything here is live-only. The server relays the frames and keeps
-/// nothing; the drawing exists on the two phones until someone sends it to the
-/// chat as a scribble. Coordinates travel as fractions of the square (0..1) and
-/// pen widths as a fraction of its width, so different screens agree.
+/// The server owns each session — who invited whom, whether it was answered,
+/// and what is on the canvas — and tells both phones (see the protocol at the
+/// top of the server's draw section in `app/api/ws.py`). This side follows
+/// what it says, so the two phones never have to guess each other's state,
+/// and a phone that reconnects is handed the whole drawing again.
+///
+/// Coordinates travel as fractions of the square (0..1) and pen widths as a
+/// fraction of its width, so different screens agree.
 
 /// How thick pens are on the shared sheet, per [drawWidths] unit: a pen of
 /// size 8 is `8 / referencePadWidth` of the sheet, whatever the screen.
@@ -23,8 +27,11 @@ enum DrawStatus {
   /// We asked; waiting for them to join.
   waiting,
 
-  /// They asked; waiting for us to join.
+  /// They asked; waiting for us to answer.
   invited,
+
+  /// We said yes; waiting for the server to start it.
+  joining,
 
   /// Both here, drawing.
   live,
@@ -51,68 +58,87 @@ class DrawSession {
     required this.status,
     this.paper = 0,
     this.endedBecause,
+    this.peerAway = false,
     List<SharedStroke>? strokes,
     this.version = 0,
   }) : strokes = strokes ?? [];
 
-  final String id;
+  /// The server's id for it. Null only while our invitation is on its way.
+  final String? id;
   final String peerId;
   final DrawStatus status;
   final int paper;
 
   /// Why it ended, in words for the screen.
   final String? endedBecause;
+
+  /// The other person's connection dropped; the server waits a little for
+  /// them before ending it.
+  final bool peerAway;
   final List<SharedStroke> strokes;
 
   /// Bumped on every change, so painters know to redraw.
   final int version;
 
   DrawSession copyWith({
+    String? id,
     DrawStatus? status,
     int? paper,
     String? endedBecause,
+    bool? peerAway,
+    List<SharedStroke>? strokes,
   }) => DrawSession(
-    id: id,
+    id: id ?? this.id,
     peerId: peerId,
     status: status ?? this.status,
     paper: paper ?? this.paper,
     endedBecause: endedBecause ?? this.endedBecause,
-    strokes: strokes,
+    peerAway: peerAway ?? this.peerAway,
+    strokes: strokes ?? this.strokes,
     version: version + 1,
   );
 
   DrawSession touched() => copyWith();
 }
 
+/// Words for why a session ended (or never started), from the server's
+/// reason.
+String drawEndedText(String? reason) => switch (reason) {
+  'declined' => 'They said not now.',
+  'cancelled' => 'They cancelled the invitation.',
+  'left' => 'They left.',
+  'expired' => 'The invitation expired.',
+  'lost' => 'They lost their connection.',
+  'gone' => 'This drawing has already ended.',
+  'not_friends' => 'You can only draw with friends.',
+  'busy' => 'They are already drawing with someone.',
+  'you_are_busy' => 'You are already drawing with someone.',
+  'no_connection' => 'Could not reach them. Check your connection.',
+  'no_answer' => 'No answer.',
+  _ => 'It ended.',
+};
+
 class DrawTogether extends Notifier<DrawSession?> {
-  static const inviteWaits = Duration(seconds: 45);
-  static const inviteRepeatEvery = Duration(seconds: 4);
-  static const maxInviteSends = 8;
-  static const joinRepeatEvery = Duration(milliseconds: 1500);
-  static const maxJoinSends = 5;
+  /// How long to wait for the server before giving up on our own: it ends
+  /// invitations after 60 seconds and always says so, unless the link died.
+  static const inviteWaits = Duration(seconds: 70);
+  static const joinWaits = Duration(seconds: 15);
   static const flushEvery = Duration(milliseconds: 60);
 
-  Timer? _inviteTimer;
-  Timer? _inviteResend;
-  Timer? _joinRetry;
+  Timer? _giveUp;
   Timer? _flush;
-  int _inviteSent = 0;
-  int _joinSent = 0;
-
-  /// Whether the other side has said anything in this session yet. Control
-  /// messages (invite, join, decline) are sent only once by the connection, and
-  /// mobile networks drop messages, so they are repeated until this is true.
-  bool _heardPeer = false;
   int _nextStroke = 0;
   SharedStroke? _drawing;
   final List<double> _unsent = [];
 
+  /// Whom we invited and then cancelled before the server had named the
+  /// session: it is left as soon as it is named.
+  String? _cancelledInviteTo;
+
   @override
   DrawSession? build() {
     ref.onDispose(() {
-      _inviteTimer?.cancel();
-      _inviteResend?.cancel();
-      _joinRetry?.cancel();
+      _giveUp?.cancel();
       _flush?.cancel();
     });
     return null;
@@ -120,25 +146,29 @@ class DrawTogether extends Notifier<DrawSession?> {
 
   String? get _me => ref.read(currentAccountIdProvider);
 
+  /// In a session that has not ended.
   bool get busy => state != null && state!.status != DrawStatus.ended;
 
   bool _send(Map<String, dynamic> frame) {
-    final session = state;
-    if (session == null) return false;
-    return _sendTo(session.id, session.peerId, frame);
-  }
-
-  bool _sendTo(String session, String peer, Map<String, dynamic> frame) {
     final sent = ref.read(webSocketServiceProvider).sendMessage({
       'type': 'draw',
-      'session': session,
-      'recipient_id': peer,
       ...frame,
     });
-    if (frame['op'] != 'stroke') {
-      trace('draw', 'send ${frame['op']} session=$session to=$peer ok=$sent');
-    }
+    if (frame['op'] != 'stroke') trace('draw', 'send ${frame['op']} ok=$sent');
     return sent;
+  }
+
+  bool _sendInSession(Map<String, dynamic> frame) {
+    final id = state?.id;
+    if (id == null) return false;
+    return _send({'session': id, ...frame});
+  }
+
+  void _waitAtMost(Duration wait, DrawStatus status, String reason) {
+    _giveUp?.cancel();
+    _giveUp = Timer(wait, () {
+      if (state?.status == status) _end(reason);
+    });
   }
 
   // ----------------------------------------------------------- starting ---
@@ -147,64 +177,52 @@ class DrawTogether extends Notifier<DrawSession?> {
   /// connection is down.
   bool invite(String peerId) {
     if (busy || _me == null) return false;
-    final id = '${DateTime.now().microsecondsSinceEpoch}';
-    _resetHandshake();
-    state = DrawSession(id: id, peerId: peerId, status: DrawStatus.waiting);
-    if (!_send({'op': 'invite'})) {
-      _end('Could not reach them. Check your connection.');
+    _cancelledInviteTo = null;
+    state = DrawSession(id: null, peerId: peerId, status: DrawStatus.waiting);
+    if (!_send({'op': 'invite', 'recipient_id': peerId})) {
+      _end(drawEndedText('no_connection'));
       return false;
     }
-    _inviteSent = 1;
-    // Ask again every few seconds until they answer: one invitation can be
-    // lost on the way, and they ignore the repeats.
-    _inviteResend = Timer.periodic(inviteRepeatEvery, (timer) {
-      if (state?.status != DrawStatus.waiting ||
-          _heardPeer ||
-          ++_inviteSent > maxInviteSends) {
-        timer.cancel();
-        return;
-      }
-      _send({'op': 'invite'});
-    });
-    _inviteTimer?.cancel();
-    _inviteTimer = Timer(inviteWaits, () {
-      if (state?.status == DrawStatus.waiting) _end('No answer.');
-    });
+    _waitAtMost(inviteWaits, DrawStatus.waiting, drawEndedText('no_answer'));
     return true;
+  }
+
+  /// An invitation known from a tapped push before the app's connection has
+  /// delivered it. The server hands it over on connect (or says it is gone).
+  void expectInvite({required String session, required String peerId}) {
+    if (busy) return;
+    state = DrawSession(
+      id: session,
+      peerId: peerId,
+      status: DrawStatus.invited,
+    );
+    _expireInvitation(null);
+  }
+
+  /// An invitation nobody answers goes away when the server's does (it says
+  /// so, but not if the link is down), with a little slack.
+  void _expireInvitation(Object? seconds) {
+    final wait = Duration(seconds: (seconds is int ? seconds : 60) + 5);
+    _waitAtMost(wait, DrawStatus.invited, drawEndedText('expired'));
   }
 
   /// Accepts the invitation that is waiting.
   void join() {
     final s = state;
     if (s == null || s.status != DrawStatus.invited) return;
-    _inviteTimer?.cancel();
-    state = s.copyWith(status: DrawStatus.live);
-    _send({'op': 'join'});
-    // Say it again until they answer (a "ready", or any stroke): if the first
-    // one is lost, they would wait for ever.
-    _joinSent = 1;
-    _joinRetry?.cancel();
-    _joinRetry = Timer.periodic(joinRepeatEvery, (timer) {
-      if (state?.id != s.id || _heardPeer || ++_joinSent > maxJoinSends) {
-        timer.cancel();
-        return;
-      }
-      _send({'op': 'join'});
-    });
+    state = s.copyWith(status: DrawStatus.joining);
+    if (!_sendInSession({'op': 'join'})) {
+      _end(drawEndedText('no_connection'));
+      return;
+    }
+    _waitAtMost(joinWaits, DrawStatus.joining, drawEndedText('no_connection'));
   }
 
   /// Turns the invitation down.
   void decline() {
     final s = state;
     if (s == null || s.status != DrawStatus.invited) return;
-    // The answer matters, and it is the last thing sent, so it goes three
-    // times, a second apart. They ignore any after the first.
-    _sendTo(s.id, s.peerId, {'op': 'decline'});
-    for (final seconds in const [1, 2]) {
-      Future<void>.delayed(Duration(seconds: seconds), () {
-        if (ref.mounted) _sendTo(s.id, s.peerId, {'op': 'decline'});
-      });
-    }
+    _sendInSession({'op': 'decline'});
     close();
   }
 
@@ -213,109 +231,134 @@ class DrawTogether extends Notifier<DrawSession?> {
   /// A `draw` frame from the server. Returns true when it is a *new*
   /// invitation, so the caller can alert the person.
   bool heard(Map<String, dynamic> frame) {
-    if (frame['op'] != 'stroke') {
+    final op = frame['op'] as String?;
+    final session = frame['session'] as String?;
+    if (op != 'stroke') {
       final s = state;
       trace(
         'draw',
-        'heard ${frame['op']} from=${frame['sender_id']} '
-            'session=${frame['session']} | mine: '
-            '${s == null ? 'none' : '${s.status.name} id=${s.id} peer=${s.peerId}'}',
+        'heard $op session=$session | mine: '
+            '${s == null ? 'none' : '${s.status.name} id=${s.id}'}',
       );
     }
-    final from = frame['sender_id'] as String?;
-    final session = frame['session'] as String?;
-    final op = frame['op'] as String?;
-    if (from == null || session == null || op == null) return false;
+    switch (op) {
+      case 'invite':
+        final from = frame['peer_id'] as String?;
+        if (session == null || from == null) return false;
+        // The same one again (it can arrive live and again on connect).
+        if (state?.id == session) return false;
+        if (busy) return false; // the server does not let this happen
+        state = DrawSession(
+          id: session,
+          peerId: from,
+          status: DrawStatus.invited,
+        );
+        _expireInvitation(frame['expires_in']);
+        return true;
 
-    if (op == 'invite') {
-      // The same invitation again (they repeat it): nothing new.
-      if (state?.id == session && state?.peerId == from) return false;
-      if (busy) {
-        // Already drawing with someone: tell them, don't change anything.
-        ref.read(webSocketServiceProvider).sendMessage({
-          'type': 'draw',
-          'op': 'busy',
-          'session': session,
-          'recipient_id': from,
-        });
+      case 'invited':
+        final peer = frame['peer_id'] as String?;
+        if (session != null && peer != null && _cancelledInviteTo == peer) {
+          // Cancelled while it was on its way: withdraw it now.
+          _cancelledInviteTo = null;
+          _send({'op': 'leave', 'session': session});
+          return false;
+        }
+        final s = state;
+        if (s == null || s.status != DrawStatus.waiting || s.peerId != peer) {
+          return false;
+        }
+        state = s.copyWith(id: session);
         return false;
-      }
-      state = DrawSession(
-        id: session,
-        peerId: from,
-        status: DrawStatus.invited,
-      );
-      _inviteTimer?.cancel();
-      _inviteTimer = Timer(const Duration(seconds: 60), () {
-        if (state?.status == DrawStatus.invited) close();
-      });
-      return true;
+
+      case 'refused':
+        final s = state;
+        if (s != null &&
+            s.status == DrawStatus.waiting &&
+            s.peerId == frame['peer_id']) {
+          _end(drawEndedText(frame['reason'] as String?));
+        }
+        return false;
     }
 
+    // Everything else is about a named session we are in.
     final s = state;
-    if (s == null || s.id != session || s.peerId != from) return false;
-
-    // Anything from them means they are there and heard us.
-    _heardPeer = true;
-    _inviteResend?.cancel();
-    _joinRetry?.cancel();
-
-    // They are drawing, so they have joined — even if their "join" got lost.
-    const joinedOps = {'join', 'ready', 'stroke', 'undo', 'clear', 'paper'};
-    var current = s;
-    if (s.status == DrawStatus.waiting && joinedOps.contains(op)) {
-      _inviteTimer?.cancel();
-      current = s.copyWith(status: DrawStatus.live);
-      state = current;
-    }
+    if (s == null || session == null || s.id != session) return false;
 
     switch (op) {
-      case 'join':
-        // Tell them we saw it (also when it is a repeat of one we saw).
-        _send({'op': 'ready'});
-      case 'ready':
-        break;
+      case 'started':
+      case 'state':
+        _giveUp?.cancel();
+        state = s.copyWith(
+          status: DrawStatus.live,
+          paper: frame['paper'] is int ? frame['paper'] as int : 0,
+          peerAway: false,
+          strokes: _strokesFrom(frame['strokes']),
+        );
       case 'stroke':
-        if (current.status == DrawStatus.live) _remoteStroke(current, frame);
+        if (s.status == DrawStatus.live) _remoteStroke(s, frame);
       case 'undo':
-        final key = '$from:${frame['id']}';
-        current.strokes.removeWhere((x) => x.key == key);
-        state = current.touched();
+        final key = '${s.peerId}:${frame['id']}';
+        s.strokes.removeWhere((x) => x.key == key);
+        state = s.touched();
       case 'clear':
-        current.strokes.clear();
-        state = current.touched();
+        s.strokes.clear();
+        state = s.touched();
       case 'paper':
         final i = frame['i'];
-        if (i is int) state = current.copyWith(paper: i);
-      case 'leave':
-        _end('They left.');
-      case 'decline':
-        _end('They declined.');
-      case 'busy':
-        _end('They are already drawing with someone.');
-      case 'unavailable':
-        _end('They are not available right now.');
+        if (i is int) state = s.copyWith(paper: i);
+      case 'away':
+        state = s.copyWith(peerAway: true);
+      case 'back':
+        state = s.copyWith(peerAway: false);
+      case 'ended':
+        _end(drawEndedText(frame['reason'] as String?));
     }
     return false;
   }
 
-  void _remoteStroke(DrawSession s, Map<String, dynamic> frame) {
-    final key = '${s.peerId}:${frame['id']}';
-    var shared = s.strokes.where((x) => x.key == key).firstOrNull;
-    if (shared == null) {
-      final colour = frame['c'];
-      final width = frame['w'];
-      shared = SharedStroke(
-        key: key,
-        mine: false,
-        stroke: Stroke(
-          color: Color(colour is int ? colour : 0xFF000000),
-          width: width is num ? width.toDouble() : 0.02,
-          erase: frame['e'] == true,
-        ),
+  /// The canvas as the server keeps it (on start, or after reconnecting).
+  List<SharedStroke> _strokesFrom(Object? raw) {
+    final me = _me;
+    final strokes = <SharedStroke>[];
+    if (raw is! List) return strokes;
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final owner = item['owner'] as String? ?? '';
+      final shared = _strokeFrom(
+        key: '$owner:${item['id']}',
+        mine: owner == me,
+        frame: item,
       );
-      s.strokes.add(shared);
+      strokes.add(shared);
+      // Our own numbering continues past anything already on the sheet.
+      final n = int.tryParse('${item['id']}');
+      if (owner == me && n != null && n >= _nextStroke) _nextStroke = n + 1;
     }
+    return strokes;
+  }
+
+  SharedStroke _strokeFrom({
+    required String key,
+    required bool mine,
+    required Map<dynamic, dynamic> frame,
+  }) {
+    final colour = frame['c'];
+    final width = frame['w'];
+    final shared = SharedStroke(
+      key: key,
+      mine: mine,
+      stroke: Stroke(
+        color: Color(colour is int ? colour : 0xFF000000),
+        width: width is num ? width.toDouble() : 0.02,
+        erase: frame['e'] == true,
+      ),
+    );
+    _addPoints(shared, frame);
+    return shared;
+  }
+
+  void _addPoints(SharedStroke shared, Map<dynamic, dynamic> frame) {
     final p = frame['p'];
     if (p is List) {
       for (var i = 0; i + 1 < p.length; i += 2) {
@@ -326,12 +369,23 @@ class DrawTogether extends Notifier<DrawSession?> {
       }
     }
     if (frame['done'] == true) shared.done = true;
+  }
+
+  void _remoteStroke(DrawSession s, Map<String, dynamic> frame) {
+    final key = '${s.peerId}:${frame['id']}';
+    final existing = s.strokes.where((x) => x.key == key).firstOrNull;
+    if (existing == null) {
+      s.strokes.add(_strokeFrom(key: key, mine: false, frame: frame));
+    } else {
+      _addPoints(existing, frame);
+    }
     state = s.touched();
   }
 
   // --------------------------------------------------- drawing locally ---
 
-  /// Starts a line at [point] (0..1 on the sheet).
+  /// Starts a line at [point] (0..1 on the sheet). [widthIndex] is a pen
+  /// size, or an eraser size when [erase] is set.
   void beginStroke({
     required Color color,
     required int widthIndex,
@@ -341,10 +395,7 @@ class DrawTogether extends Notifier<DrawSession?> {
     final s = state;
     if (s == null || s.status != DrawStatus.live) return;
     final id = '${_nextStroke++}';
-    final width =
-        drawWidths[widthIndex] *
-        (erase ? eraserWidthFactor : 1) /
-        referencePadWidth;
+    final width = strokeWidthFor(widthIndex, erase: erase) / referencePadWidth;
     final shared = SharedStroke(
       key: '${_me ?? 'me'}:$id',
       mine: true,
@@ -382,19 +433,14 @@ class DrawTogether extends Notifier<DrawSession?> {
   void _flushNow({bool done = false}) {
     final drawing = _drawing;
     if (drawing == null || (_unsent.isEmpty && !done)) return;
-    final id = drawing.key.split(':').last;
     final points = List<double>.of(_unsent);
     _unsent.clear();
-    _sendFrame(drawing.stroke, id, points, done);
-  }
-
-  void _sendFrame(Stroke stroke, String id, List<double> points, bool done) {
-    _send({
+    _sendInSession({
       'op': 'stroke',
-      'id': id,
-      'c': stroke.color.toARGB32(),
-      'w': stroke.width,
-      'e': stroke.erase,
+      'id': drawing.key.split(':').last,
+      'c': drawing.stroke.color.toARGB32(),
+      'w': drawing.stroke.width,
+      'e': drawing.stroke.erase,
       'p': points,
       'done': done,
     });
@@ -407,7 +453,7 @@ class DrawTogether extends Notifier<DrawSession?> {
     final index = s.strokes.lastIndexWhere((x) => x.mine);
     if (index < 0) return;
     final removed = s.strokes.removeAt(index);
-    _send({'op': 'undo', 'id': removed.key.split(':').last});
+    _sendInSession({'op': 'undo', 'id': removed.key.split(':').last});
     state = s.touched();
   }
 
@@ -416,7 +462,7 @@ class DrawTogether extends Notifier<DrawSession?> {
     final s = state;
     if (s == null || s.status != DrawStatus.live) return;
     s.strokes.clear();
-    _send({'op': 'clear'});
+    _sendInSession({'op': 'clear'});
     state = s.touched();
   }
 
@@ -424,30 +470,30 @@ class DrawTogether extends Notifier<DrawSession?> {
     final s = state;
     if (s == null || s.status != DrawStatus.live) return;
     state = s.copyWith(paper: index);
-    _send({'op': 'paper', 'i': index});
+    _sendInSession({'op': 'paper', 'i': index});
   }
 
   // ------------------------------------------------------------- ending ---
 
-  /// I am leaving.
+  /// I am leaving (or cancelling my invitation). The other person is told.
   void leave() {
-    if (state == null) return;
-    if (state!.status != DrawStatus.ended) _send({'op': 'leave'});
+    final s = state;
+    if (s == null) return;
+    if (s.status != DrawStatus.ended) {
+      if (s.id == null) {
+        // Not named yet: withdraw it the moment the server names it.
+        _cancelledInviteTo = s.peerId;
+        close();
+        return;
+      }
+      _sendInSession({'op': 'leave'});
+    }
     close();
-  }
-
-  void _resetHandshake() {
-    _inviteResend?.cancel();
-    _joinRetry?.cancel();
-    _heardPeer = false;
-    _inviteSent = 0;
-    _joinSent = 0;
   }
 
   void _end(String reason) {
     trace('draw', 'ended: $reason');
-    _resetHandshake();
-    _inviteTimer?.cancel();
+    _giveUp?.cancel();
     _flush?.cancel();
     _flush = null;
     _drawing = null;
@@ -458,11 +504,11 @@ class DrawTogether extends Notifier<DrawSession?> {
 
   /// Forget the session (after it has ended, or I left).
   void close() {
-    _resetHandshake();
-    _inviteTimer?.cancel();
+    _giveUp?.cancel();
     _flush?.cancel();
     _flush = null;
     _drawing = null;
+    _nextStroke = 0;
     state = null;
   }
 }

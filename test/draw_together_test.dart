@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:serafim/src/data/models/app_user.dart';
 import 'package:serafim/src/data/services/websocket_service.dart';
 import 'package:serafim/src/presentation/view/draw_together_page.dart';
+import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/draw_together_providers.dart';
+import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/providers/websocket_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeWs extends WebSocketService {
   final sent = <Map<String, dynamic>>[];
@@ -34,342 +40,361 @@ class _FakeWs extends WebSocketService {
   return (c: c, ws: ws, n: c.read(drawTogetherProvider.notifier));
 }
 
-Map<String, dynamic> frame(
-  String op, {
-  String session = 'S',
-  String from = 'ann',
-  Map<String, dynamic>? extra,
-}) => {
-  'type': 'draw',
-  'op': op,
-  'session': session,
-  'sender_id': from,
-  ...?extra,
-};
+/// A frame from the server.
+Map<String, dynamic> server(
+  String op, [
+  Map<String, dynamic> extra = const {},
+]) => {'type': 'draw', 'op': op, ...extra};
 
-/// Ends the session shown in a page test, so no retry timer outlives it.
-Future<void> _finish(WidgetTester tester) async {
-  final c = ProviderScope.containerOf(
-    tester.element(find.byType(DrawTogetherPage)),
-  );
-  c.read(drawTogetherProvider.notifier).close();
-  await tester.pump();
+Map<String, dynamic> started({
+  String session = 'S',
+  String peer = 'ann',
+  int paper = 0,
+  List<Map<String, dynamic>> strokes = const [],
+}) => server('started', {
+  'session': session,
+  'peer_id': peer,
+  'status': 'live',
+  'paper': paper,
+  'strokes': strokes,
+});
+
+/// Inviting Ann, and the server starting it once she joins.
+DrawTogether live(({ProviderContainer c, _FakeWs ws, DrawTogether n}) t) {
+  t.n.invite('ann');
+  t.n.heard(server('invited', {'session': 'S', 'peer_id': 'ann'}));
+  t.n.heard(started());
+  return t.n;
 }
 
 void main() {
-  group('starting', () {
-    test('inviting sends the invite and waits', () {
+  group('inviting', () {
+    test('asks the server and waits for it to name the session', () {
       final t = make();
       expect(t.n.invite('ann'), isTrue);
-      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.waiting);
-      expect(t.ws.sent.single['op'], 'invite');
-      expect(t.ws.sent.single['recipient_id'], 'ann');
-      expect(t.n.busy, isTrue);
+      expect(t.ws.sent.single, {
+        'type': 'draw',
+        'op': 'invite',
+        'recipient_id': 'ann',
+      });
+      var s = t.c.read(drawTogetherProvider)!;
+      expect([s.status, s.id], [DrawStatus.waiting, null]);
+
+      t.n.heard(server('invited', {'session': 'S', 'peer_id': 'ann'}));
+      s = t.c.read(drawTogetherProvider)!;
+      expect([s.status, s.id], [DrawStatus.waiting, 'S']);
       expect(t.n.invite('bob'), isFalse, reason: 'one session at a time');
+      expect(t.ws.sent, hasLength(1), reason: 'nothing is repeated');
     });
 
     test('no connection: it ends at once with a reason', () {
       final t = make();
       t.ws.up = false;
       expect(t.n.invite('ann'), isFalse);
-      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.ended);
-      expect(t.n.busy, isFalse);
-    });
-
-    test('they join, and we are live', () {
-      final t = make();
-      t.n.invite('ann');
-      final id = t.c.read(drawTogetherProvider)!.id;
-      t.n.heard(frame('join', session: id));
-      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.live);
-    });
-
-    test('an invitation: a new one is reported, and accepting joins', () {
-      final t = make();
-      expect(t.n.heard(frame('invite')), isTrue);
-      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.invited);
-      t.n.join();
-      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.live);
-      expect(t.ws.sent.last['op'], 'join');
-      expect(t.ws.sent.last['session'], 'S');
-    });
-
-    test('declining tells them and forgets it', () {
-      final t = make();
-      t.n.heard(frame('invite'));
-      t.n.decline();
-      expect(t.ws.sent.last['op'], 'decline');
-      expect(t.c.read(drawTogetherProvider), isNull);
-    });
-
-    test(
-      'busy: a second invitation is answered "busy" and changes nothing',
-      () {
-        final t = make();
-        t.n.heard(frame('invite'));
-        expect(t.n.heard(frame('invite', session: 'T', from: 'bob')), isFalse);
-        expect(t.ws.sent.last['op'], 'busy');
-        expect(t.ws.sent.last['recipient_id'], 'bob');
-        expect(t.c.read(drawTogetherProvider)!.peerId, 'ann');
-      },
-    );
-
-    testWidgets('no answer in 45 seconds ends it', (tester) async {
-      final t = make();
-      t.n.invite('ann');
-      await tester.pump(const Duration(seconds: 46));
       final s = t.c.read(drawTogetherProvider)!;
       expect(s.status, DrawStatus.ended);
-      expect(s.endedBecause, 'No answer.');
+      expect(s.endedBecause, contains('connection'));
+    });
+
+    test('the server starts it when they join, with the canvas', () {
+      final t = make();
+      live(t);
+      final s = t.c.read(drawTogetherProvider)!;
+      expect(s.status, DrawStatus.live);
+      expect(s.strokes, isEmpty);
+    });
+
+    test('refused, declined and expired end the wait with the reason', () {
+      for (final (frame, words) in [
+        (server('refused', {'peer_id': 'ann', 'reason': 'busy'}), 'already'),
+        (server('ended', {'session': 'S', 'reason': 'declined'}), 'not now'),
+        (server('ended', {'session': 'S', 'reason': 'expired'}), 'expired'),
+      ]) {
+        final t = make();
+        t.n.invite('ann');
+        t.n.heard(server('invited', {'session': 'S', 'peer_id': 'ann'}));
+        t.n.heard(frame);
+        final s = t.c.read(drawTogetherProvider)!;
+        expect(s.status, DrawStatus.ended);
+        expect(s.endedBecause, contains(words));
+      }
+    });
+
+    test('cancelling before the server named it withdraws it once named', () {
+      final t = make();
+      t.n.invite('ann');
+      t.n.leave();
+      expect(t.c.read(drawTogetherProvider), isNull);
+      t.n.heard(server('invited', {'session': 'S', 'peer_id': 'ann'}));
+      expect(t.ws.sent.last, {'type': 'draw', 'op': 'leave', 'session': 'S'});
+    });
+
+    testWidgets('if the server never answers, it gives up on its own', (
+      tester,
+    ) async {
+      final t = make();
+      t.n.invite('ann');
+      await tester.pump(DrawTogether.inviteWaits);
+      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.ended);
     });
   });
 
-  group('the shared sheet', () {
-    ({ProviderContainer c, _FakeWs ws, DrawTogether n}) live() {
+  group('being invited', () {
+    test('a new invitation is reported once, and joining asks the server', () {
       final t = make();
-      t.n.heard(frame('invite'));
-      t.n.join();
-      t.ws.sent.clear();
-      return t;
-    }
+      final invite = server('invite', {
+        'session': 'S',
+        'peer_id': 'ann',
+        'expires_in': 60,
+      });
+      expect(t.n.heard(invite), isTrue);
+      // It can arrive twice (live and on connect): the same one is not new.
+      expect(t.n.heard(invite), isFalse);
+      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.invited);
 
-    test('their strokes arrive in pieces and join up', () {
-      final t = live();
-      t.n.heard(
-        frame(
-          'stroke',
-          extra: {
-            'id': '1',
-            'c': 0xFFFF0000,
-            'w': 0.02,
-            'e': false,
-            'p': [0.1, 0.1, 0.2, 0.2],
-            'done': false,
-          },
-        ),
-      );
-      t.n.heard(
-        frame(
-          'stroke',
-          extra: {
-            'id': '1',
-            'c': 0xFFFF0000,
-            'w': 0.02,
-            'e': false,
-            'p': [0.3, 0.3],
-            'done': true,
-          },
-        ),
-      );
-      final s = t.c.read(drawTogetherProvider)!;
-      expect(s.strokes, hasLength(1));
-      expect(s.strokes.single.stroke.points, hasLength(3));
-      expect(s.strokes.single.done, isTrue);
-      expect(s.strokes.single.mine, isFalse);
-      expect(s.strokes.single.stroke.color, const Color(0xFFFF0000));
+      t.n.join();
+      expect(t.ws.sent.single, {'type': 'draw', 'session': 'S', 'op': 'join'});
+      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.joining);
+      t.n.heard(started());
+      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.live);
     });
 
-    test('their eraser arrives as an eraser', () {
-      final t = live();
-      t.n.heard(
-        frame(
-          'stroke',
-          extra: {
-            'id': '2',
-            'c': 0xFF000000,
-            'w': 0.05,
-            'e': true,
-            'p': [0.5, 0.5],
-            'done': true,
-          },
-        ),
-      );
+    test('declining tells the server once and forgets it', () {
+      final t = make();
+      t.n.heard(server('invite', {'session': 'S', 'peer_id': 'ann'}));
+      t.n.decline();
+      expect(t.ws.ops, ['decline']);
+      expect(t.c.read(drawTogetherProvider), isNull);
+    });
+
+    test('from a tapped push: shown at once, then the server confirms', () {
+      final t = make();
+      t.n.expectInvite(session: 'S', peerId: 'ann');
+      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.invited);
+      // The connection then delivers the same invitation: not a new one.
       expect(
-        t.c.read(drawTogetherProvider)!.strokes.single.stroke.erase,
-        isTrue,
+        t.n.heard(server('invite', {'session': 'S', 'peer_id': 'ann'})),
+        isFalse,
       );
+    });
+
+    test('joining one that has gone is told so', () {
+      final t = make();
+      t.n.expectInvite(session: 'S', peerId: 'ann');
+      t.n.join();
+      t.n.heard(server('ended', {'session': 'S', 'reason': 'gone'}));
+      final s = t.c.read(drawTogetherProvider)!;
+      expect(s.status, DrawStatus.ended);
+      expect(s.endedBecause, contains('already ended'));
+    });
+
+    testWidgets('an invitation nobody answers goes away', (tester) async {
+      final t = make();
+      t.n.heard(
+        server('invite', {'session': 'S', 'peer_id': 'ann', 'expires_in': 10}),
+      );
+      await tester.pump(const Duration(seconds: 16));
+      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.ended);
+    });
+  });
+
+  group('drawing', () {
+    test('their strokes arrive in pieces and join up', () {
+      final t = make();
+      live(t);
+      final piece = {
+        'session': 'S',
+        'id': '1',
+        'c': 0xFFFF0000,
+        'w': 0.02,
+        'e': false,
+      };
+      t.n.heard(
+        server('stroke', {
+          ...piece,
+          'p': [0.1, 0.1],
+          'done': false,
+        }),
+      );
+      t.n.heard(
+        server('stroke', {
+          ...piece,
+          'p': [0.2, 0.2],
+          'done': true,
+        }),
+      );
+      final s = t.c.read(drawTogetherProvider)!.strokes.single;
+      expect(s.key, 'ann:1');
+      expect(s.mine, isFalse);
+      expect(s.stroke.points, [const Offset(0.1, 0.1), const Offset(0.2, 0.2)]);
+      expect(s.done, isTrue);
+      expect(s.stroke.color, const Color(0xFFFF0000));
     });
 
     test('their undo, clear and paper', () {
-      final t = live();
+      final t = make();
+      live(t);
       for (final id in ['1', '2']) {
         t.n.heard(
-          frame(
-            'stroke',
-            extra: {
-              'id': id,
-              'c': 0xFF000000,
-              'w': 0.02,
-              'e': false,
-              'p': [0.1, 0.1],
-              'done': true,
-            },
-          ),
+          server('stroke', {
+            'session': 'S',
+            'id': id,
+            'c': 1,
+            'w': 0.02,
+            'p': [0.1, 0.1],
+            'done': true,
+          }),
         );
       }
-      t.n.heard(frame('undo', extra: {'id': '1'}));
+      t.n.heard(server('undo', {'session': 'S', 'id': '1'}));
       expect(t.c.read(drawTogetherProvider)!.strokes.map((s) => s.key), [
         'ann:2',
       ]);
-      t.n.heard(frame('paper', extra: {'i': 2}));
-      expect(t.c.read(drawTogetherProvider)!.paper, 2);
-      t.n.heard(frame('clear'));
+      t.n.heard(server('paper', {'session': 'S', 'i': 3}));
+      expect(t.c.read(drawTogetherProvider)!.paper, 3);
+      t.n.heard(server('clear', {'session': 'S'}));
       expect(t.c.read(drawTogetherProvider)!.strokes, isEmpty);
     });
 
-    test('frames from another session or person are ignored', () {
-      final t = live();
-      t.n.heard(
-        frame(
-          'stroke',
-          session: 'OTHER',
-          extra: {
-            'id': '1',
-            'c': 1,
-            'w': 0.02,
-            'p': [0.1, 0.1],
-            'done': true,
-          },
-        ),
-      );
-      t.n.heard(
-        frame(
-          'stroke',
-          from: 'mallory',
-          extra: {
-            'id': '1',
-            'c': 1,
-            'w': 0.02,
-            'p': [0.1, 0.1],
-            'done': true,
-          },
-        ),
-      );
-      expect(t.c.read(drawTogetherProvider)!.strokes, isEmpty);
+    test('frames for another session are ignored', () {
+      final t = make();
+      live(t);
+      t.n.heard(server('clear', {'session': 'OTHER'}));
+      t.n.heard(server('ended', {'session': 'OTHER', 'reason': 'left'}));
+      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.live);
     });
 
-    testWidgets('my drawing is sent in small batches, normalised', (
+    testWidgets('my drawing goes out in small batches, in the session', (
       tester,
     ) async {
-      final t = live();
+      final t = make();
+      live(t);
+      t.ws.sent.clear();
       t.n.beginStroke(
-        color: Colors.red,
-        widthIndex: 1,
+        color: const Color(0xFF000000),
+        widthIndex: 0,
         erase: false,
-        point: const Offset(0.1, 0.2),
+        point: const Offset(0.1, 0.1),
       );
-      t.n.extendStroke(const Offset(0.3, 0.4));
-      t.n.extendStroke(const Offset(0.5, 0.6));
-      expect(t.ws.sent, isEmpty, reason: 'batched, not one frame per point');
-      await tester.pump(const Duration(milliseconds: 70));
-      expect(t.ws.sent, hasLength(1));
-      expect(t.ws.sent.single['p'], [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
-      expect(t.ws.sent.single['done'], false);
-      expect(t.ws.sent.single['w'], closeTo(8 / referencePadWidth, 1e-9));
-
-      t.n.extendStroke(const Offset(0.7, 0.8));
+      t.n.extendStroke(const Offset(0.2, 0.2));
+      await tester.pump(DrawTogether.flushEvery);
+      t.n.extendStroke(const Offset(0.3, 0.3));
       t.n.endStroke();
-      expect(t.ws.sent.last['done'], true);
-      expect(t.ws.sent.last['p'], [0.7, 0.8]);
-      expect(t.c.read(drawTogetherProvider)!.strokes.single.mine, isTrue);
-      t.n.close();
+      expect(t.ws.ops, ['stroke', 'stroke']);
+      expect(t.ws.sent.first['session'], 'S');
+      expect(t.ws.sent.first['p'], [0.1, 0.1, 0.2, 0.2]);
+      expect(t.ws.sent.last['p'], [0.3, 0.3]);
+      expect(t.ws.sent.last['done'], isTrue);
     });
 
-    testWidgets('the eraser is wider and marked', (tester) async {
-      final t = live();
+    test('undo takes back only my last line and tells them', () {
+      final t = make();
+      live(t);
       t.n.beginStroke(
-        color: Colors.black,
-        widthIndex: 1,
-        erase: true,
-        point: const Offset(0.5, 0.5),
-      );
-      t.n.endStroke();
-      expect(t.ws.sent.last['e'], true);
-      expect(t.ws.sent.last['w'], closeTo(8 * 2.5 / referencePadWidth, 1e-9));
-      t.n.close();
-    });
-
-    test('undo takes back only MY last line and tells them', () {
-      final t = live();
-      t.n.heard(
-        frame(
-          'stroke',
-          extra: {
-            'id': '9',
-            'c': 1,
-            'w': 0.02,
-            'p': [0.1, 0.1],
-            'done': true,
-          },
-        ),
-      );
-      t.n.beginStroke(
-        color: Colors.red,
+        color: const Color(0xFF000000),
         widthIndex: 0,
         erase: false,
         point: const Offset(0.1, 0.1),
       );
       t.n.endStroke();
-      t.ws.sent.clear();
+      t.n.heard(
+        server('stroke', {
+          'session': 'S',
+          'id': '0',
+          'c': 1,
+          'w': 0.02,
+          'p': [0.5, 0.5],
+          'done': true,
+        }),
+      );
       t.n.undo();
-      expect(t.ws.sent.single['op'], 'undo');
-      expect(t.c.read(drawTogetherProvider)!.strokes.map((s) => s.mine), [
-        false,
+      expect(t.c.read(drawTogetherProvider)!.strokes.single.key, 'ann:0');
+      expect(t.ws.sent.last, {
+        'type': 'draw',
+        'session': 'S',
+        'op': 'undo',
+        'id': '0',
+      });
+    });
+
+    test('a reconnect hands back the whole canvas, mine included', () {
+      final t = make();
+      live(t);
+      t.n.heard(server('away', {'session': 'S'}));
+      expect(t.c.read(drawTogetherProvider)!.peerAway, isTrue);
+      t.n.heard(
+        server('state', {
+          'session': 'S',
+          'peer_id': 'ann',
+          'status': 'live',
+          'paper': 2,
+          'strokes': [
+            {
+              'owner': 'me',
+              'id': '4',
+              'c': 1,
+              'w': 0.02,
+              'p': [0.1, 0.1],
+            },
+            {
+              'owner': 'ann',
+              'id': '0',
+              'c': 2,
+              'w': 0.02,
+              'p': [0.2, 0.2],
+            },
+          ],
+        }),
+      );
+      final s = t.c.read(drawTogetherProvider)!;
+      expect(s.peerAway, isFalse);
+      expect(s.paper, 2);
+      expect(s.strokes.map((x) => (x.key, x.mine)), [
+        ('me:4', true),
+        ('ann:0', false),
       ]);
-      t.n.undo(); // nothing of mine left: their line stays
-      expect(t.c.read(drawTogetherProvider)!.strokes, hasLength(1));
+      // My next line does not reuse an id already on the sheet.
+      t.n.beginStroke(
+        color: const Color(0xFF000000),
+        widthIndex: 0,
+        erase: false,
+        point: const Offset(0.3, 0.3),
+      );
+      expect(t.c.read(drawTogetherProvider)!.strokes.last.key, 'me:5');
+      t.n.endStroke();
     });
 
     test('leaving tells them and clears the session', () {
       final t = make();
-      t.n.invite('ann');
-      final id = t.c.read(drawTogetherProvider)!.id;
-      t.n.heard(frame('join', session: id));
-      t.ws.sent.clear();
+      live(t);
       t.n.leave();
-      expect(t.ws.sent.single['op'], 'leave');
+      expect(t.ws.sent.last, {'type': 'draw', 'session': 'S', 'op': 'leave'});
       expect(t.c.read(drawTogetherProvider), isNull);
     });
 
-    test('they leave: it ends with a reason and I can still send it', () {
-      final t = live();
-      t.n.heard(
-        frame(
-          'stroke',
-          extra: {
-            'id': '1',
-            'c': 1,
-            'w': 0.02,
-            'p': [0.1, 0.1],
-            'done': true,
-          },
-        ),
+    test('they leave: it ends with a reason, the drawing stays', () {
+      final t = make();
+      live(t);
+      t.n.beginStroke(
+        color: const Color(0xFF000000),
+        widthIndex: 0,
+        erase: false,
+        point: const Offset(0.1, 0.1),
       );
-      t.n.heard(frame('leave'));
+      t.n.endStroke();
+      t.n.heard(server('ended', {'session': 'S', 'reason': 'left'}));
       final s = t.c.read(drawTogetherProvider)!;
       expect(s.status, DrawStatus.ended);
       expect(s.endedBecause, 'They left.');
-      expect(s.strokes, hasLength(1), reason: 'the drawing is still there');
-      expect(t.n.busy, isFalse);
-    });
-
-    test('unavailable and declined end the wait', () {
-      final t = make();
-      t.n.invite('ann');
-      final id = t.c.read(drawTogetherProvider)!.id;
-      t.n.heard(frame('unavailable', session: id));
-      expect(
-        t.c.read(drawTogetherProvider)!.endedBecause,
-        contains('not available'),
-      );
+      expect(s.strokes, hasLength(1));
     });
   });
 
   group('the page', () {
-    Future<_FakeWs> open(WidgetTester tester, {bool join = true}) async {
-      tester.view.physicalSize = const Size(420, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
+    Future<ProviderContainer> showPage(
+      WidgetTester tester,
+      void Function(DrawTogether n) setUp,
+    ) async {
       final ws = _FakeWs();
       final c = ProviderContainer(
         overrides: [
@@ -379,8 +404,7 @@ void main() {
         ],
       );
       addTearDown(c.dispose);
-      c.read(drawTogetherProvider.notifier).heard(frame('invite'));
-      if (join) c.read(drawTogetherProvider.notifier).join();
+      setUp(c.read(drawTogetherProvider.notifier));
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: c,
@@ -388,305 +412,111 @@ void main() {
         ),
       );
       await tester.pump();
-      return ws;
+      return c;
     }
 
     testWidgets('an invitation offers Join and Not now', (tester) async {
-      await open(tester, join: false);
+      final c = await showPage(
+        tester,
+        (n) => n.heard(server('invite', {'session': 'S', 'peer_id': 'ann'})),
+      );
       expect(find.byKey(const ValueKey('together-join')), findsOneWidget);
-      expect(find.byKey(const ValueKey('together-decline')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('together-join')));
       await tester.pump();
-      expect(find.byKey(const ValueKey('together-pad')), findsOneWidget);
-      await _finish(tester);
+      expect(find.textContaining('Joining'), findsOneWidget);
+      c.read(drawTogetherProvider.notifier).close();
+      await tester.pump();
     });
 
-    testWidgets('drawing shows up and unlocks Send to chat', (tester) async {
-      final ws = await open(tester);
-      expect(find.byKey(const ValueKey('draw-send-to-chat')), findsNothing);
-      await tester.drag(
-        find.byKey(const ValueKey('together-pad')),
-        const Offset(80, 40),
-      );
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byKey(const ValueKey('draw-send-to-chat')), findsOneWidget);
-      expect(ws.ops.where((o) => o == 'stroke'), isNotEmpty);
-      expect(find.byKey(const ValueKey('draw-eraser')), findsOneWidget);
-      await _finish(tester);
+    testWidgets('a declined invitation says so instead of a blank canvas', (
+      tester,
+    ) async {
+      await showPage(tester, (n) {
+        n.invite('ann');
+        n.heard(server('invited', {'session': 'S', 'peer_id': 'ann'}));
+        n.heard(server('ended', {'session': 'S', 'reason': 'declined'}));
+      });
+      expect(find.text('They said not now.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('together-pad')), findsNothing);
     });
 
-    testWidgets('it fits a narrow phone', (tester) async {
-      tester.view.physicalSize = const Size(320, 640);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.reset);
-      final ws = _FakeWs();
-      final c = ProviderContainer(
+    testWidgets('a dropped friend is shown while the server waits', (
+      tester,
+    ) async {
+      final c = await showPage(tester, (n) {
+        n.invite('ann');
+        n.heard(server('invited', {'session': 'S', 'peer_id': 'ann'}));
+        n.heard(started());
+        n.heard(server('away', {'session': 'S'}));
+      });
+      expect(find.textContaining('lost their connection'), findsOneWidget);
+      c.read(drawTogetherProvider.notifier).close();
+      await tester.pump();
+    });
+  });
+
+  // The bug that made invitations "not work": the frames were routed by a
+  // provider listener, which Riverpod pauses when the screen holding it is
+  // covered by another page — like the Draw Together page itself. A "join"
+  // then sat unheard until the page closed.
+  testWidgets('frames still arrive while a full-screen page covers the app', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final socketIn = StreamController<Map<String, dynamic>>.broadcast();
+    addTearDown(socketIn.close);
+    final nav = GlobalKey<NavigatorState>();
+
+    await tester.pumpWidget(
+      ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          currentUserProvider.overrideWithValue(
+            AppUser(id: 'me', isActive: true, createdAt: DateTime.utc(2026)),
+          ),
           currentAccountIdProvider.overrideWithValue('me'),
-          webSocketServiceProvider.overrideWithValue(ws),
+          webSocketEventsProvider.overrideWith((ref) => socketIn.stream),
+          webSocketServiceProvider.overrideWithValue(_FakeWs()),
           knownPersonProvider.overrideWith((ref, id) => null),
         ],
-      );
-      addTearDown(c.dispose);
-      c.read(drawTogetherProvider.notifier)
-        ..heard(frame('invite'))
-        ..join();
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: c,
-          child: const MaterialApp(home: DrawTogetherPage()),
+        child: MaterialApp(
+          navigatorKey: nav,
+          // Like the main screen: the only thing keeping the view model on.
+          home: Consumer(
+            builder: (context, ref, _) {
+              ref.watch(chatViewModelProvider);
+              return const Scaffold(body: Text('home'));
+            },
+          ),
         ),
-      );
-      await tester.pump();
-      expect(tester.takeException(), isNull);
-      await _finish(tester);
-    });
-
-    testWidgets('when they leave, the page says so', (tester) async {
-      await open(tester);
-      final c = ProviderScope.containerOf(
-        tester.element(find.byType(DrawTogetherPage)),
-      );
-      c.read(drawTogetherProvider.notifier).heard(frame('leave'));
-      await tester.pump();
-      expect(find.text('They left.'), findsOneWidget);
-      expect(find.byKey(const ValueKey('draw-eraser')), findsNothing);
-    });
-  });
-
-  group('when messages get lost on the way', () {
-    testWidgets('the invitation is repeated until they answer, then stops', (
-      tester,
-    ) async {
-      final t = make();
-      t.n.invite('ann');
-      expect(t.ws.ops, ['invite']);
-      await tester.pump(DrawTogether.inviteRepeatEvery);
-      expect(t.ws.ops, ['invite', 'invite']);
-      await tester.pump(DrawTogether.inviteRepeatEvery);
-      expect(t.ws.ops.where((o) => o == 'invite'), hasLength(3));
-
-      final id = t.c.read(drawTogetherProvider)!.id;
-      t.n.heard(frame('join', session: id));
-      t.ws.sent.clear();
-      await tester.pump(const Duration(seconds: 20));
-      expect(t.ws.ops.where((o) => o == 'invite'), isEmpty, reason: 'answered');
-      t.n.close();
-    });
-
-    testWidgets('it does not nag for ever', (tester) async {
-      final t = make();
-      t.n.invite('ann');
-      await tester.pump(const Duration(seconds: 44));
-      expect(
-        t.ws.ops.where((o) => o == 'invite').length,
-        lessThanOrEqualTo(DrawTogether.maxInviteSends),
-      );
-      await tester.pump(const Duration(seconds: 5));
-    });
-
-    test('a repeated invitation is not a new one', () {
-      final t = make();
-      expect(t.n.heard(frame('invite')), isTrue);
-      expect(t.n.heard(frame('invite')), isFalse, reason: 'no second banner');
-      expect(t.ws.sent, isEmpty, reason: 'and not answered "busy"');
-      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.invited);
-    });
-
-    test('they are drawing, so they have joined, even if "join" was lost', () {
-      final t = make();
-      t.n.invite('ann');
-      final id = t.c.read(drawTogetherProvider)!.id;
-      t.n.heard(
-        frame(
-          'stroke',
-          session: id,
-          extra: {
-            'id': '1',
-            'c': 1,
-            'w': 0.02,
-            'p': [0.1, 0.1],
-            'done': true,
-          },
-        ),
-      );
-      final s = t.c.read(drawTogetherProvider)!;
-      expect(s.status, DrawStatus.live);
-      expect(s.strokes, hasLength(1), reason: 'and the line is kept');
-    });
-
-    test('a "ready" alone also starts it', () {
-      final t = make();
-      t.n.invite('ann');
-      final id = t.c.read(drawTogetherProvider)!.id;
-      t.n.heard(frame('ready', session: id));
-      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.live);
-    });
-
-    test('a join is answered "ready", every time', () {
-      final t = make();
-      t.n.invite('ann');
-      final id = t.c.read(drawTogetherProvider)!.id;
-      t.ws.sent.clear();
-      t.n.heard(frame('join', session: id));
-      t.n.heard(frame('join', session: id)); // a repeat
-      expect(t.ws.ops, ['ready', 'ready']);
-      expect(t.c.read(drawTogetherProvider)!.status, DrawStatus.live);
-    });
-
-    testWidgets('joining is repeated until they confirm', (tester) async {
-      final t = make();
-      t.n.heard(frame('invite'));
-      t.n.join();
-      expect(t.ws.ops.where((o) => o == 'join'), hasLength(1));
-      await tester.pump(DrawTogether.joinRepeatEvery);
-      expect(t.ws.ops.where((o) => o == 'join'), hasLength(2));
-
-      t.n.heard(frame('ready'));
-      t.ws.sent.clear();
-      await tester.pump(const Duration(seconds: 10));
-      expect(t.ws.ops, isEmpty, reason: 'confirmed: no more');
-      t.n.close();
-    });
-
-    testWidgets('joining stops after a few tries if they never reply', (
-      tester,
-    ) async {
-      final t = make();
-      t.n.heard(frame('invite'));
-      t.n.join();
-      await tester.pump(const Duration(seconds: 30));
-      expect(
-        t.ws.ops.where((o) => o == 'join').length,
-        DrawTogether.maxJoinSends,
-      );
-      t.n.close();
-    });
-
-    testWidgets('declining is sent three times, a second apart', (
-      tester,
-    ) async {
-      final t = make();
-      t.n.heard(frame('invite'));
-      t.ws.sent.clear();
-      t.n.decline();
-      expect(t.ws.ops, ['decline']);
-      await tester.pump(const Duration(seconds: 1));
-      await tester.pump(const Duration(seconds: 1));
-      expect(t.ws.ops, ['decline', 'decline', 'decline']);
-      expect(t.ws.sent.every((f) => f['recipient_id'] == 'ann'), isTrue);
-    });
-  });
-
-  group('two phones over a network that loses messages', () {
-    testWidgets(
-      'the first join and the first invite are lost and it still works',
-      (tester) async {
-        final a = _Relay('A');
-        final b = _Relay('B');
-        final ca = ProviderContainer(
-          overrides: [
-            currentAccountIdProvider.overrideWithValue('A'),
-            webSocketServiceProvider.overrideWithValue(a),
-          ],
-        );
-        final cb = ProviderContainer(
-          overrides: [
-            currentAccountIdProvider.overrideWithValue('B'),
-            webSocketServiceProvider.overrideWithValue(b),
-          ],
-        );
-        addTearDown(ca.dispose);
-        addTearDown(cb.dispose);
-        a.to = cb;
-        b.to = ca;
-        // The network eats the first invitation and the first two joins.
-        a.dropOps = {'invite': 1};
-        b.dropOps = {'join': 2};
-
-        ca.read(drawTogetherProvider.notifier).invite('B');
-        expect(
-          cb.read(drawTogetherProvider),
-          isNull,
-          reason: 'first invite lost',
-        );
-        await tester.pump(DrawTogether.inviteRepeatEvery);
-        expect(cb.read(drawTogetherProvider)?.status, DrawStatus.invited);
-
-        cb.read(drawTogetherProvider.notifier).join();
-        expect(
-          ca.read(drawTogetherProvider)!.status,
-          DrawStatus.waiting,
-          reason: 'the first join was lost',
-        );
-        await tester.pump(DrawTogether.joinRepeatEvery);
-        expect(
-          ca.read(drawTogetherProvider)!.status,
-          DrawStatus.waiting,
-          reason: 'and the second',
-        );
-        await tester.pump(DrawTogether.joinRepeatEvery);
-        expect(
-          ca.read(drawTogetherProvider)!.status,
-          DrawStatus.live,
-          reason: 'the third got through',
-        );
-        await tester.pump(const Duration(seconds: 10));
-        ca.read(drawTogetherProvider.notifier).close();
-        cb.read(drawTogetherProvider.notifier).close();
-      },
+      ),
     );
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('home')),
+    );
+    final draw = container.read(drawTogetherProvider.notifier);
 
-    testWidgets('a decline that is lost once is still heard', (tester) async {
-      final a = _Relay('A');
-      final b = _Relay('B');
-      final ca = ProviderContainer(
-        overrides: [
-          currentAccountIdProvider.overrideWithValue('A'),
-          webSocketServiceProvider.overrideWithValue(a),
-        ],
-      );
-      final cb = ProviderContainer(
-        overrides: [
-          currentAccountIdProvider.overrideWithValue('B'),
-          webSocketServiceProvider.overrideWithValue(b),
-        ],
-      );
-      addTearDown(ca.dispose);
-      addTearDown(cb.dispose);
-      a.to = cb;
-      b.to = ca;
-      b.dropOps = {'decline': 2};
-
-      ca.read(drawTogetherProvider.notifier).invite('B');
-      cb.read(drawTogetherProvider.notifier).decline();
-      expect(ca.read(drawTogetherProvider)!.status, DrawStatus.waiting);
-      await tester.pump(const Duration(seconds: 1));
-      await tester.pump(const Duration(seconds: 1));
-      expect(ca.read(drawTogetherProvider)!.status, DrawStatus.ended);
-      expect(ca.read(drawTogetherProvider)!.endedBecause, 'They declined.');
-    });
-  });
-}
-
-/// A phone whose connection hands frames to the other phone, like the server,
-/// and can be told to lose the first few frames of a kind.
-class _Relay extends WebSocketService {
-  _Relay(this.me);
-  final String me;
-  late ProviderContainer to;
-  Map<String, int> dropOps = {};
-
-  @override
-  bool sendMessage(Map<String, dynamic> payload) {
-    final op = payload['op'] as String?;
-    if (op != null && (dropOps[op] ?? 0) > 0) {
-      dropOps[op] = dropOps[op]! - 1;
-      return true; // sent, but lost on the way
+    // I invite Ann; the waiting page covers everything.
+    draw.invite('ann');
+    unawaited(openDrawTogether(nav.currentState!));
+    // The waiting spinner never settles, so step through the transition.
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
     }
-    to
-        .read(drawTogetherProvider.notifier)
-        .heard({...payload, 'sender_id': me}..remove('recipient_id'));
-    return true;
-  }
+    // The home screen is covered: its tickers are off, which is what makes
+    // Riverpod pause its subscriptions.
+    final home = tester.element(find.text('home', skipOffstage: false));
+    expect(TickerMode.valuesOf(home).enabled, isFalse);
+
+    socketIn.add(server('invited', {'session': 'S', 'peer_id': 'ann'}));
+    socketIn.add(started());
+    await tester.pump();
+    await tester.pump();
+
+    expect(container.read(drawTogetherProvider)!.status, DrawStatus.live);
+    expect(find.byKey(const ValueKey('together-pad')), findsOneWidget);
+    draw.close();
+    await tester.pump(const Duration(seconds: 1));
+  });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/post.dart';
 import 'package:serafim/src/data/services/post_service.dart';
@@ -85,18 +87,34 @@ class FeedPosts extends PagedPosts {
 
 final feedProvider = AsyncNotifierProvider<FeedPosts, PostPage>(FeedPosts.new);
 
-/// One post by id.
-final postProvider = FutureProvider.family<Post, String>((ref, id) async {
+/// One post by id. Kept for a minute after the last screen showing it goes
+/// (so scrolling a chat full of shared posts does not refetch them all), then
+/// fetched fresh, so counts and Sparks are never stale for long.
+final postProvider = FutureProvider.autoDispose.family<Post, String>((
+  ref,
+  id,
+) async {
+  final keep = ref.keepAlive();
+  Timer? release;
+  ref.onCancel(() => release = Timer(const Duration(minutes: 1), keep.close));
+  ref.onResume(() => release?.cancel());
+  ref.onDispose(() => release?.cancel());
   return ref.watch(postServiceProvider).detail(id);
 });
 
-/// The comments on a post, oldest first.
-final postCommentsProvider = FutureProvider.family<List<PostComment>, String>((
-  ref,
-  postId,
-) async {
-  return ref.watch(postServiceProvider).comments(postId);
-});
+/// The comments on a post, oldest first. Fetched fresh each time the post is
+/// opened: other people comment while you are away.
+final postCommentsProvider = FutureProvider.autoDispose
+    .family<List<PostComment>, String>((ref, postId) async {
+      return ref.watch(postServiceProvider).comments(postId);
+    });
+
+/// Something happened to [postId] (a comment, reply or Spark someone else
+/// made): anything showing it fetches it again.
+void refreshPost(Ref ref, String postId) {
+  ref.invalidate(postProvider(postId));
+  ref.invalidate(postCommentsProvider(postId));
+}
 
 /// Posts something, and refreshes whatever list it appears in.
 class PostComposerController extends AsyncNotifier<Post?> {

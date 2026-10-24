@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:serafim/src/utils/image_editor/stroke.dart';
 
 /// The pen controls shared by the picture editor and the scribble pad: the
-/// seven colours, the three sizes, undo and clear.
+/// seven colours, the three pen sizes (or, while erasing, the three eraser
+/// sizes), undo and clear.
 ///
 /// It owns no state; the screen keeps the chosen colour and size and the
 /// strokes, so this stays a plain view.
@@ -19,6 +20,8 @@ class DrawToolbar extends StatelessWidget {
     this.extra,
     this.erasing = false,
     this.onEraser,
+    this.eraserWidth = defaultEraserIndex,
+    this.onEraserWidth,
   });
 
   /// Index into [drawColors] / [drawWidths].
@@ -38,6 +41,11 @@ class DrawToolbar extends StatelessWidget {
 
   /// Switches the eraser on or off.
   final VoidCallback? onEraser;
+
+  /// Index into [eraserWidths]: the chosen eraser size, kept apart from the
+  /// pen's so switching back to the pen keeps its size.
+  final int eraserWidth;
+  final ValueChanged<int>? onEraserWidth;
 
   /// Something more, on a row of its own below (e.g. a paper picker).
   final Widget? extra;
@@ -74,21 +82,28 @@ class DrawToolbar extends StatelessWidget {
         const SizedBox(height: 8),
         Row(
           children: [
-            for (var i = 0; i < drawWidths.length; i++)
-              GestureDetector(
-                key: ValueKey('draw-size-$i'),
-                onTap: () => onWidth(i),
-                child: Container(
-                  width: 40,
-                  height: 36,
-                  margin: const EdgeInsets.only(right: 6),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: i == width ? Colors.white : Colors.white24,
-                      width: i == width ? 2 : 1,
+            if (erasing && onEraserWidth != null)
+              // Eraser sizes: hollow circles, so they read as "rub out".
+              for (var i = 0; i < eraserWidths.length; i++)
+                _SizeButton(
+                  key: ValueKey('draw-eraser-size-$i'),
+                  selected: i == eraserWidth,
+                  onTap: () => onEraserWidth!(i),
+                  child: Container(
+                    width: 10 + i * 8.0,
+                    height: 10 + i * 8.0,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
                     ),
                   ),
-                  alignment: Alignment.center,
+                )
+            else
+              for (var i = 0; i < drawWidths.length; i++)
+                _SizeButton(
+                  key: ValueKey('draw-size-$i'),
+                  selected: i == width,
+                  onTap: () => onWidth(i),
                   child: Container(
                     width: 8 + i * 6.0,
                     height: 8 + i * 6.0,
@@ -98,7 +113,6 @@ class DrawToolbar extends StatelessWidget {
                     ),
                   ),
                 ),
-              ),
             if (onEraser != null)
               GestureDetector(
                 key: const ValueKey('draw-eraser'),
@@ -144,6 +158,40 @@ class DrawToolbar extends StatelessWidget {
           Align(alignment: Alignment.centerLeft, child: extra!),
         ],
       ],
+    );
+  }
+}
+
+/// One size choice: a box with a preview of the line inside.
+class _SizeButton extends StatelessWidget {
+  const _SizeButton({
+    super.key,
+    required this.selected,
+    required this.onTap,
+    required this.child,
+  });
+
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 36,
+        margin: const EdgeInsets.only(right: 6),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: selected ? Colors.white : Colors.white24,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: child,
+      ),
     );
   }
 }

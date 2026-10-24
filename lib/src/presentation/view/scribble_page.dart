@@ -29,6 +29,7 @@ class _ScribblePageState extends State<ScribblePage> {
   final List<Stroke> _strokes = [];
   int _color = 1; // black on paper
   int _width = defaultWidthIndex;
+  int _eraserWidth = defaultEraserIndex;
   bool _erasing = false;
   int _paper = 0;
   double _padWidth = 1;
@@ -144,9 +145,10 @@ class _ScribblePageState extends State<ScribblePage> {
                             () => _strokes.add(
                               Stroke(
                                 color: drawColors[_color],
-                                width:
-                                    drawWidths[_width] *
-                                    (_erasing ? eraserWidthFactor : 1),
+                                width: strokeWidthFor(
+                                  _erasing ? _eraserWidth : _width,
+                                  erase: _erasing,
+                                ),
                                 erase: _erasing,
                                 points: [d.localPosition],
                               ),
@@ -175,6 +177,8 @@ class _ScribblePageState extends State<ScribblePage> {
                     _erasing = false;
                   }),
                   onWidth: (i) => setState(() => _width = i),
+                  eraserWidth: _eraserWidth,
+                  onEraserWidth: (i) => setState(() => _eraserWidth = i),
                   erasing: _erasing,
                   onEraser: () => setState(() => _erasing = !_erasing),
                   hasStrokes: _strokes.isNotEmpty,

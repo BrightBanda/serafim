@@ -31,14 +31,23 @@ final webSocketServiceProvider = Provider<WebSocketService>((ref) {
   return service;
 });
 
-/// Auto-connects WebSocket when user is authenticated and yields incoming JSON streams
-final webSocketStreamProvider = StreamProvider<Map<String, dynamic>>((ref) {
+/// Keeps the chat connection open for whoever is signed in, and gives the
+/// stream of everything the server sends.
+///
+/// The stream belongs to the service and outlives reconnects. Subscribe to it
+/// directly (see ChatViewModel) rather than through `ref.listen`: Riverpod
+/// pauses listeners of screens that are covered by another page, and a paused
+/// listener would hold live frames — a Draw Together answer, a typing
+/// indicator — until that page closed.
+final webSocketEventsProvider = Provider<Stream<Map<String, dynamic>>>((ref) {
   final currentUser = ref.watch(currentUserProvider);
   final config = ref.watch(appConfigProvider);
   final wsService = ref.watch(webSocketServiceProvider);
 
   if (currentUser == null) {
-    return const Stream.empty();
+    // Signed out: nobody's frames should arrive any more.
+    wsService.close();
+    return wsService.events;
   }
 
   // Connect using backend URL and current user ID
@@ -59,7 +68,7 @@ final webSocketStreamProvider = StreamProvider<Map<String, dynamic>>((ref) {
 
   wsService.connect(config.apiBaseUrl, currentUser.id, freshToken);
 
-  return wsService.messageStream ?? const Stream.empty();
+  return wsService.events;
 });
 
 /// Tells the socket when the app leaves and returns.

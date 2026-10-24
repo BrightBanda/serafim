@@ -16,7 +16,10 @@ import 'package:serafim/src/presentation/view/notifications_page.dart';
 import 'package:serafim/src/presentation/view/official_chat_page.dart';
 import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
+import 'package:serafim/src/presentation/view/draw_together_page.dart';
+import 'package:serafim/src/providers/draw_together_providers.dart';
 import 'package:serafim/src/providers/group_providers.dart';
+import 'package:serafim/src/providers/websocket_providers.dart';
 import 'package:serafim/src/providers/official_providers.dart';
 import 'package:serafim/src/utils/group_nav.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
@@ -221,6 +224,10 @@ class PushRegistrar {
       _onForegroundFriendRequest(message);
       return;
     }
+    if (data['type'] == 'draw_invite') {
+      _onForegroundDrawInvite(message);
+      return;
+    }
     final senderId = data['sender_id'] as String?;
     final messageId = data['message_id'] as String?;
     final me = _ref.read(currentAccountIdProvider);
@@ -245,6 +252,33 @@ class PushRegistrar {
     if (_ref.read(settingsProvider).alertSound) {
       SystemSound.play(SystemSoundType.alert);
     }
+  }
+
+  /// A Draw Together invitation. The socket normally brings it first, and
+  /// then this is a duplicate. If it did not, the app's connection only looks
+  /// alive: the push stands in for it, and the link is replaced so the answer
+  /// can get through.
+  void _onForegroundDrawInvite(RemoteMessage message) {
+    final session = message.data['session'] as String?;
+    final sender = message.data['sender_id'] as String?;
+    if (session == null || sender == null) return;
+    if (_ref.read(drawTogetherProvider)?.id == session) return;
+    _ref.read(webSocketServiceProvider).reconnectNow();
+    _ref
+        .read(drawTogetherProvider.notifier)
+        .expectInvite(session: session, peerId: sender);
+    _ref
+        .read(inAppBannerProvider)
+        .show(
+          label: 'DRAW TOGETHER',
+          icon: Icons.draw_outlined,
+          title: message.notification?.title ?? 'Draw together',
+          body: message.notification?.body ?? 'A friend wants to draw together',
+          onTap: () {
+            final navigator = _ref.read(navigatorKeyProvider).currentState;
+            if (navigator != null) openDrawTogether(navigator);
+          },
+        );
   }
 
   /// The same announcement usually also arrives over the socket; whichever is
@@ -319,6 +353,33 @@ class PushRegistrar {
     if (message.data['type'] == 'announcement') {
       final navigator = _ref.read(navigatorKeyProvider).currentState;
       if (navigator != null) openOfficialChatWithNavigator(navigator);
+      return;
+    }
+    if (message.data['type'] == 'draw_invite') {
+      // Opened from the push: show the invitation now; the connection hands
+      // the server's copy over (or says it has expired) as it comes up.
+      final session = message.data['session'] as String?;
+      final sender = message.data['sender_id'] as String?;
+      final navigator = _ref.read(navigatorKeyProvider).currentState;
+      if (session == null || sender == null || navigator == null) return;
+      _ref
+          .read(drawTogetherProvider.notifier)
+          .expectInvite(session: session, peerId: sender);
+      openDrawTogether(navigator);
+      return;
+    }
+    // A Circle or post notification: straight to the post or Circle.
+    final kind = NotificationKind.parse(message.data['type'] as String?);
+    if (kind.isCircle || kind.isAboutPost) {
+      final navigator = _ref.read(navigatorKeyProvider).currentState;
+      if (navigator == null) return;
+      openNotificationTarget(
+        navigator,
+        kind: kind,
+        actorId: message.data['actor_id'] as String?,
+        circleId: AppNotification.idIn(message.data, 'circle_id'),
+        postId: AppNotification.idIn(message.data, 'post_id'),
+      );
       return;
     }
     final senderId = message.data['sender_id'] as String?;

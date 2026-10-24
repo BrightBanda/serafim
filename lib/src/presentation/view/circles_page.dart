@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/notification_bell.dart';
 import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
@@ -95,7 +96,7 @@ class _CirclesPageState extends ConsumerState<CirclesPage> {
               onTap: _openCreate,
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
+                  horizontal: 7,
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
@@ -108,7 +109,7 @@ class _CirclesPageState extends ConsumerState<CirclesPage> {
                 ),
               ),
             ),
-            const SizedBox(width: 4),
+            const NotificationBell(),
             const ProfileMenuButton(),
           ],
         ),

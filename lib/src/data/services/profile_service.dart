@@ -66,10 +66,6 @@ class ProfileService {
     }
   }
 
-  /// `GET /profile/{username}` — any signed-in user may read any profile.
-  Future<Profile> getByUsername(String username) =>
-      _request('GET', '/profile/${Uri.encodeComponent(username)}');
-
   Future<Profile> _request(
     String method,
     String path, {

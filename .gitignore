@@ -54,3 +54,6 @@ app.*.map.json
 # keeps git from treating it as an embedded repo / gitlink; it is versioned
 # separately from Serafim-Backend/.git.
 /Serafim-Backend/
+
+# Debug symbols of obfuscated releases (see RELEASING.md): back up, don't commit.
+/release-symbols/

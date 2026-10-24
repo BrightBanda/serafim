@@ -200,7 +200,59 @@ void main() {
     });
   });
 
-  testWidgets('the pad\'s tools fit a narrow phone', (t) async {
+  testWidgets('the eraser has its own three sizes, kept apart from the pen', (
+    t,
+  ) async {
+    t.view.physicalSize = const Size(420, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(const MaterialApp(home: ScribblePage()));
+
+    // The pen: its sizes, no eraser sizes.
+    expect(find.byKey(const ValueKey('draw-size-2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('draw-eraser-size-0')), findsNothing);
+
+    // The eraser: its sizes take the pen sizes' place.
+    await t.tap(find.byKey(const ValueKey('draw-eraser')));
+    await t.pump();
+    for (var i = 0; i < eraserWidths.length; i++) {
+      expect(find.byKey(ValueKey('draw-eraser-size-$i')), findsOneWidget);
+    }
+    expect(find.byKey(const ValueKey('draw-size-0')), findsNothing);
+    await t.tap(find.byKey(const ValueKey('draw-eraser-size-2')));
+    await t.pump();
+
+    // Back to the pen and to the eraser again: each kept its own size.
+    await t.tap(find.byKey(const ValueKey('draw-eraser')));
+    await t.pump();
+    expect(find.byKey(const ValueKey('draw-size-1')), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('draw-eraser')));
+    await t.pump();
+    final big = t.widget<Container>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('draw-eraser-size-2')),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    expect(
+      ((big.decoration! as BoxDecoration).border! as Border).top.color,
+      Colors.white,
+      reason: 'the large eraser is still the chosen one',
+    );
+  });
+
+  test('eraser sizes are bigger than the pens and grow', () {
+    expect(strokeWidthFor(0, erase: false), drawWidths[0]);
+    expect(strokeWidthFor(2, erase: true), eraserWidths[2]);
+    for (var i = 0; i < eraserWidths.length; i++) {
+      expect(eraserWidths[i], greaterThan(drawWidths[i]));
+      if (i > 0) expect(eraserWidths[i], greaterThan(eraserWidths[i - 1]));
+    }
+  });
+
+  testWidgets('the pad\'s tools fit a narrow phone, erasing too', (t) async {
     t.view.physicalSize = const Size(320, 640);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
@@ -208,5 +260,9 @@ void main() {
     await t.pump();
     expect(find.byKey(const ValueKey('draw-eraser')), findsOneWidget);
     expect(t.takeException(), isNull, reason: 'no overflow at 320 px');
+    await t.tap(find.byKey(const ValueKey('draw-eraser')));
+    await t.pump();
+    expect(find.byKey(const ValueKey('draw-eraser-size-2')), findsOneWidget);
+    expect(t.takeException(), isNull, reason: 'eraser sizes fit too');
   });
 }

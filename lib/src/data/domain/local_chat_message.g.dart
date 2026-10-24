@@ -360,6 +360,7 @@ const _LocalMessagetypeEnumValueMap = {
   'video': 2,
   'audio': 3,
   'sticker': 4,
+  'post': 5,
 };
 const _LocalMessagetypeValueEnumMap = {
   0: MessageType.text,
@@ -367,6 +368,7 @@ const _LocalMessagetypeValueEnumMap = {
   2: MessageType.video,
   3: MessageType.audio,
   4: MessageType.sticker,
+  5: MessageType.post,
 };
 
 Id _localMessageGetId(LocalMessage object) {

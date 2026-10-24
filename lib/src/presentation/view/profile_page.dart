@@ -22,8 +22,9 @@ import 'package:serafim/src/utils/user_card.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/avatar_picker.dart';
-import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/image_picking.dart';
+import 'package:serafim/src/utils/notification_bell.dart';
+import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -44,7 +45,11 @@ class ProfilePage extends ConsumerWidget {
       appBar: AppTopBar(
         title: 'USER PROFILE',
         onBack: () => Navigator.of(context).pop(),
-        trailing: AvatarThumb(size: 26, imageProvider: avatar),
+        // Already on the profile: the menu offers Halo and Settings only.
+        trailing: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [NotificationBell(), ProfileMenuButton(showProfile: false)],
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(

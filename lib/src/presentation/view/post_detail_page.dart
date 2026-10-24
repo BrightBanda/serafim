@@ -96,6 +96,17 @@ class _PostDetailPageState extends ConsumerState<PostDetailPage> {
     }
   }
 
+  /// Pull to refresh: the post and its comments, fresh from the server.
+  Future<void> _refresh() async {
+    ref.invalidate(postProvider(widget.postId));
+    ref.invalidate(postCommentsProvider(widget.postId));
+    try {
+      await ref.read(postCommentsProvider(widget.postId).future);
+    } catch (_) {
+      // The list shows its own error.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final post = ref.watch(postProvider(widget.postId));
@@ -120,43 +131,50 @@ class _PostDetailPageState extends ConsumerState<PostDetailPage> {
         data: (p) => Column(
           children: [
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
-                children: [
-                  PostCard(
-                    post: p,
-                    showFullText: true,
-                    onSpark: (on) =>
-                        ref.read(sparkProvider.notifier).togglePost(p, on: on),
-                    onComment: () => _focus.requestFocus(),
-                    onCircleTap: p.circle == null
-                        ? null
-                        : () => openCircle(context, p.circle!.id),
-                    onDeleted: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'COMMENTS',
-                    style: AppTextStyles.eyebrow.copyWith(fontSize: 10),
-                  ),
-                  const SizedBox(height: 8),
-                  ...comments.when(
-                    loading: () => [
-                      Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
+              child: RefreshIndicator(
+                color: AppColors.primary,
+                backgroundColor: AppColors.paperRaised,
+                onRefresh: _refresh,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
+                  children: [
+                    PostCard(
+                      post: p,
+                      showFullText: true,
+                      onSpark: (on) => ref
+                          .read(sparkProvider.notifier)
+                          .togglePost(p, on: on),
+                      onComment: () => _focus.requestFocus(),
+                      onCircleTap: p.circle == null
+                          ? null
+                          : () => openCircle(context, p.circle!.id),
+                      onDeleted: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'COMMENTS',
+                      style: AppTextStyles.eyebrow.copyWith(fontSize: 10),
+                    ),
+                    const SizedBox(height: 8),
+                    ...comments.when(
+                      loading: () => [
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.primary,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                    error: (e, _) => [
-                      Text(humanError(e), style: AppTextStyles.body),
-                    ],
-                    data: (list) => _thread(list, p),
-                  ),
-                ],
+                      ],
+                      error: (e, _) => [
+                        Text(humanError(e), style: AppTextStyles.body),
+                      ],
+                      data: (list) => _thread(list, p),
+                    ),
+                  ],
+                ),
               ),
             ),
             _composer(),
