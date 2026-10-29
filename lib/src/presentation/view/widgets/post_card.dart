@@ -7,6 +7,7 @@ import 'package:serafim/src/providers/post_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/data/models/post.dart';
 import 'package:serafim/src/presentation/view/forward_page.dart';
+import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/user_card.dart';
@@ -72,6 +73,14 @@ class PostCard extends ConsumerWidget {
     final isMine = me != null && post.author.id == me;
     final canDelete = isMine || canManage;
 
+    void openAuthorProfile() {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => UserProfilePage(userId: post.author.id),
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
@@ -85,7 +94,7 @@ class PostCard extends ConsumerWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _Avatar(post: post),
+              _Avatar(post: post, onTap: openAuthorProfile),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -94,12 +103,16 @@ class PostCard extends ConsumerWidget {
                     Row(
                       children: [
                         Flexible(
-                          child: Text(
-                            post.author.displayName,
-                            style: AppTextStyles.fieldInput.copyWith(
-                              fontWeight: FontWeight.w700,
+                          child: GestureDetector(
+                            onTap: openAuthorProfile,
+                            behavior: HitTestBehavior.opaque,
+                            child: Text(
+                              post.author.displayName,
+                              style: AppTextStyles.fieldInput.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (canFollow) ...[
@@ -321,34 +334,39 @@ class PostCard extends ConsumerWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.post});
+  const _Avatar({required this.post, required this.onTap});
 
   final Post post;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final image = avatarImage(post.author.profilePic);
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(
-        color: AppColors.paperRaised,
-        border: Border.all(color: AppColors.line, width: 1.5),
-        shape: BoxShape.circle,
-        image: image == null
-            ? null
-            : DecorationImage(image: image, fit: BoxFit.cover),
+    return GestureDetector(
+      key: ValueKey('post-author-avatar-${post.author.id}'),
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: AppColors.paperRaised,
+          border: Border.all(color: AppColors.line, width: 1.5),
+          shape: BoxShape.circle,
+          image: image == null
+              ? null
+              : DecorationImage(image: image, fit: BoxFit.cover),
+        ),
+        alignment: Alignment.center,
+        child: image == null
+            ? Text(
+                post.author.displayName.characters.first.toUpperCase(),
+                style: AppTextStyles.smallDim.copyWith(
+                  color: AppColors.primaryPale,
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            : null,
       ),
-      alignment: Alignment.center,
-      child: image == null
-          ? Text(
-              post.author.displayName.characters.first.toUpperCase(),
-              style: AppTextStyles.smallDim.copyWith(
-                color: AppColors.primaryPale,
-                fontWeight: FontWeight.w700,
-              ),
-            )
-          : null,
     );
   }
 }

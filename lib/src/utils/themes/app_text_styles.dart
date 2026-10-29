@@ -58,4 +58,19 @@ class AppTextStyles {
 
   static TextStyle get smallDim =>
       GoogleFonts.inter(color: AppColors.textDim, fontSize: 11);
+
+  /// Long-form legal text: body copy for the Terms and Privacy Policy.
+  static TextStyle get legalBody =>
+      GoogleFonts.inter(color: AppColors.text, fontSize: 13);
+
+  /// Headings for the Terms and Privacy Policy sections.
+  static TextStyle get legalHeading => GoogleFonts.bangers(
+    color: AppColors.text,
+    fontSize: 24,
+    letterSpacing: 0.5,
+  );
+
+  /// Small print under the legal headings, like the "last updated" line.
+  static TextStyle get legalMeta =>
+      GoogleFonts.inter(color: AppColors.textDim, fontSize: 11);
 }

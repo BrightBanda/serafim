@@ -961,7 +961,7 @@ class ChatViewModel extends Notifier<ChatState> {
   Future<void> sendVoice({
     required String roomId,
     required String recipientId,
-    required String path,
+    required String? path,
     required int durationMs,
     required List<int> waveform,
     String? replyToId,
@@ -973,9 +973,10 @@ class ChatViewModel extends Notifier<ChatState> {
   }) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
+    if (mediaRemoteId == null && path == null) return;
     final tempId = DateTime.now().microsecondsSinceEpoch.toString();
     final stored = mediaRemoteId == null
-        ? await ref.read(chatMediaStoreProvider).adoptRecording(tempId, path)
+        ? await ref.read(chatMediaStoreProvider).adoptRecording(tempId, path!)
         : path;
 
     final msg = LocalMessage()
@@ -1126,12 +1127,11 @@ class ChatViewModel extends Notifier<ChatState> {
         // The audio is already on the server, so it is sent as it is
         // rather than uploaded again.
         final mediaId = source.mediaRemoteId;
-        final path = source.localMediaPath;
-        if (mediaId == null || path == null) return false;
+        if (mediaId == null) return false;
         await sendVoice(
           roomId: roomId,
           recipientId: recipientId,
-          path: path,
+          path: source.localMediaPath,
           durationMs: source.durationMs ?? 0,
           waveform: source.waveform ?? const [],
           groupId: groupId,

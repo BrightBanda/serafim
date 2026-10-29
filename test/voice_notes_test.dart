@@ -411,6 +411,36 @@ void main() {
       },
     );
 
+    test(
+      'forwards a remote voice note even when it is not downloaded',
+      () async {
+        final source = LocalMessage()
+          ..messageId = 'source'
+          ..roomId = 'alice_me'
+          ..senderId = 'alice'
+          ..recipientId = 'me'
+          ..type = MessageType.audio
+          ..status = MessageStatus.sent
+          ..mediaRemoteId = 'remote-audio'
+          ..durationMs = 4200
+          ..waveform = const [2, 8, 16]
+          ..timestamp = DateTime.utc(2026);
+        await isar.writeTxn(() => isar.localMessages.put(source));
+
+        final sent = await c
+            .read(chatViewModelProvider.notifier)
+            .forwardMessage(source: source, recipientId: 'bob');
+
+        expect(sent, isTrue);
+        expect(socket.sent.single['media_id'], 'remote-audio');
+        expect(media.uploads, isEmpty);
+        final forwarded = (await isar.localMessages.where().findAll())
+            .singleWhere((message) => message.roomId == 'bob_me');
+        expect(forwarded.localMediaPath, isNull);
+        expect(forwarded.forwarded, isTrue);
+      },
+    );
+
     test('a received voice note is stored and its audio fetched', () async {
       final vm = c.read(chatViewModelProvider.notifier);
       final service = c.read(isarServiceProvider);

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:serafim/src/data/models/post.dart';
+import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/presentation/view/widgets/post_card.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
@@ -110,6 +111,24 @@ void main() {
   testWidgets('a post page shows the whole text', (t) async {
     await _show(t, _post(content: long), full: true);
     expect(find.text('See more'), findsNothing);
+  });
+
+  testWidgets('tapping the author name opens their profile', (t) async {
+    await _show(t, _post());
+
+    await t.tap(find.text('Ann'));
+    await t.pumpAndSettle();
+
+    expect(find.byType(UserProfilePage), findsOneWidget);
+  });
+
+  testWidgets('tapping the author photo opens their profile', (t) async {
+    await _show(t, _post());
+
+    await t.tap(find.byKey(const ValueKey('post-author-avatar-u1')));
+    await t.pumpAndSettle();
+
+    expect(find.byType(UserProfilePage), findsOneWidget);
   });
 
   group('Follow button', () {

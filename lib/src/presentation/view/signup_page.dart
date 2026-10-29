@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/viewmodel/signup_view_model.dart';
+import 'package:serafim/src/presentation/view/terms_of_service_page.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -120,10 +121,28 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 const SizedBox(height: 18),
               ],
 
-              Text(
-                "By signing up you agree to Serafim's Terms and Privacy Policy.",
-                textAlign: TextAlign.center,
-                style: AppTextStyles.fieldLabel.copyWith(fontSize: 9.5),
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const TermsOfServicePage(),
+                  ),
+                ),
+                child: RichText(
+                  textAlign: TextAlign.center,
+                  text: TextSpan(
+                    style: AppTextStyles.fieldLabel.copyWith(fontSize: 9.5),
+                    children: [
+                      const TextSpan(
+                        text: "By signing up you agree to Serafim's ",
+                      ),
+                      TextSpan(
+                        text: "Terms and Privacy Policy",
+                        style: AppTextStyles.linkText.copyWith(fontSize: 9.5),
+                      ),
+                      const TextSpan(text: "."),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
 

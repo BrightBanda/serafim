@@ -5,6 +5,8 @@ import 'package:serafim/src/presentation/view/settings/backup_settings_page.dart
 import 'package:serafim/src/presentation/view/settings/chat_settings_page.dart';
 import 'package:serafim/src/presentation/view/settings/notification_settings_page.dart';
 import 'package:serafim/src/presentation/view/settings/privacy_settings_page.dart';
+import 'package:serafim/src/presentation/view/privacy_policy_page.dart';
+import 'package:serafim/src/presentation/view/terms_of_service_page.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/update_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
@@ -100,6 +102,20 @@ class SettingsPage extends ConsumerWidget {
               title: 'Backup & Restore',
               subtitle: 'Export chats, back up to Google Drive',
               onTap: () => _open(context, const BackupSettingsPage()),
+            ),
+            const SizedBox(height: 8),
+            SettingTile(
+              icon: Icons.description_outlined,
+              title: 'Terms of Service',
+              subtitle: 'The rules for using Serafim',
+              onTap: () => _open(context, const TermsOfServicePage()),
+            ),
+            const SizedBox(height: 8),
+            SettingTile(
+              icon: Icons.privacy_tip_outlined,
+              title: 'Privacy Policy',
+              subtitle: 'What we collect and why',
+              onTap: () => _open(context, const PrivacyPolicyPage()),
             ),
             const SizedBox(height: 24),
             const SettingsSectionLabel('About'),
