@@ -24,6 +24,7 @@ class SignupFormState {
     this.formError,
     this.isSubmitting = false,
     this.hasAttemptedSubmit = false,
+    this.agreedToTerms = false,
   });
 
   final String email;
@@ -47,7 +48,10 @@ class SignupFormState {
   /// message immediately instead of waiting for another submit.
   final bool hasAttemptedSubmit;
 
-  bool get canSubmit => !isSubmitting;
+  /// Whether the person has agreed to the Terms and Conditions.
+  final bool agreedToTerms;
+
+  bool get canSubmit => !isSubmitting && agreedToTerms;
 
   bool get hasErrors =>
       emailError != null || passwordError != null || formError != null;
@@ -60,6 +64,7 @@ class SignupFormState {
     Object? formError = _unset,
     bool? isSubmitting,
     bool? hasAttemptedSubmit,
+    bool? agreedToTerms,
   }) {
     return SignupFormState(
       email: email ?? this.email,
@@ -75,6 +80,7 @@ class SignupFormState {
           : formError as String?,
       isSubmitting: isSubmitting ?? this.isSubmitting,
       hasAttemptedSubmit: hasAttemptedSubmit ?? this.hasAttemptedSubmit,
+      agreedToTerms: agreedToTerms ?? this.agreedToTerms,
     );
   }
 }
@@ -117,6 +123,15 @@ class SignupViewModel extends Notifier<SignupFormState> {
     );
   }
 
+  /// Toggles agreement to the Terms and Conditions.
+  void termsChanged(bool value) {
+    state = state.copyWith(
+      agreedToTerms: value,
+      // Any edit invalidates a server complaint about the previous input.
+      formError: null,
+    );
+  }
+
   /// Validates, then delegates the actual auth work to [AuthViewModel].
   ///
   /// Returns true when the account was created; the screen uses that to
@@ -127,15 +142,16 @@ class SignupViewModel extends Notifier<SignupFormState> {
 
     final emailError = _validateEmail(email);
     final passwordError = _validatePassword(password);
+    final termsError = state.agreedToTerms ? null : 'You must agree to the Terms and Conditions.';
 
     state = state.copyWith(
       hasAttemptedSubmit: true,
       emailError: emailError,
       passwordError: passwordError,
-      formError: null,
+      formError: termsError,
     );
 
-    if (emailError != null || passwordError != null) return false;
+    if (emailError != null || passwordError != null || termsError != null) return false;
 
     state = state.copyWith(isSubmitting: true);
 

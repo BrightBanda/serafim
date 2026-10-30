@@ -72,6 +72,7 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
       photo: _photo,
     );
     var results = out.results;
+    String? memberAddError;
     // Usernames are added after creation (the create call takes ids).
     final group = out.group;
     if (group != null && parts.usernames.isNotEmpty) {
@@ -80,6 +81,7 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
         usernames: parts.usernames,
       );
       results = [...results, ...more.results];
+      memberAddError = more.error;
     }
     if (!mounted) return;
     if (group == null) {
@@ -89,9 +91,17 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
       });
       return;
     }
-    if (out.error != null) {
+    if (out.error != null || memberAddError != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(out.error!), backgroundColor: AppColors.rust),
+        SnackBar(
+          content: Text(
+            memberAddError != null
+                ? 'Group created, but those usernames could not be added: '
+                      '$memberAddError'
+                : out.error!,
+          ),
+          backgroundColor: AppColors.rust,
+        ),
       );
     }
     if (results.any((r) => r.status != AddStatus.added)) {

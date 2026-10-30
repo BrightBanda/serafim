@@ -7,6 +7,7 @@ import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/data/models/link_preview.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/data/models/public_user.dart';
+import 'package:serafim/src/data/models/sticker_collection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// What the profile cache holds. A profile of `null` is meaningful: it means
@@ -198,6 +199,26 @@ class LocalCache {
 
   Future<void> saveRecentStickers(String account, List<String> ids) =>
       _write(_key(account, 'recentStickers'), ids);
+
+  // --- sticker collections --------------------------------------------------
+
+  List<StickerCollection> stickerCollections(String account) => _read(
+        _key(account, 'stickerCollections'),
+        (j) => [
+          for (final e in j! as List)
+            StickerCollection.fromJson(e as Map<String, dynamic>),
+        ],
+      ) ??
+      const [];
+
+  Future<void> saveStickerCollections(
+    String account,
+    List<StickerCollection> collections,
+  ) =>
+      _write(
+        _key(account, 'stickerCollections'),
+        [for (final c in collections) c.toJson()],
+      );
 
   // --- link previews --------------------------------------------------------
 

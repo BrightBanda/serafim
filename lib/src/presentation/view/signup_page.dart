@@ -1,7 +1,10 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:serafim/src/presentation/viewmodel/signup_view_model.dart';
-import 'package:serafim/src/presentation/view/terms_of_service_page.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -51,6 +54,14 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     // On success AuthViewModel has already flipped to authenticated (or to
     // awaitingEmailConfirmation), so the gate above this screen swaps it out.
     // Nothing to do here but stop.
+  }
+
+  /// Opens the external Terms and Conditions page.
+  Future<void> _launchTerms() async {
+    const url = 'https://serafim-site.onrender.com/terms';
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url));
+    }
   }
 
   @override
@@ -105,6 +116,40 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 _FormError(message: form.formError!),
               ],
 
+              const SizedBox(height: 14),
+
+              // Terms and conditions agreement.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Checkbox(
+                    value: form.agreedToTerms,
+                    onChanged: form.isSubmitting
+                        ? null
+                        : (value) => viewModel.termsChanged(value ?? false),
+                    activeColor: AppColors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: AppTextStyles.fieldLabel.copyWith(fontSize: 9.5),
+                        children: [
+                          const TextSpan(text: 'I agree to the '),
+                          TextSpan(
+                            text: 'Terms and Conditions',
+                            style: AppTextStyles.linkText.copyWith(fontSize: 9.5),
+                            recognizer: TapGestureRecognizer()
+                              ..onTap = _launchTerms,
+                          ),
+                          const TextSpan(text: '.'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
               const SizedBox(height: 18),
 
               SerafimButton(
@@ -122,41 +167,14 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               ],
 
               GestureDetector(
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const TermsOfServicePage(),
-                  ),
-                ),
+                onTap: widget.onLoginTap,
                 child: RichText(
-                  textAlign: TextAlign.center,
                   text: TextSpan(
-                    style: AppTextStyles.fieldLabel.copyWith(fontSize: 9.5),
+                    style: AppTextStyles.smallDim,
                     children: [
-                      const TextSpan(
-                        text: "By signing up you agree to Serafim's ",
-                      ),
-                      TextSpan(
-                        text: "Terms and Privacy Policy",
-                        style: AppTextStyles.linkText.copyWith(fontSize: 9.5),
-                      ),
-                      const TextSpan(text: "."),
+                      const TextSpan(text: 'Already have an account? '),
+                      TextSpan(text: 'Log in', style: AppTextStyles.linkText),
                     ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              Center(
-                child: GestureDetector(
-                  onTap: widget.onLoginTap,
-                  child: RichText(
-                    text: TextSpan(
-                      style: AppTextStyles.smallDim,
-                      children: [
-                        const TextSpan(text: 'Already have an account? '),
-                        TextSpan(text: 'Log in', style: AppTextStyles.linkText),
-                      ],
-                    ),
                   ),
                 ),
               ),

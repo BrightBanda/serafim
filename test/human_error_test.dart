@@ -63,6 +63,14 @@ void main() {
         contains('username is already taken'),
       );
       expect(
+        viaApi(409, {'detail': "Username 'sam' already exists."}),
+        'That username is already taken. Try another one.',
+      );
+      expect(
+        viaApi(409, {'error_code': 'username_taken'}),
+        'That username is already taken. Try another one.',
+      );
+      expect(
         viaApi(400, {'msg': 'Unsupported provider: provider is not enabled'}),
         contains("Google sign-in isn't switched on"),
       );

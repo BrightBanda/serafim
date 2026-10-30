@@ -21,18 +21,22 @@ class OnboardingState {
   const OnboardingState({
     this.step = OnboardingStep.photoName,
     this.displayName = '',
+    this.username = '',
     this.interests = const {},
     this.isSubmitting = false,
     this.errorMessage,
+    this.usernameError,
     this.completed = false,
     this.avatarBytes,
   });
 
   final OnboardingStep step;
   final String displayName;
+  final String username;
   final Set<String> interests;
   final bool isSubmitting;
   final String? errorMessage;
+  final String? usernameError;
 
   /// True once a profile exists, or the user skipped past setup. Lets the
   /// gate move on without re-prompting for the rest of the session.
@@ -45,20 +49,26 @@ class OnboardingState {
   OnboardingState copyWith({
     OnboardingStep? step,
     String? displayName,
+    String? username,
     Set<String>? interests,
     bool? isSubmitting,
     Object? errorMessage = _unset,
+    Object? usernameError = _unset,
     bool? completed,
     Uint8List? avatarBytes,
   }) {
     return OnboardingState(
       step: step ?? this.step,
       displayName: displayName ?? this.displayName,
+      username: username ?? this.username,
       interests: interests ?? this.interests,
       isSubmitting: isSubmitting ?? this.isSubmitting,
       errorMessage: identical(errorMessage, _unset)
           ? this.errorMessage
           : errorMessage as String?,
+      usernameError: identical(usernameError, _unset)
+          ? this.usernameError
+          : usernameError as String?,
       completed: completed ?? this.completed,
       avatarBytes: avatarBytes ?? this.avatarBytes,
     );
@@ -81,11 +91,20 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
 
   /// Step 2 → step 3. An empty name is allowed here; skipping is a valid
   /// path and [finish] falls back to the email local-part.
-  void continueToInterests(String displayName) {
+  void continueToInterests(String displayName, {String username = ''}) {
     state = state.copyWith(
       displayName: displayName.trim(),
+      username: username.trim().toLowerCase(),
       step: OnboardingStep.interests,
       errorMessage: null,
+      usernameError: null,
+    );
+  }
+
+  void usernameChanged(String value) {
+    state = state.copyWith(
+      username: value.trim().toLowerCase(),
+      usernameError: null,
     );
   }
 
@@ -108,6 +127,7 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
       interests: interests,
       isSubmitting: true,
       errorMessage: null,
+      usernameError: null,
     );
 
     final email = ref.read(currentUserProvider)?.email;
@@ -127,26 +147,22 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
     }
 
     final profiles = ref.read(profileViewModelProvider.notifier);
+    final username = state.username.isNotEmpty
+        ? state.username
+        : _slugify(displayName);
+    final usernameError = ProfileLimits.usernameError(username);
+    if (usernameError != null) {
+      state = state.copyWith(isSubmitting: false, usernameError: usernameError);
+      return;
+    }
+
     final request = ProfileCreateRequest(
       displayName: displayName,
-      username: _slugify(displayName),
+      username: username,
       interests: interests.isEmpty ? null : interests.toList(),
     );
 
-    var error = await profiles.createProfile(request);
-
-    // Usernames are derived, not chosen, so a collision is our problem to
-    // solve rather than something to show the user. Retry once with the
-    // account id mixed in, which cannot collide with another account.
-    if (error != null && _isUsernameTaken(error)) {
-      error = await profiles.createProfile(
-        ProfileCreateRequest(
-          displayName: displayName,
-          username: '${_slugify(displayName)}_${_accountSuffix()}',
-          interests: interests.isEmpty ? null : interests.toList(),
-        ),
-      );
-    }
+    final error = await profiles.createProfile(request);
 
     // The picture is a nicety: if the upload fails the account is still
     // fully set up, and they can retry from the profile page.
@@ -157,9 +173,17 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
 
     if (!ref.mounted) return;
 
-    state = error == null
-        ? state.copyWith(isSubmitting: false, completed: true)
-        : state.copyWith(isSubmitting: false, errorMessage: error);
+    if (error == null) {
+      state = state.copyWith(isSubmitting: false, completed: true);
+    } else if (_isUsernameTaken(error)) {
+      state = state.copyWith(
+        isSubmitting: false,
+        usernameError: error,
+        step: OnboardingStep.photoName,
+      );
+    } else {
+      state = state.copyWith(isSubmitting: false, errorMessage: error);
+    }
   }
 
   /// The typed name, else the email local-part, else null.
@@ -171,14 +195,6 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
 
     return null;
   }
-
-  String _accountSuffix() {
-    final id = ref.read(currentUserProvider)?.id ?? '';
-    return id.length >= 4 ? id.substring(0, 4) : '1';
-  }
-
-  static bool _isUsernameTaken(String error) =>
-      error.toLowerCase().contains('username already taken');
 
   /// A username the server accepts, with room left for the `_xxxx` suffix
   /// added on a collision.
@@ -195,5 +211,13 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
       slug = slug.substring(0, room).replaceAll(RegExp(r'_+$'), '');
     }
     return slug;
+  }
+
+  static bool _isUsernameTaken(String error) {
+    final message = error.toLowerCase();
+    return message.contains('username') &&
+        (message.contains('already taken') ||
+            message.contains('already exists') ||
+            message.contains('in use'));
   }
 }

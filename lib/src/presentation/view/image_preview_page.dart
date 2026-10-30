@@ -23,6 +23,120 @@ Future<Uint8List?> previewImage(
   ),
 );
 
+/// Shows separately-sendable photos in a grid. Tapping a tile opens that
+/// photo in its own zoomable full-screen viewer. Returns null on cancel.
+Future<List<Uint8List>?> previewImages(
+  BuildContext context,
+  List<Uint8List> photos,
+) => Navigator.of(context).push<List<Uint8List>>(
+  MaterialPageRoute(
+    fullscreenDialog: true,
+    builder: (_) => ImageBatchPreviewPage(photos: photos),
+  ),
+);
+
+class ImageBatchPreviewPage extends StatelessWidget {
+  const ImageBatchPreviewPage({super.key, required this.photos});
+
+  final List<Uint8List> photos;
+
+  Future<void> _open(BuildContext context, int index) =>
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => _FullScreenPhoto(bytes: photos[index], index: index),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        tooltip: 'Cancel',
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: Text('${photos.length} PHOTOS'),
+    ),
+    body: SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: photos.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
+              itemBuilder: (context, index) => GestureDetector(
+                key: ValueKey('batch-preview-tile-$index'),
+                onTap: () => _open(context, index),
+                child: Image.memory(photos[index], fit: BoxFit.cover),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+            child: GestureDetector(
+              key: const ValueKey('batch-preview-send'),
+              onTap: () => Navigator.of(context).pop(photos),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 28,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  border: Border.all(color: AppColors.line, width: 2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'SEND ${photos.length}',
+                      style: AppTextStyles.buttonLabel.copyWith(fontSize: 12),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.send, size: 16, color: Colors.white),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _FullScreenPhoto extends StatelessWidget {
+  const _FullScreenPhoto({required this.bytes, required this.index});
+
+  final Uint8List bytes;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    key: ValueKey('batch-preview-fullscreen-$index'),
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      title: Text('${index + 1}'),
+    ),
+    body: Center(
+      child: InteractiveViewer(
+        maxScale: 5,
+        child: Image.memory(bytes, fit: BoxFit.contain),
+      ),
+    ),
+  );
+}
+
 class ImagePreviewPage extends StatefulWidget {
   const ImagePreviewPage({
     super.key,

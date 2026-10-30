@@ -35,6 +35,7 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
 
   bool _saving = false;
   String? _error;
+  String? _usernameError;
 
   @override
   void dispose() {
@@ -60,7 +61,12 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
         ProfileLimits.usernameError(username) ??
         ProfileLimits.bioError(bio);
     if (problem != null) {
-      setState(() => _error = problem);
+      final usernameProblem = ProfileLimits.usernameError(username);
+      setState(() {
+        _error = null;
+        _usernameError = usernameProblem;
+        if (_usernameError == null) _error = problem;
+      });
       return;
     }
 
@@ -79,6 +85,7 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
     setState(() {
       _saving = true;
       _error = null;
+      _usernameError = null;
     });
     final error = await ref
         .read(profileViewModelProvider.notifier)
@@ -90,7 +97,16 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
     } else {
       setState(() {
         _saving = false;
-        _error = error;
+        final lower = error.toLowerCase();
+        if (request.username != null &&
+            lower.contains('username') &&
+            (lower.contains('taken') ||
+                lower.contains('already exists') ||
+                lower.contains('in use'))) {
+          _usernameError = error;
+        } else {
+          _error = error;
+        }
       });
     }
   }
@@ -137,7 +153,25 @@ class _EditProfilePageState extends ConsumerState<EditProfilePage> {
                 controller: _username,
                 hintText: 'letters, numbers and _',
                 maxLength: ProfileLimits.usernameMax,
+                onChanged: (_) {
+                  if (_usernameError != null || _error != null) {
+                    setState(() {
+                      _usernameError = null;
+                      _error = null;
+                    });
+                  }
+                },
               ),
+              if (_usernameError != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  _usernameError!,
+                  key: const ValueKey('edit-profile-username-error'),
+                  style: AppTextStyles.smallDim.copyWith(
+                    color: AppColors.rustPale,
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               UiTextField(
                 label: 'Bio',

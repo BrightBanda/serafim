@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:serafim/src/data/models/post.dart';
 import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/presentation/view/widgets/post_card.dart';
+import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
@@ -111,6 +112,24 @@ void main() {
   testWidgets('a post page shows the whole text', (t) async {
     await _show(t, _post(content: long), full: true);
     expect(find.text('See more'), findsNothing);
+  });
+
+  testWidgets('post text is selectable and URLs are rendered as links', (
+    t,
+  ) async {
+    await _show(t, _post(content: 'Read this https://example.com/story'));
+
+    expect(find.byType(SelectionArea), findsOneWidget);
+    expect(find.byType(LinkifiedText), findsOneWidget);
+    final richText = t.widget<RichText>(
+      find.descendant(
+        of: find.byType(LinkifiedText),
+        matching: find.byType(RichText),
+      ),
+    );
+    final linkSpan = _findTextSpan(richText.text, 'https://example.com/story');
+    expect(linkSpan, isNotNull);
+    expect(linkSpan!.recognizer, isNotNull);
   });
 
   testWidgets('tapping the author name opens their profile', (t) async {
@@ -220,4 +239,14 @@ void main() {
       expect(find.text('FOLLOWING'), findsNothing);
     });
   });
+}
+
+TextSpan? _findTextSpan(InlineSpan span, String text) {
+  if (span is! TextSpan) return null;
+  if (span.text == text) return span;
+  for (final child in span.children ?? const <InlineSpan>[]) {
+    final found = _findTextSpan(child, text);
+    if (found != null) return found;
+  }
+  return null;
 }

@@ -1,8 +1,16 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:serafim/src/core/network/api_exception.dart';
+import 'package:serafim/src/data/models/app_user.dart';
+import 'package:serafim/src/data/models/profile.dart';
+import 'package:serafim/src/data/services/profile_service.dart';
+import 'package:serafim/src/providers/service_providers.dart';
 import 'package:serafim/src/presentation/viewmodel/onboarding_view_model.dart';
+import 'package:serafim/src/presentation/viewmodel/profile_view_model.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/onboarding_providers.dart';
+import 'package:serafim/src/providers/profile_providers.dart';
 
 /// Stands in for the signed-in account so a test can switch users without
 /// driving a real sign-in. A plain [Notifier] rather than StateProvider,
@@ -15,6 +23,23 @@ class _Account extends Notifier<String?> {
 }
 
 final _account = NotifierProvider<_Account, String?>(_Account.new);
+
+class _TakenUsernameProfiles extends ProfileService {
+  _TakenUsernameProfiles() : super(Dio());
+
+  final requests = <ProfileCreateRequest>[];
+
+  @override
+  Future<Profile?> getMine() async => null;
+
+  @override
+  Future<Profile> create(ProfileCreateRequest request) async {
+    requests.add(request);
+    throw const ApiException(
+      'That username is already taken. Try another one.',
+    );
+  }
+}
 
 void main() {
   late ProviderContainer container;
@@ -40,10 +65,14 @@ void main() {
     });
 
     test('continue advances and keeps the trimmed name', () {
-      viewModel().continueToInterests('  Bright Banda  ');
+      viewModel().continueToInterests(
+        '  Bright Banda  ',
+        username: ' Bright_Banda ',
+      );
 
       expect(state().step, OnboardingStep.interests);
       expect(state().displayName, 'Bright Banda');
+      expect(state().username, 'bright_banda');
     });
 
     test('back preserves what was typed', () {
@@ -57,6 +86,36 @@ void main() {
         reason: 'stepping back must not discard the name',
       );
     });
+  });
+
+  test('a taken username is shown and never silently replaced', () async {
+    final profiles = _TakenUsernameProfiles();
+    container.dispose();
+    container = ProviderContainer(
+      overrides: [
+        currentAccountIdProvider.overrideWith((ref) => ref.watch(_account)),
+        currentUserProvider.overrideWithValue(
+          AppUser(
+            id: 'account-a',
+            email: 'person@example.com',
+            isActive: true,
+            createdAt: DateTime.utc(2026),
+          ),
+        ),
+        profileServiceProvider.overrideWithValue(profiles),
+        profileViewModelProvider.overrideWith(_TestProfileViewModel.new),
+      ],
+    );
+
+    viewModel().continueToInterests('Person', username: 'taken_name');
+    await viewModel().finish({});
+
+    expect(profiles.requests, hasLength(1));
+    expect(profiles.requests.single.username, 'taken_name');
+    expect(state().step, OnboardingStep.photoName);
+    expect(state().usernameError, contains('username is already taken'));
+    expect(state().errorMessage, isNull);
+    expect(state().isSubmitting, isFalse);
   });
 
   group('resets per account', () {
@@ -92,4 +151,9 @@ void main() {
       expect(state().displayName, 'Bright');
     });
   });
+}
+
+class _TestProfileViewModel extends ProfileViewModel {
+  @override
+  Future<Profile?> build() async => null;
 }

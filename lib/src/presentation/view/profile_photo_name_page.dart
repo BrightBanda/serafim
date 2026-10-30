@@ -20,6 +20,9 @@ class ProfilePhotoNamePage extends StatefulWidget {
   const ProfilePhotoNamePage({
     super.key,
     this.nameController,
+    this.usernameController,
+    this.usernameError,
+    this.onUsernameChanged,
     this.onBack,
     this.onEditPhoto,
     this.onUploadPhoto,
@@ -35,6 +38,9 @@ class ProfilePhotoNamePage extends StatefulWidget {
   final bool avatarBusy;
 
   final TextEditingController? nameController;
+  final TextEditingController? usernameController;
+  final String? usernameError;
+  final ValueChanged<String>? onUsernameChanged;
   final VoidCallback? onBack;
   final VoidCallback? onEditPhoto;
   final VoidCallback? onUploadPhoto;
@@ -48,6 +54,8 @@ class ProfilePhotoNamePage extends StatefulWidget {
 class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
   late final TextEditingController _nameController =
       widget.nameController ?? TextEditingController();
+  late final TextEditingController _usernameController =
+      widget.usernameController ?? TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -101,6 +109,25 @@ class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
                       maxLength: ProfileLimits.displayNameMax,
                       textCapitalization: TextCapitalization.words,
                     ),
+                    const SizedBox(height: 14),
+                    UiTextField(
+                      label: 'Username',
+                      controller: _usernameController,
+                      hintText: 'letters, numbers and _',
+                      maxLength: ProfileLimits.usernameMax,
+                      autocorrect: false,
+                      onChanged: widget.onUsernameChanged,
+                    ),
+                    if (widget.usernameError != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.usernameError!,
+                        key: const ValueKey('profile-username-error'),
+                        style: AppTextStyles.smallDim.copyWith(
+                          color: AppColors.rustPale,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 22),
 
                     SerafimButton(

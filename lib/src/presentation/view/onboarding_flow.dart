@@ -27,10 +27,14 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   late final TextEditingController _nameController = TextEditingController(
     text: ref.read(onboardingViewModelProvider).displayName,
   );
+  late final TextEditingController _usernameController = TextEditingController(
+    text: ref.read(onboardingViewModelProvider).username,
+  );
 
   @override
   void dispose() {
     _nameController.dispose();
+    _usernameController.dispose();
     super.dispose();
   }
 
@@ -90,13 +94,19 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     final page = switch (state.step) {
       OnboardingStep.photoName => ProfilePhotoNamePage(
         nameController: _nameController,
+        usernameController: _usernameController,
+        usernameError: state.usernameError,
+        onUsernameChanged: viewModel.usernameChanged,
         avatarBytes: state.avatarBytes,
         avatarBusy: _preparingPhoto,
         onEditPhoto: () => _pickPhoto(viewModel),
         onUploadPhoto: () => _pickPhoto(viewModel),
-        onContinue: () => viewModel.continueToInterests(_nameController.text),
-        // Skipping the name is allowed; finish() falls back to the email
-        // local-part so the profile can still be created.
+        onContinue: () => viewModel.continueToInterests(
+          _nameController.text,
+          username: _usernameController.text,
+        ),
+        // Skipping is allowed; finish() derives missing profile fields from
+        // the signed-in account details.
         onSkip: () => viewModel.continueToInterests(''),
       ),
       OnboardingStep.interests => ProfileInterestsPage(

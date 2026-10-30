@@ -61,6 +61,7 @@ class _MemberPickerState extends ConsumerState<MemberPicker> {
   final _field = TextEditingController();
   final Set<String> _ids = {};
   final List<String> _typed = [];
+  String? _entryError;
 
   @override
   void dispose() {
@@ -73,8 +74,20 @@ class _MemberPickerState extends ConsumerState<MemberPicker> {
 
   void _addTyped() {
     final v = _field.text.trim();
-    if (v.isEmpty || _typed.contains(v)) return;
-    setState(() => _typed.add(v));
+    if (v.isEmpty) return;
+    final normalized = v.replaceFirst(RegExp(r'^@'), '').toLowerCase();
+    final alreadyAdded = _typed.any(
+      (entry) =>
+          entry.replaceFirst(RegExp(r'^@'), '').toLowerCase() == normalized,
+    );
+    if (alreadyAdded) {
+      setState(() => _entryError = 'That username or UID is already added.');
+      return;
+    }
+    setState(() {
+      _typed.add(v);
+      _entryError = null;
+    });
     _field.clear();
     _emit();
   }
@@ -100,6 +113,11 @@ class _MemberPickerState extends ConsumerState<MemberPicker> {
                 child: TextField(
                   controller: _field,
                   autocorrect: false,
+                  onChanged: (_) {
+                    if (_entryError != null) {
+                      setState(() => _entryError = null);
+                    }
+                  },
                   onSubmitted: (_) => _addTyped(),
                   style: AppTextStyles.fieldInput.copyWith(fontSize: 12),
                   cursorColor: AppColors.primary,
@@ -121,6 +139,13 @@ class _MemberPickerState extends ConsumerState<MemberPicker> {
             ),
           ],
         ),
+        if (_entryError != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _entryError!,
+            style: AppTextStyles.smallDim.copyWith(color: AppColors.rustPale),
+          ),
+        ],
         if (_typed.isNotEmpty) ...[
           const SizedBox(height: 8),
           Wrap(

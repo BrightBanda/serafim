@@ -14,6 +14,24 @@ enum ChatBubbleSide { incoming, outgoing }
 /// purely presentational with no data-layer dependency.
 enum ChatMessageStatus { sending, sent, delivered, read, failed }
 
+class ChatImageAttachment {
+  const ChatImageAttachment({
+    required this.path,
+    this.key,
+    this.onTap,
+    this.onLongPress,
+    this.onSave,
+    this.onDelete,
+  });
+
+  final String path;
+  final Key? key;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final Future<void> Function()? onSave;
+  final Future<void> Function()? onDelete;
+}
+
 /// A single chat message bubble. Purely presentational — takes the
 /// text to show, no message-sending logic lives here.
 class ChatBubble extends StatelessWidget {
@@ -24,6 +42,8 @@ class ChatBubble extends StatelessWidget {
     required this.side,
     this.status,
     this.imagePath,
+    this.imageAttachments = const [],
+    this.onTapImage,
     this.deleted = false,
     this.onLongPress,
     this.onSaveImage,
@@ -52,11 +72,16 @@ class ChatBubble extends StatelessWidget {
   /// Press-and-hold on the bubble (message actions).
   final VoidCallback? onLongPress;
 
+  /// Taps on an attached image/GIF. When provided, used instead of opening
+  /// the full-screen viewer (e.g. to show forward/save/delete options).
+  final VoidCallback? onTapImage;
+
   /// Adds a Download button to the full-screen image viewer.
   final Future<void> Function()? onSaveImage;
 
   /// Local file path of an attached image, if any.
   final String? imagePath;
+  final List<ChatImageAttachment> imageAttachments;
 
   final String who;
   final String message;
@@ -158,14 +183,59 @@ class ChatBubble extends StatelessWidget {
                   ),
                 )
               else ...[
+                if (imageAttachments.length > 1) ...[
+                  SizedBox(
+                    width: MediaQuery.of(context).size.width * 0.62,
+                    child: GridView.count(
+                      key: const ValueKey('chat-image-grid'),
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 4,
+                      mainAxisSpacing: 4,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        for (final image in imageAttachments)
+                          GestureDetector(
+                            key: image.key,
+                            onTap:
+                                image.onTap ??
+                                () => _openFullScreen(
+                                  context,
+                                  image.path,
+                                  image.onSave,
+                                  image.onDelete,
+                                ),
+                            onLongPress: image.onLongPress,
+                            child: ClipRect(
+                              child: Image.file(
+                                File(image.path),
+                                fit: BoxFit.cover,
+                                cacheWidth: 500,
+                                errorBuilder: (_, __, ___) => ColoredBox(
+                                  color: AppColors.paperRaised,
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    color: AppColors.textDim,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (message.isNotEmpty) const SizedBox(height: 6),
+                ],
                 if (imagePath != null) ...[
                   GestureDetector(
-                    onTap: () => _openFullScreen(
-                      context,
-                      imagePath!,
-                      onSaveImage,
-                      onDeleteImage,
-                    ),
+                    onTap:
+                        onTapImage ??
+                        () => _openFullScreen(
+                          context,
+                          imagePath!,
+                          onSaveImage,
+                          onDeleteImage,
+                        ),
                     child: ConstrainedBox(
                       // Photos are big; GIFs and stickers are a small
                       // thing you glance at, so they are kept small. A

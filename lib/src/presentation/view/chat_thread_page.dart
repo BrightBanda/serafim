@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
@@ -39,8 +42,10 @@ import 'package:serafim/src/utils/chat/link_preview_card.dart';
 import 'package:serafim/src/providers/sticker_providers.dart';
 import 'package:serafim/src/utils/image_shrink.dart';
 import 'package:serafim/src/utils/stickers/sticker_message.dart';
+import 'package:serafim/src/utils/stickers/sticker_packs.dart';
 import 'package:serafim/src/utils/stickers/sticker_picker.dart';
 import 'package:serafim/src/data/models/group.dart';
+import 'package:serafim/src/data/models/sticker_collection.dart';
 import 'package:serafim/src/presentation/view/group_info_page.dart';
 import 'package:serafim/src/providers/group_providers.dart';
 import 'package:serafim/src/providers/voice_providers.dart';
@@ -110,6 +115,47 @@ List<LocalMessage> _sortMessagesNewestFirst(List<LocalMessage> messages) {
     return byTime != 0 ? byTime : b.id.compareTo(a.id);
   });
   return sorted;
+}
+
+List<List<LocalMessage>> groupImagesForDisplay(List<LocalMessage> newestFirst) {
+  final groups = <List<LocalMessage>>[];
+  var index = 0;
+  while (index < newestFirst.length) {
+    final first = newestFirst[index];
+    final group = <LocalMessage>[first];
+    if (_isGridImage(first)) {
+      var previous = first;
+      var next = index + 1;
+      while (next < newestFirst.length &&
+          _canJoinImageGroup(previous, newestFirst[next])) {
+        previous = newestFirst[next++];
+        group.add(previous);
+      }
+      index = next;
+    } else {
+      index++;
+    }
+    groups.add(group);
+  }
+  return groups;
+}
+
+bool _isGridImage(LocalMessage message) =>
+    message.type == MessageType.image &&
+    !message.isDeleted &&
+    message.localMediaPath != null;
+
+bool _canJoinImageGroup(LocalMessage newer, LocalMessage older) {
+  if (!_isGridImage(older) ||
+      newer.senderId != older.senderId ||
+      newer.groupId != older.groupId) {
+    return false;
+  }
+  final delta = newer.timestamp
+      .difference(older.timestamp)
+      .inMicroseconds
+      .abs();
+  return delta <= const Duration(seconds: 8).inMicroseconds;
 }
 
 /// Formats a DateTime as HH:mm without relying on String.substring().
@@ -203,7 +249,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     if (_attaching) return;
     final quality = ref.read(settingsProvider).imageQuality;
     try {
-      final bytes = await pickShrunkImage(
+      final photos = await pickShrunkImages(
         context,
         maxSide: quality.maxSide,
         quality: quality.jpegQuality,
@@ -212,29 +258,35 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           if (mounted) setState(() => _attaching = true);
         },
       );
-      if (bytes == null || !mounted) return;
+      if (photos == null || !mounted) return;
 
-      // Show the picture first; Edit (crop / draw) is there if wanted. The
-      // spinner is for the pick, not for looking at it.
       setState(() => _attaching = false);
-      final edited = await previewImage(
-        context,
-        bytes,
-        maxSide: quality.maxSide,
-        quality: quality.jpegQuality,
-      );
-      if (edited == null || !mounted) return;
+      final toSend = photos.length > 1
+          ? await previewImages(context, photos)
+          : [
+              if (await previewImage(
+                    context,
+                    photos.single,
+                    maxSide: quality.maxSide,
+                    quality: quality.jpegQuality,
+                  )
+                  case final edited?)
+                edited,
+            ];
+      if (toSend == null || !mounted) return;
       setState(() => _attaching = true);
 
-      await ref
-          .read(chatViewModelProvider.notifier)
-          .sendMessage(
-            roomId: _roomId,
-            recipientId: widget.recipientId,
-            groupId: widget.groupId,
-            imageBytes: edited,
-            replyToId: _reply.value?.messageId,
-          );
+      for (var index = 0; index < toSend.length; index++) {
+        await ref
+            .read(chatViewModelProvider.notifier)
+            .sendMessage(
+              roomId: _roomId,
+              recipientId: widget.recipientId,
+              groupId: widget.groupId,
+              imageBytes: toSend[index],
+              replyToId: index == 0 ? _reply.value?.messageId : null,
+            );
+      }
       _reply.clear();
       _scheduleScrollToBottom();
     } catch (error) {
@@ -457,6 +509,195 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     }
   }
 
+  /// Shows a bottom sheet letting the person add a sticker or GIF to an
+  /// existing collection or create a new one. Either [stickerId] (for stickers)
+  /// or [gifPath] + [gifName] (for GIFs) must be provided.
+  Future<void> _saveMediaToCollection({
+    String? stickerId,
+    String? gifPath,
+    String? gifName,
+    Uint8List? gifBytes,
+  }) async {
+    final isGif = gifPath != null || gifBytes != null;
+    final resolvedStickerId = stickerId?.trim();
+    final sticker = resolvedStickerId == null
+        ? null
+        : stickerById(resolvedStickerId);
+    final label = isGif
+        ? (gifName ?? gifPath?.split('/').last ?? 'GIF')
+        : (sticker?.name ?? stickerId ?? '');
+
+    // Read GIF bytes if we don't already have them.
+    Uint8List? resolvedGifBytes = gifBytes;
+    if (isGif && resolvedGifBytes == null && gifPath != null) {
+      try {
+        resolvedGifBytes = await File(gifPath).readAsBytes();
+      } catch (_) {
+        if (!mounted) return;
+        _toast('Could not read the GIF.', error: true);
+        return;
+      }
+    }
+
+    if (isGif && resolvedGifBytes == null) {
+      if (mounted) _toast('Could not read the GIF.', error: true);
+      return;
+    }
+    if (!isGif && (resolvedStickerId == null || resolvedStickerId.isEmpty)) {
+      if (mounted) _toast('Could not save that sticker.', error: true);
+      return;
+    }
+
+    if (!mounted) return;
+
+    final result = await showSettledSheet<String>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      builder: (ctx) {
+        final collections = ref.read(stickerCollectionsProvider);
+
+        Widget collectionTile(StickerCollection c) {
+          final already = isGif
+              ? c.containsGifName(gifName ?? '')
+              : c.containsSticker(stickerId ?? '');
+          return ListTile(
+            leading: Icon(
+              Icons.collections_bookmark,
+              size: 20,
+              color: AppColors.text,
+            ),
+            title: Text(
+              c.name,
+              style: AppTextStyles.body.copyWith(color: AppColors.text),
+            ),
+            trailing: already
+                ? Icon(Icons.check, color: AppColors.primary, size: 20)
+                : null,
+            onTap: () => Navigator.pop(ctx, c.id),
+          );
+        }
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Save “$label”',
+                style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
+              ),
+              const SizedBox(height: 12),
+              if (collections.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'No collections yet. Create one below.',
+                    style: AppTextStyles.smallDim,
+                  ),
+                )
+              else ...[
+                const SizedBox(height: 8),
+                ...[for (final c in collections) collectionTile(c)],
+                const Divider(height: 1),
+              ],
+              ListTile(
+                leading: Icon(
+                  Icons.add_circle_outline,
+                  size: 20,
+                  color: AppColors.primary,
+                ),
+                title: Text(
+                  'Create new collection',
+                  style: AppTextStyles.body.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                onTap: () => Navigator.pop(ctx, 'create_new'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (result == null || !mounted) return;
+
+    if (result == 'create_new') {
+      final newName = await showTextEditDialog(
+        context,
+        title: 'New collection',
+        initial: '',
+        maxLength: 10,
+        titleStyle: AppTextStyles.fieldInput,
+        validate: (text) {
+          final t = text.trim();
+          if (t.isEmpty) return 'Give the collection a name.';
+          final existing = ref
+              .read(stickerCollectionsProvider)
+              .any((c) => c.name.toLowerCase() == t.toLowerCase());
+          if (existing) return 'A collection with that name already exists.';
+          return null;
+        },
+      );
+      if (newName == null || !mounted) return;
+      final id = 'coll_${DateTime.now().millisecondsSinceEpoch}';
+      final item = isGif
+          ? StickerCollectionItem(
+              kind: StickerCollectionItemKind.gif,
+              stickerId: '',
+              name: gifName ?? '',
+              gifBytesBase64: base64Encode(resolvedGifBytes!),
+            )
+          : StickerCollectionItem(
+              kind: StickerCollectionItemKind.sticker,
+              stickerId: resolvedStickerId!,
+              name: sticker?.name,
+            );
+      ref
+          .read(stickerCollectionsProvider.notifier)
+          .addToCollection(
+            collectionId: id,
+            collectionName: newName.trim(),
+            item: item,
+          );
+      _toast('Saved to “${newName.trim()}”');
+      return;
+    }
+
+    StickerCollection? collection;
+    for (final c in ref.read(stickerCollectionsProvider)) {
+      if (c.id == result) {
+        collection = c;
+        break;
+      }
+    }
+    if (collection == null || !mounted) return;
+    final already = isGif
+        ? collection.containsGifName(gifName ?? '')
+        : collection.containsSticker(stickerId ?? '');
+    if (already) {
+      _toast('Already in “${collection.name}”');
+      return;
+    }
+    final item = isGif
+        ? StickerCollectionItem(
+            kind: StickerCollectionItemKind.gif,
+            stickerId: '',
+            name: gifName ?? '',
+            gifBytesBase64: base64Encode(resolvedGifBytes!),
+          )
+        : StickerCollectionItem(
+            kind: StickerCollectionItemKind.sticker,
+            stickerId: resolvedStickerId!,
+            name: sticker?.name,
+          );
+    ref
+        .read(stickerCollectionsProvider.notifier)
+        .addToCollection(collectionId: result, item: item);
+    _toast('Saved to “${collection.name}”');
+  }
+
   Future<void> _showMessageActions(
     LocalMessage message, {
     required bool isOutgoing,
@@ -472,6 +713,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
         : message.textContent ?? '';
     final isImage =
         message.type == MessageType.image && message.localMediaPath != null;
+    final isGif =
+        isImage && message.localMediaPath!.toLowerCase().endsWith('.gif');
+    final isSticker = message.type == MessageType.sticker;
     final isConfirmed =
         message.status != MessageStatus.sending &&
         message.status != MessageStatus.failed;
@@ -481,6 +725,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       isDeleted: message.isDeleted,
       hasText: text.isNotEmpty,
       isImage: isImage,
+      isGif: isGif,
+      isSticker: isSticker,
       isConfirmed: isConfirmed,
     );
     if (actions.isEmpty) return;
@@ -522,6 +768,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                     'Forward',
                     'forward',
                   ),
+                  MessageAction.save => tile(
+                    Icons.bookmark_add,
+                    'Save to collection',
+                    'save',
+                  ),
                   MessageAction.delete => tile(
                     Icons.delete_outline,
                     isConfirmed ? 'Delete for everyone' : 'Delete',
@@ -547,6 +798,17 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
         _startReply(message);
       case 'forward':
         await _forwardMessage(message);
+      case 'save':
+        if (isSticker) {
+          await _saveMediaToCollection(stickerId: message.textContent ?? '');
+        } else if (isGif) {
+          await _saveMediaToCollection(
+            gifPath: message.localMediaPath,
+            gifName: message.textContent?.isNotEmpty == true
+                ? message.textContent
+                : message.localMediaPath?.split('/').last,
+          );
+        }
       case 'delete':
         await _deleteFlow(
           message,
@@ -762,6 +1024,157 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     ref.read(recentStickersProvider.notifier).used(stickerId);
     _reply.clear();
     _scheduleScrollToBottom();
+  }
+
+  /// Re-sends a GIF that was previously saved to a collection. The GIF bytes
+  /// are stored as an image attachment (kept as-is so it still animates).
+  Future<void> _resendGifFromCollection((Uint8List, String) gif) async {
+    final (bytes, name) = gif;
+    final me = _currentUserId;
+    if (me == null) return;
+    final attachDisabledReason = widget.groupId != null
+        ? "Photos and GIFs can't be shared in groups yet."
+        : null;
+    if (attachDisabledReason != null) {
+      _toast(attachDisabledReason);
+      return;
+    }
+    await ref
+        .read(chatViewModelProvider.notifier)
+        .sendMessage(
+          roomId: _roomId,
+          recipientId: widget.recipientId,
+          groupId: widget.groupId,
+          imageBytes: bytes,
+          replyToId: _reply.value?.messageId,
+        );
+    _reply.clear();
+    _scheduleScrollToBottom();
+  }
+
+  /// Shows forward / save / delete options for a tapped sticker or GIF.
+  /// [stickerId] is for stickers; [gifBytes] + [gifName] for GIFs.
+  Future<void> _showMediaActionSheet({
+    String? stickerId,
+    Uint8List? gifBytes,
+    String? gifName,
+  }) async {
+    final isGif = gifBytes != null;
+    final label = isGif
+        ? (gifName ?? 'GIF')
+        : (stickerById(stickerId!)?.name ?? stickerId);
+
+    // Which collections already contain this item.
+    final collections = ref.read(stickerCollectionsProvider);
+    final containing = <StickerCollection>[];
+    for (final c in collections) {
+      final already = isGif
+          ? c.containsGifName(gifName ?? '')
+          : c.containsSticker(stickerId!);
+      if (already) containing.add(c);
+    }
+
+    final action = await showSettledSheet<String>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: Icon(Icons.send, size: 20, color: AppColors.text),
+                title: Text(
+                  'Send',
+                  style: AppTextStyles.body.copyWith(color: AppColors.text),
+                ),
+                onTap: () => Navigator.pop(ctx, 'send'),
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.collections_bookmark,
+                  size: 20,
+                  color: AppColors.text,
+                ),
+                title: Text(
+                  containing.isEmpty
+                      ? 'Save to collection'
+                      : 'Save to another collection',
+                  style: AppTextStyles.body.copyWith(color: AppColors.text),
+                ),
+                onTap: () => Navigator.pop(ctx, 'save'),
+              ),
+              if (containing.isNotEmpty) ...[
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(
+                    Icons.delete_outline,
+                    size: 20,
+                    color: AppColors.rust,
+                  ),
+                  title: Text(
+                    'Remove from ${containing.length} collection'
+                    '${containing.length > 1 ? 's' : ''}',
+                    style: AppTextStyles.body.copyWith(color: AppColors.rust),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'delete'),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+
+    if (action == null || !mounted) return;
+
+    switch (action) {
+      case 'send':
+        if (isGif) {
+          await _resendGifFromCollection((gifBytes, gifName ?? 'GIF'));
+        } else {
+          _sendSticker(stickerId!);
+        }
+      case 'save':
+        if (isGif) {
+          await _saveMediaToCollection(
+            gifPath: '', // placeholder, not used since we have bytes
+            gifName: gifName,
+            gifBytes: gifBytes,
+          );
+        } else {
+          await _saveMediaToCollection(stickerId: stickerId!);
+        }
+      case 'delete':
+        // Remove from all collections that contain it.
+        for (final c in containing) {
+          if (isGif) {
+            ref
+                .read(stickerCollectionsProvider.notifier)
+                .removeGifFromCollection(
+                  collectionId: c.id,
+                  gifName: gifName ?? '',
+                );
+          } else {
+            ref
+                .read(stickerCollectionsProvider.notifier)
+                .removeStickerFromCollection(
+                  collectionId: c.id,
+                  stickerId: stickerId!,
+                );
+          }
+        }
+        _toast(
+          'Removed from ${containing.length} collection'
+          '${containing.length > 1 ? 's' : ''}',
+        );
+    }
   }
 
   /// A GIF, sticker or image inserted from the keyboard (Gboard etc.). Sent
@@ -1149,6 +1562,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                           if (id != currentUserId) _nameOf(id),
                       ];
                       final typingRows = typingNow.isEmpty ? 0 : 1;
+                      final displayGroups = groupImagesForDisplay(
+                        orderedMessages,
+                      );
 
                       return ListView.separated(
                         controller: _scrollController,
@@ -1156,7 +1572,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
 
                         padding: const EdgeInsets.all(14),
 
-                        itemCount: orderedMessages.length + typingRows,
+                        itemCount: displayGroups.length + typingRows,
 
                         separatorBuilder: (_, __) {
                           return const SizedBox(height: 10);
@@ -1166,7 +1582,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                           if (typingRows == 1 && index == 0) {
                             return TypingBubble(who: typingNow.join(', '));
                           }
-                          final message = orderedMessages[index - typingRows];
+                          final group = displayGroups[index - typingRows];
+                          final message = group.first;
 
                           final isOutgoing =
                               currentUserId != null &&
@@ -1198,6 +1615,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                   status: isOutgoing
                                       ? _mapStatus(message.status)
                                       : null,
+                                  onTap: () => _showMessageActions(
+                                    message,
+                                    isOutgoing: isOutgoing,
+                                    senderLabel: who,
+                                  ),
                                   onLongPress: () => _showMessageActions(
                                     message,
                                     isOutgoing: isOutgoing,
@@ -1216,9 +1638,62 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                   message: message.type == MessageType.post
                                       ? ''
                                       : message.textContent ?? '',
-                                  imagePath: message.type == MessageType.image
+                                  imagePath:
+                                      message.type == MessageType.image &&
+                                          group.length == 1
                                       ? message.localMediaPath
                                       : null,
+                                  onTapImage:
+                                      message.type == MessageType.image &&
+                                          message.localMediaPath != null &&
+                                          message.localMediaPath!
+                                              .toLowerCase()
+                                              .endsWith('.gif')
+                                      ? () => _showMessageActions(
+                                          message,
+                                          isOutgoing: isOutgoing,
+                                          senderLabel: who,
+                                        )
+                                      : null,
+                                  imageAttachments: group.length > 1
+                                      ? [
+                                          for (final image in group.reversed)
+                                            ChatImageAttachment(
+                                              path: image.localMediaPath!,
+                                              onTap:
+                                                  image.localMediaPath!
+                                                      .toLowerCase()
+                                                      .endsWith('.gif')
+                                                  ? () => _showMessageActions(
+                                                      image,
+                                                      isOutgoing: isOutgoing,
+                                                      senderLabel: who,
+                                                    )
+                                                  : null,
+                                              key: _itemKeys.putIfAbsent(
+                                                image.messageId,
+                                                GlobalKey.new,
+                                              ),
+                                              onLongPress: () =>
+                                                  _showMessageActions(
+                                                    image,
+                                                    isOutgoing: isOutgoing,
+                                                    senderLabel: who,
+                                                  ),
+                                              onSave: () =>
+                                                  _saveImage(image, who),
+                                              onDelete: () => _deleteFlow(
+                                                image,
+                                                isOutgoing: isOutgoing,
+                                                isConfirmed:
+                                                    image.status !=
+                                                        MessageStatus.sending &&
+                                                    image.status !=
+                                                        MessageStatus.failed,
+                                              ),
+                                            ),
+                                        ]
+                                      : const [],
                                   side: isOutgoing
                                       ? ChatBubbleSide.outgoing
                                       : ChatBubbleSide.incoming,
@@ -1282,7 +1757,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
 
                           return KeyedSubtree(
                             key: _itemKeys.putIfAbsent(
-                              message.messageId,
+                              group.length > 1
+                                  ? 'image-grid:${message.messageId}'
+                                  : message.messageId,
                               GlobalKey.new,
                             ),
                             child: SwipeToReply(
@@ -1337,7 +1814,15 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                             ),
                     ),
                   ),
-                if (_stickersOpen) StickerPicker(onPick: _sendSticker),
+                if (_stickersOpen)
+                  StickerPicker(
+                    onPick: (id) => _showMediaActionSheet(stickerId: id),
+                    onSave: (id) => _saveMediaToCollection(stickerId: id),
+                    onPickGif: (gif) => _showMediaActionSheet(
+                      gifBytes: gif.$1,
+                      gifName: gif.$2,
+                    ),
+                  ),
               ],
             ),
           ],

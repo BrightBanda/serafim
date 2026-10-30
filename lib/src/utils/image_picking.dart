@@ -67,3 +67,72 @@ Future<Uint8List?> pickShrunkImage(
     quality: quality,
   );
 }
+
+/// Lets the user choose up to four gallery photos at once. Camera capture
+/// remains available on phones and returns a one-photo selection.
+Future<List<Uint8List>?> pickShrunkImages(
+  BuildContext context, {
+  int maxSide = 1280,
+  int quality = 75,
+  VoidCallback? onPicked,
+}) async {
+  final picker = ImagePicker();
+  var source = ImageSource.gallery;
+
+  if (_hasCamera) {
+    final chosen = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: Text('Choose photos', style: AppTextStyles.body),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: Text('Take a photo', style: AppTextStyles.body),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null) return null;
+    source = chosen;
+  }
+
+  final files = source == ImageSource.camera
+      ? [
+          if (await picker.pickImage(
+                source: source,
+                maxWidth: maxSide.toDouble(),
+                maxHeight: maxSide.toDouble(),
+                imageQuality: quality,
+              )
+              case final file?)
+            file,
+        ]
+      : await picker.pickMultiImage(
+          limit: 4,
+          maxWidth: maxSide.toDouble(),
+          maxHeight: maxSide.toDouble(),
+          imageQuality: quality,
+        );
+  if (files.isEmpty) return null;
+  onPicked?.call();
+
+  return Future.wait(
+    files.map(
+      (file) async => shrinkImage(
+        await file.readAsBytes(),
+        maxSide: maxSide,
+        quality: quality,
+      ),
+    ),
+  );
+}

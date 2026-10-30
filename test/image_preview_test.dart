@@ -33,6 +33,29 @@ Future<ValueNotifier<Object?>> _open(WidgetTester t, Uint8List bytes) async {
   return result;
 }
 
+Future<ValueNotifier<Object?>> _openBatch(
+  WidgetTester t,
+  List<Uint8List> photos,
+) async {
+  final result = ValueNotifier<Object?>('not closed');
+  await t.pumpWidget(
+    MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(
+            onPressed: () async =>
+                result.value = await previewImages(context, photos),
+            child: const Text('open batch'),
+          ),
+        ),
+      ),
+    ),
+  );
+  await t.tap(find.text('open batch'));
+  await t.pumpAndSettle();
+  return result;
+}
+
 void main() {
   testWidgets('a picture is only previewed: Send returns it as it was', (
     t,
@@ -55,6 +78,39 @@ void main() {
     await t.pumpAndSettle();
     expect(result.value, isNull);
   });
+
+  testWidgets(
+    'batch preview opens each tile independently and sends originals',
+    (t) async {
+      final photos = [_png(), _png(), _png(), _png()];
+      final result = await _openBatch(t, photos);
+
+      expect(find.byType(GridView), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('batch-preview-tile-0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('batch-preview-tile-3')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('batch-preview-send')), findsOneWidget);
+
+      await t.tap(find.byKey(const ValueKey('batch-preview-tile-0')));
+      await t.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('batch-preview-fullscreen-0')),
+        findsOneWidget,
+      );
+      expect(find.byType(InteractiveViewer), findsOneWidget);
+      await t.pageBack();
+      await t.pumpAndSettle();
+
+      await t.tap(find.byKey(const ValueKey('batch-preview-send')));
+      await t.pumpAndSettle();
+      expect(result.value, same(photos));
+    },
+  );
 
   testWidgets('Edit opens the editor, and backing out keeps the picture', (
     t,

@@ -59,12 +59,16 @@ void main() {
       bool deleted = false,
       bool text = true,
       bool image = false,
+      bool gif = false,
+      bool sticker = false,
       bool confirmed = true,
     }) => availableMessageActions(
       isOutgoing: out,
       isDeleted: deleted,
       hasText: text,
       isImage: image,
+      isGif: gif,
+      isSticker: sticker,
       isConfirmed: confirmed,
     );
 
@@ -116,6 +120,24 @@ void main() {
       expect(actions(), contains(MessageAction.forward));
       expect(actions(confirmed: false), isNot(contains(MessageAction.forward)));
       expect(actions(deleted: true), isNot(contains(MessageAction.forward)));
+    });
+    test('a confirmed sticker gets a save action', () {
+      expect(actions(sticker: true), contains(MessageAction.save));
+      expect(actions(sticker: false), isNot(contains(MessageAction.save)));
+      // An unsent sticker is not saved.
+      expect(actions(sticker: true, confirmed: false),
+          isNot(contains(MessageAction.save)));
+      // A deleted sticker only offers delete.
+      expect(actions(sticker: true, deleted: true), [MessageAction.delete]);
+    });
+    test('a confirmed GIF gets a save action', () {
+      expect(actions(gif: true), contains(MessageAction.save));
+      expect(actions(gif: false), isNot(contains(MessageAction.save)));
+      // An unsent GIF is not saved.
+      expect(actions(gif: true, confirmed: false),
+          isNot(contains(MessageAction.save)));
+      // A deleted GIF only offers delete.
+      expect(actions(gif: true, deleted: true), [MessageAction.delete]);
     });
   });
 

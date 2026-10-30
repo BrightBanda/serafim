@@ -153,6 +153,31 @@ void main() {
     expect(find.text('Edit'), findsOneWidget);
   });
 
+  testWidgets('adding a username twice shows a clear inline error', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [currentAccountIdProvider.overrideWithValue(null)],
+        child: const MaterialApp(
+          home: Scaffold(body: MemberPicker(onChanged: _ignoreMembers)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final usernameField = find.byType(TextField).first;
+    await tester.enterText(usernameField, '@sam');
+    await tester.tap(find.text('Add'));
+    await tester.pump();
+    await tester.enterText(usernameField, 'sam');
+    await tester.tap(find.text('Add'));
+    await tester.pump();
+
+    expect(find.text('That username or UID is already added.'), findsOneWidget);
+    expect(find.text('@sam'), findsOneWidget);
+  });
+
   // ------------------------------------------------- local database ---
   final libPath =
       '${Platform.environment['HOME']}/.pub-cache/hosted/pub.dev/'
@@ -288,3 +313,5 @@ void main() {
     });
   }, skip: haveLib ? false : 'Isar native library not found');
 }
+
+void _ignoreMembers(MemberSelection selection) {}

@@ -89,6 +89,8 @@ class LinkifiedText extends StatefulWidget {
     required this.style,
     required this.linkColor,
     this.emojiScale = 1.0,
+    this.maxLines,
+    this.overflow,
   });
 
   /// Emoji are drawn this many times larger than the text around them.
@@ -97,6 +99,8 @@ class LinkifiedText extends StatefulWidget {
   final String text;
   final TextStyle style;
   final Color linkColor;
+  final int? maxLines;
+  final TextOverflow? overflow;
 
   @override
   State<LinkifiedText> createState() => _LinkifiedTextState();
@@ -139,9 +143,16 @@ class _LinkifiedTextState extends State<LinkifiedText> {
         : emojiSizedSpans(s, base, widget.emojiScale);
     if (links.isEmpty) {
       return widget.emojiScale == 1.0
-          ? Text(widget.text, style: widget.style)
+          ? Text(
+              widget.text,
+              style: widget.style,
+              maxLines: widget.maxLines,
+              overflow: widget.overflow,
+            )
           : Text.rich(
               TextSpan(style: widget.style, children: plain(widget.text)),
+              maxLines: widget.maxLines,
+              overflow: widget.overflow,
             );
     }
 
@@ -170,6 +181,10 @@ class _LinkifiedTextState extends State<LinkifiedText> {
     if (at < widget.text.length) {
       spans.addAll(plain(widget.text.substring(at)));
     }
-    return Text.rich(TextSpan(style: widget.style, children: spans));
+    return Text.rich(
+      TextSpan(style: widget.style, children: spans),
+      maxLines: widget.maxLines,
+      overflow: widget.overflow,
+    );
   }
 }

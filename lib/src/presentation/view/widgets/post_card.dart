@@ -10,6 +10,7 @@ import 'package:serafim/src/presentation/view/forward_page.dart';
 import 'package:serafim/src/presentation/view/user_profile_page.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
+import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/utils/user_card.dart';
 
 /// A post, as it appears in a Circle, on a profile, or in the feed.
@@ -617,7 +618,17 @@ class _PostBodyState extends State<_PostBody> {
   @override
   Widget build(BuildContext context) {
     final style = AppTextStyles.fieldInput;
-    if (widget.showAll) return Text(widget.text, style: style);
+    Widget postText({int? maxLines, TextOverflow? overflow}) => SelectionArea(
+      child: LinkifiedText(
+        widget.text,
+        style: style,
+        linkColor: AppColors.primaryPale,
+        maxLines: maxLines,
+        overflow: overflow,
+      ),
+    );
+
+    if (widget.showAll) return postText();
     return LayoutBuilder(
       builder: (context, box) {
         final painter = TextPainter(
@@ -628,13 +639,11 @@ class _PostBodyState extends State<_PostBody> {
         )..layout(maxWidth: box.maxWidth);
         final tooLong = painter.didExceedMaxLines;
         painter.dispose();
-        if (!tooLong) return Text(widget.text, style: style);
+        if (!tooLong) return postText();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.text,
-              style: style,
+            postText(
               maxLines: _open ? null : _PostBody.maxLines,
               overflow: _open ? TextOverflow.visible : TextOverflow.ellipsis,
             ),

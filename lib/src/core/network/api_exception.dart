@@ -97,6 +97,8 @@ class ApiException implements Exception {
     'invalid_credentials' => 'That email or password is incorrect.',
     'user_already_exists' || 'email_exists' =>
       'An account with that email already exists. Try logging in instead.',
+    'username_already_taken' ||
+    'username_taken' => 'That username is already taken. Try another one.',
     'email_not_confirmed' =>
       'Please confirm your email first. Check your inbox for the link.',
     'weak_password' =>
@@ -128,7 +130,9 @@ class ApiException implements Exception {
     final lower = text.toLowerCase();
     // Addresses, hosts and IPs mean nothing to a person and say too much about
     // our setup, so a message carrying one is replaced by the generic wording.
-    if (RegExp(r'https?://|wss?://|www\.|\b[\w-]+\.(supabase|onrender|herokuapp|railway|fly|vercel)\.\w+|\b\d{1,3}(\.\d{1,3}){3}\b').hasMatch(lower)) {
+    if (RegExp(
+      r'https?://|wss?://|www\.|\b[\w-]+\.(supabase|onrender|herokuapp|railway|fly|vercel)\.\w+|\b\d{1,3}(\.\d{1,3}){3}\b',
+    ).hasMatch(lower)) {
       return null;
     }
     if (lower.startsWith('<') ||
@@ -149,19 +153,24 @@ class ApiException implements Exception {
             lower.contains('nonce'))) {
       return "Google couldn't verify your sign-in. Please try again.";
     }
-    if (lower.contains('row-level security') || lower.contains('row level security')) {
+    if (lower.contains('row-level security') ||
+        lower.contains('row level security')) {
       return "You don't have permission to upload that. Try signing out and back in.";
     }
     if (lower.contains('bucket not found')) {
       return "Photo storage isn't set up yet. Please try again later.";
     }
-    if (lower.contains('payload too large') || lower.contains('maximum allowed size')) {
+    if (lower.contains('payload too large') ||
+        lower.contains('maximum allowed size')) {
       return 'That file is too large.';
     }
     if (lower.contains('mime type') && lower.contains('not supported')) {
       return "That kind of file can't be used here. Try a JPG or PNG photo.";
     }
-    if (lower.contains('username already taken')) {
+    if (RegExp(
+          r'username(?:\s+\S+)?\s+(?:is\s+)?already\s+(?:taken|in use|exists)',
+        ).hasMatch(lower) ||
+        lower.contains('username is taken')) {
       return 'That username is already taken. Try another one.';
     }
     if (lower.contains('invalid login credentials')) {

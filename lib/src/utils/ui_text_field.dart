@@ -26,6 +26,7 @@ class UiTextField extends StatelessWidget {
     this.maxLines = 1,
     this.minLines,
     this.textCapitalization = TextCapitalization.none,
+    this.onChanged,
   });
 
   final String label;
@@ -40,6 +41,7 @@ class UiTextField extends StatelessWidget {
   final int? maxLines;
   final int? minLines;
   final TextCapitalization textCapitalization;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +66,7 @@ class UiTextField extends StatelessWidget {
             maxLines: maxLines,
             minLines: minLines,
             textCapitalization: textCapitalization,
+            onChanged: onChanged,
             style: AppTextStyles.fieldInput,
             cursorColor: AppColors.primary,
             decoration: InputDecoration(

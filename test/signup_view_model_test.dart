@@ -142,8 +142,38 @@ void main() {
     const state = SignupFormState();
 
     expect(state.email, isEmpty);
-    expect(state.canSubmit, isTrue);
+    expect(state.canSubmit, isFalse);
     expect(state.hasErrors, isFalse);
     expect(const SignupFormState(isSubmitting: true).canSubmit, isFalse);
+  });
+
+  group('terms agreement', () {
+    test('cannot submit without agreeing to terms', () async {
+      viewModel().emailChanged('you@sector76.com');
+      viewModel().passwordChanged('longenoughpassword');
+
+      expect(await viewModel().submit(), isFalse);
+      expect(formState().formError, 'You must agree to the Terms and Conditions.');
+      expect(formState().canSubmit, isFalse);
+    });
+
+    test('can submit once terms are agreed', () async {
+      viewModel().emailChanged('you@sector76.com');
+      viewModel().passwordChanged('longenoughpassword');
+      viewModel().termsChanged(true);
+
+      expect(formState().agreedToTerms, isTrue);
+      expect(formState().canSubmit, isTrue);
+      expect(formState().formError, isNull);
+    });
+
+    test('terms toggle clears form error', () async {
+      await viewModel().submit();
+      expect(formState().formError, isNotNull);
+
+      viewModel().termsChanged(true);
+      expect(formState().formError, isNull);
+      expect(formState().agreedToTerms, isTrue);
+    });
   });
 }

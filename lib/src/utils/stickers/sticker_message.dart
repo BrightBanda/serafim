@@ -13,6 +13,7 @@ class StickerMessage extends StatelessWidget {
     required this.label,
     required this.outgoing,
     this.status,
+    this.onTap,
     this.onLongPress,
   });
 
@@ -20,6 +21,7 @@ class StickerMessage extends StatelessWidget {
   final String label;
   final bool outgoing;
   final ChatMessageStatus? status;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
   @override
@@ -35,6 +37,7 @@ class StickerMessage extends StatelessWidget {
     return Align(
       alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
+        onTap: onTap,
         onLongPress: onLongPress,
         child: Column(
           crossAxisAlignment: outgoing
