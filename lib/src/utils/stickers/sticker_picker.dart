@@ -105,8 +105,7 @@ class _StickerPickerState extends ConsumerState<StickerPicker> {
       label = collection.name.toUpperCase();
       body = collection.isEmpty
           ? const _Empty(
-              'Nothing here yet. Long-press a sticker, or save a GIF, video '
-              'or audio from a chat.',
+              'Long-press a sticker to save it here.',
             )
           : _Grid(
               count: collection.items.length,

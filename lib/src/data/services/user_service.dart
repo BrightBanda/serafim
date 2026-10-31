@@ -26,7 +26,7 @@ class UserService {
       final response = await _dio.get<dynamic>('/users');
       final data = response.data;
       if (data is! List) {
-        throw const ApiException('The server sent an unexpected response.');
+        throw const ApiException('Something went wrong. Please try again.');
       }
       return data
           .map((json) => AppUser.fromJson(json as Map<String, dynamic>))
@@ -44,7 +44,7 @@ class UserService {
       );
       final data = response.data;
       if (data is! Map<String, dynamic>) {
-        throw const ApiException('The server sent an unexpected response.');
+        throw const ApiException('Something went wrong. Please try again.');
       }
       return AppUser.fromJson(data);
     } on DioException catch (error) {

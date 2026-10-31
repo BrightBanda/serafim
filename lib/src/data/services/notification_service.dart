@@ -18,7 +18,7 @@ class NotificationService {
       ),
     );
     if (data is! List) {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException('Something went wrong. Please try again.');
     }
     return [
       for (final json in data)

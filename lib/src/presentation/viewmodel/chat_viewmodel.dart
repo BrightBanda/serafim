@@ -919,7 +919,7 @@ class ChatViewModel extends Notifier<ChatState> {
       "message_id": messageId,
       "content": text,
     });
-    return sent ? null : 'Could not reach the server.';
+    return sent ? null : 'No connection. Try again.';
   }
 
   /// "Delete for me": removes the message (and image file) from this device
@@ -942,7 +942,7 @@ class ChatViewModel extends Notifier<ChatState> {
       "type": "delete_message",
       "message_id": messageId,
     });
-    return sent ? null : 'Could not reach the server.';
+    return sent ? null : 'No connection. Try again.';
   }
 
   // ---- voice notes ----
@@ -1299,7 +1299,7 @@ class ChatViewModel extends Notifier<ChatState> {
         if (!upload.uploaded) {
           final uploadPath = upload.uploadPath;
           if (uploadPath == null) {
-            throw const ApiException('The server sent an unexpected response.');
+            throw const ApiException('Something went wrong. Please try again.');
           }
           await service.upload(
             clientId: messageId,

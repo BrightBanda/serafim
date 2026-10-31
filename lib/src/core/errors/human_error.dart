@@ -26,16 +26,16 @@ String humanError(Object? error, {String? fallback}) {
   if (error is SocketException ||
       error is HandshakeException ||
       error is HttpException) {
-    return "Can't reach the server. Check your internet connection and try again.";
+    return 'No connection. Check your internet and try again.';
   }
   if (error is TimeoutException) {
     return 'That took too long. Please try again.';
   }
   if (error is FormatException) {
-    return 'Something unexpected came back from the server. Please try again.';
+    return 'Something went wrong. Please try again.';
   }
   if (error is FileSystemException) {
-    return "Couldn't read or save that file. Check that your phone has free storage.";
+    return "Couldn't save that. Your phone may be out of space.";
   }
   if (error is PlatformException) return _platformMessage(error, fb);
   if (error is MissingPluginException ||
@@ -44,7 +44,7 @@ String humanError(Object? error, {String? fallback}) {
     return "That isn't available on this device.";
   }
   if (error is IsarError) {
-    return "Couldn't read your messages on this phone. Restart the app and try again.";
+    return "Couldn't open your messages. Restart the app and try again.";
   }
   if (error is StateError || error is TypeError || error is AssertionError) {
     return fb;
@@ -66,7 +66,7 @@ String _platformMessage(PlatformException e, String fallback) {
     return 'Please finish what you were doing first, then try again.';
   }
   if (code.contains('network')) {
-    return "Can't reach the internet. Check your connection and try again.";
+    return 'No connection. Check your internet and try again.';
   }
   return fallback;
 }

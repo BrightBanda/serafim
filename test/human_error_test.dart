@@ -56,7 +56,7 @@ void main() {
       );
       expect(
         viaApi(401, {'detail': 'Invalid or missing access token.'}),
-        contains('session has expired'),
+        contains('sign in again'),
       );
       expect(
         viaApi(400, {'detail': 'Username already taken.'}),
@@ -87,10 +87,10 @@ void main() {
         'message': 'new row violates row-level security policy',
       });
       expect(m.toLowerCase(), isNot(contains('row')));
-      expect(m, contains("don't have permission"));
+      expect(m, contains("Try signing out and back in"));
       expect(
         viaApi(404, {'message': 'Bucket not found'}),
-        contains("isn't set up"),
+        contains("can't be added right now"),
       );
     });
 
@@ -116,11 +116,11 @@ void main() {
       () {
         expect(
           viaApi(502, '<html><body>Bad gateway</body></html>'),
-          contains('temporarily unavailable'),
+          contains("isn't available right now"),
         );
         expect(
           viaApi(500, 'Traceback (most recent call last): boom'),
-          contains('server ran into a problem'),
+          contains('Something went wrong'),
         );
         expect(viaApi(400, 'x' * 500), isNot(contains('xxxx')));
       },
@@ -155,7 +155,7 @@ void main() {
           type: DioExceptionType.connectionError,
         ),
       );
-      expect(offline.message, contains('internet connection'));
+      expect(offline.message, contains('Check your internet'));
       final slow = ApiException.fromDio(
         DioException(
           requestOptions: RequestOptions(path: '/'),
@@ -164,6 +164,45 @@ void main() {
       );
       expect(slow.message, contains('try again'));
     });
+  });
+
+  test('no message talks about servers, sessions or waking up', () {
+    final messages = [
+      for (final status in [
+        400,
+        401,
+        403,
+        404,
+        409,
+        413,
+        422,
+        429,
+        500,
+        502,
+        503,
+        504,
+      ])
+        viaApi(status, null),
+      for (final type in [
+        DioExceptionType.connectionTimeout,
+        DioExceptionType.receiveTimeout,
+        DioExceptionType.connectionError,
+        DioExceptionType.badCertificate,
+      ])
+        ApiException.fromDio(
+          DioException(
+            requestOptions: RequestOptions(path: '/x'),
+            type: type,
+          ),
+        ).message,
+      humanError(const SocketException('x')),
+      humanError(const FormatException('x')),
+    ];
+    for (final m in messages) {
+      expect(m.toLowerCase(), isNot(contains('server')), reason: m);
+      expect(m.toLowerCase(), isNot(contains('session')), reason: m);
+      expect(m.toLowerCase(), isNot(contains('waking')), reason: m);
+    }
   });
 
   group('humanError turns anything into plain language', () {
@@ -219,7 +258,7 @@ void main() {
     test('the right advice for the right problem', () {
       expect(
         humanError(const SocketException('x')),
-        contains('internet connection'),
+        contains('Check your internet'),
       );
       expect(humanError(TimeoutException('x')), contains('too long'));
       expect(
@@ -230,7 +269,7 @@ void main() {
         humanError(PlatformException(code: 'camera_access_denied')),
         contains('camera'),
       );
-      expect(humanError(const FileSystemException('x')), contains('storage'));
+      expect(humanError(const FileSystemException('x')), contains('out of space'));
       expect(humanError(UnimplementedError()), contains("isn't available"));
     });
 

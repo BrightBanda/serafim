@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -49,6 +50,7 @@ import 'package:serafim/src/utils/chat_file_picking.dart';
 import 'package:serafim/src/data/services/chat_file_service.dart';
 import 'package:serafim/src/providers/chat_file_providers.dart';
 import 'package:serafim/src/presentation/view/video_player_page.dart';
+import 'package:serafim/src/presentation/view/chat_media_page.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/data/models/sticker_collection.dart';
 import 'package:serafim/src/presentation/view/group_info_page.dart';
@@ -203,6 +205,17 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   static const _estimatedItemExtent = 92.0;
 
   String? _pendingReveal;
+
+  /// Briefly tinted after jumping to it (search, "Show in chat", a quote).
+  String? _highlightId;
+  Timer? _highlightTimer;
+
+  // Searching this chat: the matches, newest first, and which one is shown.
+  bool _searching = false;
+  final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  List<String> _hits = const [];
+  int _hit = 0;
 
   /// The message being replied to, while composing.
   late final ReplyController _reply = ReplyController(focusNode: _inputFocus);
@@ -582,6 +595,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       player.stop();
     });
     _messageController.dispose();
+    _searchController.dispose();
+    _searchDebounce?.cancel();
+    _highlightTimer?.cancel();
     _scrollController.dispose();
     _typing.dispose();
     _reply.dispose();
@@ -1301,6 +1317,67 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     _tryReveal(attempts: 8);
   }
 
+  void _flash(String messageId) {
+    _highlightTimer?.cancel();
+    setState(() => _highlightId = messageId);
+    _highlightTimer = Timer(const Duration(milliseconds: 1600), () {
+      if (mounted) setState(() => _highlightId = null);
+    });
+  }
+
+  Future<void> _openMedia() async {
+    final messageId = await openChatMedia(
+      context,
+      roomId: _roomId,
+      title: 'Media & links',
+      nameOf: (id) => id == _currentUserId ? 'You' : _nameOf(id),
+    );
+    if (messageId != null && mounted) await _scrollToMessage(messageId);
+  }
+
+  void _openSearch() => setState(() {
+    _searching = true;
+    _stickersOpen = false;
+  });
+
+  void _closeSearch() {
+    _searchDebounce?.cancel();
+    setState(() {
+      _searching = false;
+      _searchController.clear();
+      _hits = const [];
+      _hit = 0;
+    });
+  }
+
+  void _onSearchChanged(String text) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 250),
+      () => _runSearch(text),
+    );
+  }
+
+  Future<void> _runSearch(String text) async {
+    final found = await ref.read(isarServiceProvider).searchRoom(_roomId, text);
+    // Typing went on while this ran: a newer search will answer.
+    if (!mounted || text != _searchController.text) return;
+    setState(() {
+      _hits = [for (final m in found) m.messageId];
+      _hit = 0;
+    });
+    if (_hits.isNotEmpty) await _scrollToMessage(_hits.first);
+  }
+
+  /// [older] moves to the next older match; otherwise the next newer one.
+  void _stepSearch({required bool older}) {
+    if (_hits.isEmpty) return;
+    final next = (_hit + (older ? 1 : -1)).clamp(0, _hits.length - 1);
+    if (next == _hit) return;
+    setState(() => _hit = next);
+    _scrollToMessage(_hits[next]);
+  }
+
   /// Brings [_pendingReveal] into view. A long list only builds what is on
   /// screen, so if the message has not been built yet, jump to roughly where
   /// it is and try again once the frame has built.
@@ -1321,6 +1398,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
+        _flash(id);
         return;
       }
 
@@ -1428,18 +1506,21 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
         ? null
         : !friendsView.hasData && friendsView.isRefreshing
         ? 'Checking whether you are friends…'
-        : 'Attachments are only available between friends. '
-              'Add ${widget.contactName} as a friend to share photos, videos '
+        : 'Add ${widget.contactName} as a friend to share photos, videos '
               'and audio.';
     final photoDisabledReason = gid != null
-        ? "Photos and GIFs can't be shared in groups yet. Videos, audio, "
-              'stickers and voice messages work.'
+        ? "Photos and GIFs can't be shared in groups yet."
         : notFriendsReason;
 
     return PopScope(
-      canPop: !_stickersOpen,
+      canPop: !_stickersOpen && !_searching,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _stickersOpen) setState(() => _stickersOpen = false);
+        if (didPop) return;
+        if (_searching) {
+          _closeSearch();
+        } else if (_stickersOpen) {
+          setState(() => _stickersOpen = false);
+        }
       },
       child: Scaffold(
         backgroundColor: AppColors.paper,
@@ -1447,7 +1528,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
         appBar: AppTopBar(
           onBack: widget.onBack ?? () => Navigator.of(context).pop(),
           titleFontSize: 15,
-          trailing: ChatMenuButton(roomId: roomId),
+          trailing: ChatMenuButton(
+            roomId: roomId,
+            onMedia: _openMedia,
+            onSearch: _openSearch,
+          ),
           // Tapping the photo opens it full screen; the name opens the profile.
           titleWidget: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -1498,6 +1583,16 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             ),
             Column(
               children: [
+                if (_searching)
+                  _ChatSearchBar(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    hits: _hits.length,
+                    current: _hit,
+                    onOlder: () => _stepSearch(older: true),
+                    onNewer: () => _stepSearch(older: false),
+                    onClose: _closeSearch,
+                  ),
                 const Padding(
                   padding: EdgeInsets.only(top: 10),
                   child: _StatusLine(),
@@ -1781,10 +1876,20 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                   : message.messageId,
                               GlobalKey.new,
                             ),
-                            child: SwipeToReply(
-                              enabled: !message.isDeleted,
-                              onReply: () => _startReply(message),
-                              child: bubble,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 250),
+                              color:
+                                  _highlightId != null &&
+                                      group.any(
+                                        (m) => m.messageId == _highlightId,
+                                      )
+                                  ? AppColors.primary.withValues(alpha: 0.14)
+                                  : Colors.transparent,
+                              child: SwipeToReply(
+                                enabled: !message.isDeleted,
+                                onReply: () => _startReply(message),
+                                child: bubble,
+                              ),
                             ),
                           );
                         },
@@ -1898,39 +2003,133 @@ class _StatusLine extends ConsumerWidget {
   }
 }
 
-/// The ⋮ menu in a chat's header.
+/// The ⋮ menu in a chat's header. [onMedia] and [onSearch] add those
+/// entries where the chat supports them.
 class ChatMenuButton extends StatelessWidget {
-  const ChatMenuButton({super.key, required this.roomId});
+  const ChatMenuButton({
+    super.key,
+    required this.roomId,
+    this.onMedia,
+    this.onSearch,
+  });
 
   final String roomId;
+  final VoidCallback? onMedia;
+  final VoidCallback? onSearch;
 
   @override
   Widget build(BuildContext context) {
+    PopupMenuItem<String> item(String value, IconData icon, String label) =>
+        PopupMenuItem(
+          value: value,
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: AppColors.text),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: AppTextStyles.body.copyWith(color: AppColors.text),
+              ),
+            ],
+          ),
+        );
+
     return PopupMenuButton<String>(
       tooltip: 'Chat options',
       color: AppColors.paperAlt,
       shape: Border.all(color: AppColors.line, width: 1.5),
       icon: Icon(Icons.more_vert, size: 20, color: AppColors.text),
-      onSelected: (value) {
-        if (value == 'background') {
-          openChatBackgroundPage(context, roomId: roomId);
-        }
+      onSelected: (value) => switch (value) {
+        'search' => onSearch?.call(),
+        'media' => onMedia?.call(),
+        _ => openChatBackgroundPage(context, roomId: roomId),
       },
       itemBuilder: (_) => [
-        PopupMenuItem(
-          value: 'background',
-          child: Row(
-            children: [
-              Icon(Icons.wallpaper_outlined, size: 18, color: AppColors.text),
-              const SizedBox(width: 10),
-              Text(
-                'Chat background',
-                style: AppTextStyles.body.copyWith(color: AppColors.text),
-              ),
-            ],
-          ),
-        ),
+        if (onSearch != null) item('search', Icons.search, 'Search'),
+        if (onMedia != null)
+          item('media', Icons.perm_media_outlined, 'Media & links'),
+        item('background', Icons.wallpaper_outlined, 'Chat background'),
       ],
+    );
+  }
+}
+
+/// Search box for the open chat, with the match count and older/newer
+/// arrows.
+class _ChatSearchBar extends StatelessWidget {
+  const _ChatSearchBar({
+    required this.controller,
+    required this.onChanged,
+    required this.hits,
+    required this.current,
+    required this.onOlder,
+    required this.onNewer,
+    required this.onClose,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final int hits;
+  final int current;
+  final VoidCallback onOlder;
+  final VoidCallback onNewer;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final typed = controller.text.trim().isNotEmpty;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: AppColors.paperAlt,
+        border: Border(bottom: BorderSide(color: AppColors.line, width: 1.5)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.search, size: 18, color: AppColors.textDim),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              key: const ValueKey('chat-search-field'),
+              controller: controller,
+              autofocus: true,
+              onChanged: onChanged,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => onOlder(),
+              style: AppTextStyles.body.copyWith(color: AppColors.text),
+              decoration: InputDecoration(
+                hintText: 'Search this chat',
+                hintStyle: AppTextStyles.smallDim,
+                border: InputBorder.none,
+                isDense: true,
+              ),
+            ),
+          ),
+          if (typed)
+            Text(
+              hits == 0 ? 'No results' : '${current + 1} of $hits',
+              style: AppTextStyles.smallDim,
+            ),
+          IconButton(
+            tooltip: 'Older',
+            visualDensity: VisualDensity.compact,
+            onPressed: current < hits - 1 ? onOlder : null,
+            icon: const Icon(Icons.keyboard_arrow_up),
+          ),
+          IconButton(
+            tooltip: 'Newer',
+            visualDensity: VisualDensity.compact,
+            onPressed: current > 0 ? onNewer : null,
+            icon: const Icon(Icons.keyboard_arrow_down),
+          ),
+          IconButton(
+            tooltip: 'Close search',
+            visualDensity: VisualDensity.compact,
+            onPressed: onClose,
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
     );
   }
 }

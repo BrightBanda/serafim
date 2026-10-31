@@ -74,10 +74,8 @@ class _AuthGateState extends ConsumerState<AuthGate> {
       ),
 
       AuthStatus.backendUnavailable => _Message(
-        title: "Can't reach the server",
-        body:
-            "You're signed in, but Serafim couldn't reach its server. Check "
-            'your internet connection and try again.',
+        title: 'No connection',
+        body: 'Check your internet and try again.',
         onRetry: ref.read(authViewModelProvider.notifier).retryBackendSync,
         isRetrying: ref.watch(authViewModelProvider).isBusy,
       ),

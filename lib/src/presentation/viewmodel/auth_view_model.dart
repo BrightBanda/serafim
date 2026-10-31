@@ -326,9 +326,7 @@ class AuthViewModel extends Notifier<AuthState> {
       if (error.statusCode == null) {
         state = const AuthState(status: AuthStatus.backendUnavailable);
         throw const ApiException(
-          "You're signed in, but Serafim couldn't reach its server. Check "
-          "your internet connection and try again. You won't need to sign up "
-          'twice.',
+          'No connection. Check your internet and try again.',
         );
       }
       rethrow;

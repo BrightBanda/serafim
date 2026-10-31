@@ -295,19 +295,32 @@ class ChatImageGrid extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.file(
-                File(image.path),
-                fit: BoxFit.cover,
-                // A GIF in a grid is a still: it plays when opened.
-                cacheWidth: cache,
-                errorBuilder: (_, _, _) => ColoredBox(
-                  color: AppColors.paperRaised,
-                  child: Icon(
+              if (isGifPath(image.path))
+                // Plays once in the grid; fully when opened.
+                LimitedGif(
+                  path: image.path,
+                  loops: 1,
+                  fit: BoxFit.cover,
+                  cacheWidth: cache,
+                  showReplay: false,
+                  errorBuilder: (_) => Icon(
                     Icons.broken_image_outlined,
                     color: AppColors.textDim,
                   ),
+                )
+              else
+                Image.file(
+                  File(image.path),
+                  fit: BoxFit.cover,
+                  cacheWidth: cache,
+                  errorBuilder: (_, _, _) => ColoredBox(
+                    color: AppColors.paperRaised,
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: AppColors.textDim,
+                    ),
+                  ),
                 ),
-              ),
               if (more)
                 ColoredBox(
                   color: const Color(0x8C000000),

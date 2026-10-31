@@ -41,7 +41,7 @@ class ProfileService {
       body: {'minutes': minutes, 'audience': wingsOnly ? 'wings' : 'friends'},
     );
     if (until == null) {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException('Something went wrong. Please try again.');
     }
     return until;
   }
@@ -79,7 +79,7 @@ class ProfileService {
       );
       final data = response.data;
       if (data is! Map<String, dynamic>) {
-        throw const ApiException('The server sent an unexpected response.');
+        throw const ApiException('Something went wrong. Please try again.');
       }
       return Profile.fromJson(data);
     } on DioException catch (error) {

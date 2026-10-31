@@ -35,10 +35,7 @@ class PrivacySettingsPage extends ConsumerWidget {
           value: settings.sendReadReceipts,
           onChanged: ref.read(settingsProvider.notifier).setSendReadReceipts,
         ),
-        const SettingsNote(
-          'This only controls what you send. You will still see when others '
-          'have read your messages if they have receipts on.',
-        ),
+        const SettingsNote("You'll still see other people's read receipts."),
         const SettingsSectionLabel('Who can reach you'),
         SettingsSwitchRow(
           title: 'Allow friend requests',
@@ -51,11 +48,7 @@ class PrivacySettingsPage extends ConsumerWidget {
               : (allow) =>
                     save(ProfileUpdateRequest(allowFriendRequests: allow)),
         ),
-        const SettingsNote(
-          'Existing friends and pending requests are not affected. Anyone can '
-          'still message you or follow you; attachments are only ever allowed '
-          'between friends.',
-        ),
+        const SettingsNote("Existing friends and requests aren't affected."),
         const SettingsSectionLabel('Who can add you to groups'),
         for (final option in GroupAddPrivacy.values)
           SettingsChoiceRow(
@@ -68,10 +61,6 @@ class PrivacySettingsPage extends ConsumerWidget {
                 ? () {}
                 : () => save(ProfileUpdateRequest(groupAddPrivacy: option)),
           ),
-        const SettingsNote(
-          'Applies however someone tries to add you (from their friends list, '
-          'your username or your UID). They are told you can\'t be added.',
-        ),
         const SettingsSectionLabel('Your profile'),
         SettingsSwitchRow(
           title: 'Lock profile',
@@ -84,9 +73,7 @@ class PrivacySettingsPage extends ConsumerWidget {
               : (locked) => save(ProfileUpdateRequest(lockProfile: locked)),
         ),
         const SettingsNote(
-          'When unlocked, anyone signed in can see who your friends are and '
-          'who you follow. Your name, photo, bio and interests stay visible '
-          'to everyone either way.',
+          'Your name, photo, bio and interests are always visible.',
         ),
       ],
     );

@@ -277,7 +277,7 @@ class ChatFileService {
     if (response.statusCode == 409) return null;
     final location = response.headers.value('location');
     if (location == null || location.isEmpty) {
-      throw const ApiException('The upload could not be started.');
+      throw const ApiException("Couldn't send that. Please try again.");
     }
     return location;
   }
@@ -342,7 +342,7 @@ class ChatFileService {
       final response = await _api.get<dynamic>('/media/$mediaId/url');
       final url = _map(response.data)['url'] as String?;
       if (url == null || url.isEmpty) {
-        throw const ApiException('The server sent an unexpected response.');
+        throw const ApiException('Something went wrong. Please try again.');
       }
       return url;
     } on DioException catch (error) {
@@ -379,6 +379,6 @@ class ChatFileService {
 
   static Map<String, dynamic> _map(Object? data) {
     if (data is Map<String, dynamic>) return data;
-    throw const ApiException('The server sent an unexpected response.');
+    throw const ApiException('Something went wrong. Please try again.');
   }
 }

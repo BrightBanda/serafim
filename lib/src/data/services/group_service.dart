@@ -117,7 +117,7 @@ class GroupService {
   }
 
   static const _unexpected = ApiException(
-    'The server sent an unexpected response.',
+    'Something went wrong. Please try again.',
   );
 
   List<AddResult> _results(Object? raw) => [

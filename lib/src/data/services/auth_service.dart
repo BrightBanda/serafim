@@ -115,7 +115,7 @@ class AuthService {
       final data = response.data;
       if (data is! Map<String, dynamic>) {
         throw const ApiException(
-          'The authentication server sent an unexpected response.',
+          "Couldn't sign you in. Please try again.",
         );
       }
       return data;

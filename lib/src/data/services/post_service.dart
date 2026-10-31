@@ -135,7 +135,7 @@ class PostService {
   );
 
   static const _unexpected = ApiException(
-    'The server sent an unexpected response.',
+    'Something went wrong. Please try again.',
   );
 
   Future<Map<String, dynamic>> _map(

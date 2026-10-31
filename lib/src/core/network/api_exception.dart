@@ -45,13 +45,12 @@ class ApiException implements Exception {
       DioExceptionType.connectionTimeout ||
       DioExceptionType.sendTimeout ||
       DioExceptionType.receiveTimeout =>
-        'The server is taking too long to respond. It may be waking up, so '
-            'try again in a moment.',
+        'That took too long. Please try again.',
       DioExceptionType.connectionError =>
-        "Can't reach the server. Check your internet connection and try "
-            'again.',
+        'No connection. Check your internet and try again.',
       DioExceptionType.cancel => 'Request cancelled.',
-      DioExceptionType.badCertificate => 'The server certificate was rejected.',
+      DioExceptionType.badCertificate =>
+        "Couldn't connect securely. Please try again.",
       _ => 'Something went wrong. Please try again.',
     };
 
@@ -116,7 +115,7 @@ class ApiException implements Exception {
     'session_expired' ||
     'session_not_found' ||
     'refresh_token_not_found' =>
-      'Your session has expired. Please sign in again.',
+      'Please sign in again.',
     _ => null,
   };
 
@@ -141,7 +140,7 @@ class ApiException implements Exception {
       return null; // an error page, not a message
     }
     if (lower.contains('invalid or missing access token')) {
-      return 'Your session has expired. Please sign in again.';
+      return 'Please sign in again.';
     }
     if (lower.contains('provider is not enabled') ||
         lower.contains('unsupported provider')) {
@@ -155,10 +154,10 @@ class ApiException implements Exception {
     }
     if (lower.contains('row-level security') ||
         lower.contains('row level security')) {
-      return "You don't have permission to upload that. Try signing out and back in.";
+      return "Couldn't add that. Try signing out and back in.";
     }
     if (lower.contains('bucket not found')) {
-      return "Photo storage isn't set up yet. Please try again later.";
+      return "Photos can't be added right now. Please try again later.";
     }
     if (lower.contains('payload too large') ||
         lower.contains('maximum allowed size')) {
@@ -201,17 +200,16 @@ class ApiException implements Exception {
 
   static String _messageForStatus(int? status) => switch (status) {
     400 => "That didn't go through. Please check what you entered.",
-    401 => 'Your session has expired. Please sign in again.',
+    401 => 'Please sign in again.',
     403 => "You don't have permission to do that.",
     404 => "We couldn't find that.",
     409 => 'That already exists.',
     413 => 'That file is too large.',
     422 => 'Some of the details you entered are not valid.',
     429 => 'Too many attempts. Please wait a minute and try again.',
-    500 => 'The server ran into a problem. Please try again.',
+    500 => 'Something went wrong. Please try again.',
     502 || 503 || 504 =>
-      'The server is temporarily unavailable. It may be waking up, so try '
-          'again in a moment.',
+      "Serafim isn't available right now. Please try again in a moment.",
     _ => 'Something went wrong. Please try again.',
   };
 

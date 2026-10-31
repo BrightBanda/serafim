@@ -18,7 +18,7 @@ class SocialService {
   Future<FriendRequests> requests() async {
     final data = await _get('/friends/requests');
     if (data is! Map) {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException('Something went wrong. Please try again.');
     }
     return FriendRequests(
       incoming: _users(data['incoming']),
@@ -33,7 +33,7 @@ class SocialService {
   Future<PublicUser> user(String id) async {
     final data = await _get('/users/$id');
     if (data is! Map<String, dynamic>) {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException('Something went wrong. Please try again.');
     }
     return PublicUser.fromJson(data);
   }
@@ -90,7 +90,7 @@ class SocialService {
 
   List<PublicUser> _users(Object? data) {
     if (data is! List) {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException('Something went wrong. Please try again.');
     }
     // Keyed by id so a refresh that overlaps with an earlier page can never
     // show the same person twice.

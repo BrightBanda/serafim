@@ -40,9 +40,7 @@ class NotificationSettingsPage extends ConsumerWidget {
         ),
         const _PushStatusCard(),
         const SettingsNote(
-          'You can also manage notifications for Serafim in your phone\'s '
-          'system settings. Pushes are sent only when you are not already '
-          'connected, so you will not get one for a chat you are looking at.',
+          "You can also manage notifications in your phone's settings.",
         ),
         const SettingsSectionLabel('While the app is open'),
         SettingsSwitchRow(

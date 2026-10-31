@@ -29,9 +29,8 @@ class ChatSettingsPage extends ConsumerWidget {
             style: AppTextStyles.displayHeading.copyWith(fontSize: 20),
           ),
           content: Text(
-            'Messages and images older than ${retentionChoices[days]!.toLowerCase()} '
-            'will be permanently removed from this device. The other person '
-            'keeps their copy.',
+            'Messages older than ${retentionChoices[days]!.toLowerCase()} '
+            'will be removed from this phone. The other person keeps theirs.',
             style: AppTextStyles.body,
           ),
           actions: [
@@ -67,10 +66,6 @@ class ChatSettingsPage extends ConsumerWidget {
             selected: settings.imageQuality == quality,
             onTap: () => notifier.setImageQuality(quality),
           ),
-        const SettingsNote(
-          'Photos are shrunk on your device before they are sent. Pictures '
-          'stay on the devices of the people in the conversation.',
-        ),
         const SettingsSectionLabel('Keep messages for'),
         for (final entry in retentionChoices.entries)
           SettingsChoiceRow(
@@ -78,10 +73,7 @@ class ChatSettingsPage extends ConsumerWidget {
             selected: settings.retentionDays == entry.key,
             onTap: () => _setRetention(context, ref, entry.key),
           ),
-        const SettingsNote(
-          'Older messages and images are cleared from this device only, when '
-          'the app starts and when you change this setting.',
-        ),
+        const SettingsNote('Only removed from this phone.'),
       ],
     );
   }

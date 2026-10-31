@@ -162,6 +162,75 @@ class IsarService {
         : newestFirst.limit(limit).watch(fireImmediately: true);
   }
 
+  /// The photos, GIFs, videos, audio and links shared in [roomId], newest
+  /// first, kept up to date. Links are found in the text later (see
+  /// `findLinks`); this only narrows it to messages that might hold one.
+  Stream<List<LocalMessage>> watchRoomMedia(String roomId) async* {
+    final isar = await db;
+    yield* isar.localMessages
+        .filter()
+        .roomIdEqualTo(roomId)
+        .isDeletedEqualTo(false)
+        .isHiddenForMeEqualTo(false)
+        .group(
+          (q) => q
+              .anyOf(const [
+                MessageType.image,
+                MessageType.video,
+                MessageType.audio,
+                MessageType.audioFile,
+              ], (q, type) => q.typeEqualTo(type))
+              .or()
+              .group(
+                (q) => q
+                    .typeEqualTo(MessageType.text)
+                    .group(
+                      (q) => q
+                          .textContentContains('http', caseSensitive: false)
+                          .or()
+                          .textContentContains('www.', caseSensitive: false),
+                    ),
+              ),
+        )
+        .sortByTimestampDesc()
+        .watch(fireImmediately: true);
+  }
+
+  /// Messages in [roomId] whose words (or file name) contain [query], newest
+  /// first. Stickers and shared posts are left out: their text is an id.
+  Future<List<LocalMessage>> searchRoom(
+    String roomId,
+    String query, {
+    int limit = 200,
+  }) async {
+    final q = query.trim();
+    if (q.isEmpty) return const [];
+    final isar = await db;
+    return isar.localMessages
+        .filter()
+        .roomIdEqualTo(roomId)
+        .isDeletedEqualTo(false)
+        .isHiddenForMeEqualTo(false)
+        .group(
+          (f) => f
+              .group(
+                (f) => f
+                    .group(
+                      (f) => f
+                          .typeEqualTo(MessageType.text)
+                          .or()
+                          .typeEqualTo(MessageType.image),
+                    )
+                    .textContentContains(q, caseSensitive: false),
+              )
+              .or()
+              .fileNameContains(q, caseSensitive: false),
+        )
+        .sortByTimestampDesc()
+        .limit(limit)
+        .findAll();
+  }
+
   /// A few specific messages by id (e.g. the originals that replies quote,
   /// which may be older than the window being shown).
   Future<Map<String, LocalMessage>> getMessagesByIds(

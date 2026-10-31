@@ -60,7 +60,7 @@ class PushService {
       final response = await _dio.post<dynamic>('/devices/test');
       final data = response.data;
       if (data is! Map<String, dynamic>) {
-        throw const ApiException('The server sent an unexpected response.');
+        throw const ApiException('Something went wrong. Please try again.');
       }
       return PushTestResult.fromJson(data);
     } on DioException catch (error) {

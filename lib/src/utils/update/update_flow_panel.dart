@@ -105,10 +105,8 @@ class UpdateFlowPanel extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'One more step: allow Serafim to install updates. Android asks '
-              'this once for apps that update themselves outside the Play '
-              'Store. Turn on "Allow from this source", then come back — the '
-              'update continues by itself.',
+              'One more step: turn on "Allow from this source" for Serafim, '
+              'then come back. The update carries on by itself.',
               style: AppTextStyles.body.copyWith(color: AppColors.text),
             ),
             const SizedBox(height: 10),

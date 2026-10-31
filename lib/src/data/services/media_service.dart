@@ -59,7 +59,7 @@ class MediaService {
       );
       final data = response.data;
       if (data is! Map<String, dynamic>) {
-        throw const ApiException('The server sent an unexpected response.');
+        throw const ApiException('Something went wrong. Please try again.');
       }
       return VoiceUpload(
         id: data['id'].toString(),

@@ -69,7 +69,7 @@ class GoogleAuthService {
       final idToken = account.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
         throw const ApiException(
-          'Google did not return an identity token. Please try again.',
+          "Google sign-in didn't finish. Please try again.",
         );
       }
       return idToken;
@@ -78,12 +78,13 @@ class GoogleAuthService {
         GoogleSignInExceptionCode.canceled ||
         GoogleSignInExceptionCode.interrupted => const GoogleSignInCancelled(),
         GoogleSignInExceptionCode.clientConfigurationError =>
+          // Misconfigured (SHA-1 fingerprint or client ids in the Firebase
+          // project): nothing the person can fix.
           const ApiException(
-            'Google sign-in is misconfigured (check the SHA-1 fingerprint and '
-            'client ids in the Firebase project).',
+            "Google sign-in isn't available right now. Please try again later.",
           ),
-        _ => ApiException(
-          'Google sign-in failed. ${e.description ?? ''}'.trim(),
+        _ => const ApiException(
+          "Google sign-in didn't work. Please try again.",
         ),
       };
     }

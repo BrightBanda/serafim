@@ -90,9 +90,9 @@ class WingsPage extends ConsumerWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'Your six closest friends. Only you can see this list; they are '
-              'never told. You can show your Halo to Wings only, and a message '
-              'from a Wing always gets through.',
+              'Your six closest friends. Only you can see this list. You can '
+              'show your Halo to Wings only, and their messages always get '
+              'through.',
               style: AppTextStyles.body,
             ),
             const SizedBox(height: 20),

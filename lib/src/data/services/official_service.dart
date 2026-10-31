@@ -12,7 +12,7 @@ class OfficialService {
   Future<OfficialChatInfo> info() async {
     final data = await _call(() => _dio.get<dynamic>('/official'));
     if (data is! Map<String, dynamic>) {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException('Something went wrong. Please try again.');
     }
     return OfficialChatInfo.fromJson(data);
   }
@@ -32,7 +32,7 @@ class OfficialService {
       ),
     );
     if (data is! List) {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException('Something went wrong. Please try again.');
     }
     return [
       for (final json in data)
@@ -71,7 +71,7 @@ class OfficialService {
       ),
     );
     if (data is! Map<String, dynamic>) {
-      throw const ApiException('The server sent an unexpected response.');
+      throw const ApiException('Something went wrong. Please try again.');
     }
     return Announcement.fromJson(data);
   }

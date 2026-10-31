@@ -103,6 +103,9 @@ class SettingsPage extends ConsumerWidget {
               subtitle: 'Export chats, back up to Google Drive',
               onTap: () => _open(context, const BackupSettingsPage()),
             ),
+            const SizedBox(height: 24),
+            const SettingsSectionLabel('About'),
+            const _AboutCard(),
             const SizedBox(height: 8),
             SettingTile(
               icon: Icons.description_outlined,
@@ -117,9 +120,6 @@ class SettingsPage extends ConsumerWidget {
               subtitle: 'What we collect and why',
               onTap: () => _open(context, const PrivacyPolicyPage()),
             ),
-            const SizedBox(height: 24),
-            const SettingsSectionLabel('About'),
-            const _AboutCard(),
             const SizedBox(height: 36),
             SerafimButton(
               label: 'Log out',

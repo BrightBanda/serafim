@@ -157,12 +157,7 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
             : 'Next backup: ${_when(auto.nextDue!)}, or the first time '
                   'Serafim is open after that.',
     ];
-    return [
-      ...lines,
-      'Backups are made while Serafim is open: your phone does not let it '
-          'reach Google Drive while it is closed, so a backup that comes due '
-          'then is made the next time you open the app.',
-    ].join('\n');
+    return lines.join('\n');
   }
 
   @override
@@ -182,10 +177,8 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
           onPressed: busy ? null : _import,
         ),
         const SettingsNote(
-          'A copy of your chats saved outside the app. It survives updates '
-          'and reinstalling, so export before installing a new version that '
-          'is signed differently. Photos and voice notes stay on the phone '
-          'and are not included.',
+          "A copy of your chats you can keep anywhere. Photos and voice "
+          "notes aren't included.",
         ),
         if (googleSignInSupported) ...[
           const SettingsSectionLabel('Google Drive'),
@@ -198,10 +191,7 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
             label: 'Restore from Google Drive',
             onPressed: busy ? null : _driveRestore,
           ),
-          const SettingsNote(
-            'Stored in a private folder only Serafim can see. Each backup '
-            'replaces the previous one.',
-          ),
+          const SettingsNote('Each backup replaces the previous one.'),
           const SettingsSectionLabel('Automatic backup'),
           SettingsSwitchRow(
             title: 'Automatic backup',
