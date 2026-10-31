@@ -75,15 +75,34 @@ void main() {
       final c = await make();
       final n = c.read(recentStickersProvider.notifier);
       final all = stickerPacks.first.stickers.map((s) => s.id).toList();
-      n.used(all[0]);
-      n.used(all[1]);
-      n.used(all[0]);
-      expect(c.read(recentStickersProvider), [all[0], all[1]]);
+      List<String?> ids() => [
+        for (final i in c.read(recentStickersProvider)) i.stickerId,
+      ];
+      n.usedSticker(all[0]);
+      n.usedSticker(all[1]);
+      n.usedSticker(all[0]);
+      expect(ids(), [all[0], all[1]]);
       for (final id in all) {
-        n.used(id);
+        n.usedSticker(id);
       }
-      expect(c.read(recentStickersProvider).length, RecentStickersNotifier.max);
-      expect(c.read(recentStickersProvider).first, all.last);
+      expect(ids().length, RecentStickersNotifier.max);
+      expect(ids().first, all.last);
+    });
+
+    test("an older version's recent sticker ids carry over", () async {
+      final id = stickerPacks.first.stickers.first.id;
+      SharedPreferences.setMockInitialValues({});
+      final p = await SharedPreferences.getInstance();
+      await LocalCache(p).saveRecentStickers('me', [id, 'gone/gone']);
+      final c = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(p),
+          localCacheProvider.overrideWithValue(LocalCache(p)),
+          currentAccountIdProvider.overrideWithValue('me'),
+        ],
+      );
+      addTearDown(c.dispose);
+      expect(c.read(recentStickersProvider).map((i) => i.key), ['sticker:$id']);
     });
 
     testWidgets('the picker sends what you tap and remembers it', (
@@ -108,9 +127,9 @@ void main() {
                   return Align(
                     alignment: Alignment.bottomCenter,
                     child: StickerPicker(
-                      onPick: (id) {
-                        picked.add(id);
-                        ref.read(recentStickersProvider.notifier).used(id);
+                      onSend: (item) {
+                        picked.add(item.stickerId!);
+                        ref.read(recentStickersProvider.notifier).used(item);
                       },
                     ),
                   );
@@ -125,7 +144,9 @@ void main() {
       await tester.tap(find.byType(StickerView).at(1)); // first grid item
       await tester.pump();
       expect(picked, [stickerPacks.first.stickers.first.id]);
-      expect(c.read(recentStickersProvider), picked);
+      expect([
+        for (final i in c.read(recentStickersProvider)) i.stickerId,
+      ], picked);
 
       await tester.tap(find.bySemanticsLabel('Recent stickers'));
       await tester.pump();

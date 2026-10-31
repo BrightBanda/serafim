@@ -1,11 +1,20 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/services/chat_file_service.dart';
 import 'package:serafim/src/providers/network_providers.dart';
+import 'package:serafim/src/utils/video_thumbnails.dart';
 
 final chatFileServiceProvider = Provider<ChatFileService>(
   (ref) =>
       ChatFileService(ref.watch(apiDioProvider), ref.watch(storageDioProvider)),
 );
+
+/// Makes a video's preview picture (null where it can't). Replaced in tests.
+final videoThumbnailerProvider =
+    Provider<Future<Uint8List?> Function(String path)>(
+      (ref) => makeVideoThumbnail,
+    );
 
 /// Which way a video or audio file is moving.
 enum FileTransferDirection { upload, download }

@@ -1,38 +1,35 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/sticker_collection.dart';
 import 'package:serafim/src/providers/sticker_providers.dart';
+import 'package:serafim/src/utils/limited_gif.dart';
+import 'package:serafim/src/utils/settled_sheet.dart';
 import 'package:serafim/src/utils/stickers/collection_sheets.dart';
 import 'package:serafim/src/utils/stickers/sticker_packs.dart';
 import 'package:serafim/src/utils/stickers/sticker_view.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
-/// The panel under the composer: recently used stickers, one tab per pack,
-/// then one tab per collection (stickers, GIFs, videos and audio the person
-/// saved), and a button to start a new collection.
+/// The panel under the composer: recently sent stickers and GIFs, one tab
+/// per pack, then one tab per collection (stickers, GIFs, videos and audio
+/// the person saved), and a button to start a new collection.
 ///
-/// Tapping something does not send it: the parent shows what can be done
-/// with it (send, save to a collection, remove).
+/// Tapping something sends it ([onSend]). Long-pressing saves it to a
+/// collection ([onSave]); inside a collection, long-pressing offers to
+/// remove it from that collection instead.
 class StickerPicker extends ConsumerStatefulWidget {
   const StickerPicker({
     super.key,
-    required this.onPick,
+    required this.onSend,
     this.onSave,
-    this.onPickItem,
     this.height = 260,
   });
 
-  /// A sticker (pack/name) was tapped.
-  final ValueChanged<String> onPick;
+  /// A sticker, GIF, video or audio file was tapped.
+  final ValueChanged<StickerCollectionItem> onSend;
 
-  /// A sticker was long-pressed: save it to a collection.
-  final ValueChanged<String>? onSave;
-
-  /// A saved GIF, video or audio file was tapped in a collection.
-  final ValueChanged<StickerCollectionItem>? onPickItem;
+  /// Long-pressed outside a collection: save it to one.
+  final ValueChanged<StickerCollectionItem>? onSave;
 
   final double height;
 
@@ -63,6 +60,37 @@ class _StickerPickerState extends ConsumerState<StickerPicker> {
     setState(() => _tab = _packCount + collections.indexOf(collection));
   }
 
+  Future<void> _offerRemoval(
+    StickerCollection collection,
+    StickerCollectionItem item,
+  ) async {
+    final remove = await showSettledSheet<bool>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      builder: (ctx) => SafeArea(
+        child: ListTile(
+          leading: Icon(Icons.delete_outline, color: AppColors.rust),
+          title: Text(
+            'Remove from “${collection.name}”',
+            style: AppTextStyles.body.copyWith(color: AppColors.rust),
+          ),
+          subtitle: Text(
+            collectionItemLabel(item),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.smallDim,
+          ),
+          onTap: () => Navigator.pop(ctx, true),
+        ),
+      ),
+    );
+    if (remove != true || !mounted) return;
+    await ref
+        .read(stickerCollectionsProvider.notifier)
+        .remove(item.key, collectionId: collection.id);
+  }
+
   @override
   Widget build(BuildContext context) {
     final collections = ref.watch(stickerCollectionsProvider);
@@ -76,39 +104,39 @@ class _StickerPickerState extends ConsumerState<StickerPicker> {
     if (collection != null) {
       label = collection.name.toUpperCase();
       body = collection.isEmpty
-          ? _Empty(
+          ? const _Empty(
               'Nothing here yet. Long-press a sticker, or save a GIF, video '
               'or audio from a chat.',
             )
           : _Grid(
               count: collection.items.length,
-              builder: (i) => _CollectionTile(
-                item: collection.items[i],
-                onTap: () {
-                  final item = collection.items[i];
-                  if (item.isSticker) {
-                    widget.onPick(item.stickerId!);
-                  } else {
-                    widget.onPickItem?.call(item);
-                  }
-                },
-              ),
+              builder: (i) {
+                final item = collection.items[i];
+                return _ItemTile(
+                  item: item,
+                  onTap: () => widget.onSend(item),
+                  onLongPress: () => _offerRemoval(collection, item),
+                );
+              },
             );
     } else {
-      final ids = tab < 0
+      final items = tab < 0
           ? recent
-          : [for (final s in stickerPacks[tab].stickers) s.id];
+          : [
+              for (final s in stickerPacks[tab].stickers)
+                StickerCollectionItem.sticker(s.id, name: s.name),
+            ];
       label = tab < 0 ? 'RECENT' : stickerPacks[tab].name.toUpperCase();
-      body = ids.isEmpty
-          ? const _Empty('Stickers you send show up here.')
+      body = items.isEmpty
+          ? const _Empty('Stickers and GIFs you send show up here.')
           : _Grid(
-              count: ids.length,
-              builder: (i) => GestureDetector(
-                onTap: () => widget.onPick(ids[i]),
+              count: items.length,
+              builder: (i) => _ItemTile(
+                item: items[i],
+                onTap: () => widget.onSend(items[i]),
                 onLongPress: widget.onSave == null
                     ? null
-                    : () => widget.onSave!(ids[i]),
-                child: StickerView(stickerId: ids[i], size: 72),
+                    : () => widget.onSave!(items[i]),
               ),
             );
     }
@@ -273,13 +301,14 @@ class _Empty extends StatelessWidget {
   );
 }
 
-/// One saved item: the sticker itself, the GIF playing, or a labelled tile
-/// for a video or audio file.
-class _CollectionTile extends ConsumerWidget {
-  const _CollectionTile({required this.item, required this.onTap});
+/// One sticker or saved item: the sticker itself, the GIF (playing a few
+/// times, then still), or a labelled tile for a video or audio file.
+class _ItemTile extends ConsumerWidget {
+  const _ItemTile({required this.item, required this.onTap, this.onLongPress});
 
   final StickerCollectionItem item;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -288,14 +317,15 @@ class _CollectionTile extends ConsumerWidget {
       content = StickerView(stickerId: item.stickerId!, size: 72);
     } else if (item.isGif) {
       final dir = ref.watch(savedMediaDirProvider).value;
+      final fallback = _FileTile(icon: Icons.gif_outlined, label: 'GIF');
       content = dir == null || item.file == null
-          ? _FileTile(icon: Icons.gif_outlined, label: 'GIF')
-          : Image.file(
-              File('$dir/${item.file}'),
-              fit: BoxFit.contain,
-              gaplessPlayback: true,
-              errorBuilder: (_, _, _) =>
-                  _FileTile(icon: Icons.broken_image_outlined, label: 'GIF'),
+          ? fallback
+          : LimitedGif(
+              path: '$dir/${item.file}',
+              cacheWidth: (72 * MediaQuery.devicePixelRatioOf(context)).round(),
+              // A tap sends it, so no replay button here.
+              showReplay: false,
+              errorBuilder: (_) => fallback,
             );
     } else {
       content = _FileTile(
@@ -306,7 +336,11 @@ class _CollectionTile extends ConsumerWidget {
     return Semantics(
       button: true,
       label: collectionItemLabel(item),
-      child: GestureDetector(onTap: onTap, child: content),
+      child: GestureDetector(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: content,
+      ),
     );
   }
 }

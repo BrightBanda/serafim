@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/chat/chat_image_gallery.dart';
 import 'package:serafim/src/utils/emoji.dart';
+import 'package:serafim/src/utils/limited_gif.dart';
 import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -184,58 +186,20 @@ class ChatBubble extends StatelessWidget {
                 )
               else ...[
                 if (imageAttachments.length > 1) ...[
-                  SizedBox(
-                    width: MediaQuery.of(context).size.width * 0.62,
-                    child: GridView.count(
-                      key: const ValueKey('chat-image-grid'),
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 4,
-                      mainAxisSpacing: 4,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      children: [
-                        for (final image in imageAttachments)
-                          GestureDetector(
-                            key: image.key,
-                            onTap:
-                                image.onTap ??
-                                () => _openFullScreen(
-                                  context,
-                                  image.path,
-                                  image.onSave,
-                                  image.onDelete,
-                                ),
-                            onLongPress: image.onLongPress,
-                            child: ClipRect(
-                              child: Image.file(
-                                File(image.path),
-                                fit: BoxFit.cover,
-                                cacheWidth: 500,
-                                errorBuilder: (_, __, ___) => ColoredBox(
-                                  color: AppColors.paperRaised,
-                                  child: Icon(
-                                    Icons.broken_image_outlined,
-                                    color: AppColors.textDim,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                  ChatImageGrid(images: imageAttachments),
                   if (message.isNotEmpty) const SizedBox(height: 6),
                 ],
                 if (imagePath != null) ...[
                   GestureDetector(
                     onTap:
                         onTapImage ??
-                        () => _openFullScreen(
-                          context,
-                          imagePath!,
-                          onSaveImage,
-                          onDeleteImage,
-                        ),
+                        () => openChatImageGallery(context, [
+                          (
+                            path: imagePath!,
+                            onSave: onSaveImage,
+                            onDelete: onDeleteImage,
+                          ),
+                        ]),
                     child: ConstrainedBox(
                       // Photos are big; GIFs and stickers are a small
                       // thing you glance at, so they are kept small. A
@@ -245,19 +209,36 @@ class ChatBubble extends StatelessWidget {
                           : isSmallMedia(imagePath!)
                           ? const BoxConstraints(maxHeight: 130, maxWidth: 170)
                           : const BoxConstraints(maxHeight: 260),
-                      child: Image.file(
-                        File(imagePath!),
-                        fit: isSmallMedia(imagePath!) || isScribble(imagePath!)
-                            ? BoxFit.contain
-                            : BoxFit.cover,
-                        cacheWidth: isScribble(imagePath!)
-                            ? 520
-                            : (isSmallMedia(imagePath!) ? 340 : 800),
-                        errorBuilder: (_, __, ___) => const Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Icon(Icons.broken_image_outlined, size: 28),
-                        ),
-                      ),
+                      child: isGifPath(imagePath!)
+                          ? LimitedGif(
+                              path: imagePath!,
+                              cacheWidth: 340,
+                              errorBuilder: (_) => const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 28,
+                                ),
+                              ),
+                            )
+                          : Image.file(
+                              File(imagePath!),
+                              fit:
+                                  isSmallMedia(imagePath!) ||
+                                      isScribble(imagePath!)
+                                  ? BoxFit.contain
+                                  : BoxFit.cover,
+                              cacheWidth: isScribble(imagePath!)
+                                  ? 520
+                                  : (isSmallMedia(imagePath!) ? 340 : 800),
+                              errorBuilder: (_, __, ___) => const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 28,
+                                ),
+                              ),
+                            ),
                     ),
                   ),
                   if (message.isNotEmpty) const SizedBox(height: 6),
@@ -277,41 +258,98 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
-void _openFullScreen(
-  BuildContext context,
-  String path,
-  Future<void> Function()? onSave,
-  Future<void> Function()? onDelete,
-) {
-  Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-          actions: [
-            if (onDelete != null)
-              IconButton(
-                tooltip: 'Delete',
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  onDelete();
-                },
+/// Pictures sent together: at most four tiles in a compact two-column grid
+/// (an odd one out spans the row); with more, the fourth shows "+N" for the
+/// rest. Tapping any tile opens them all, to swipe through.
+class ChatImageGrid extends StatelessWidget {
+  const ChatImageGrid({super.key, required this.images});
+
+  final List<ChatImageAttachment> images;
+
+  static const maxTiles = 4;
+  static const gap = 3.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = (MediaQuery.sizeOf(context).width * 0.5).clamp(150.0, 230.0);
+    final tile = (width - gap) / 2;
+    final shown = images.length > maxTiles ? maxTiles : images.length;
+    final hidden = images.length - shown;
+    final cache = (tile * MediaQuery.devicePixelRatioOf(context)).round();
+
+    Widget cell(int i, double w) {
+      final image = images[i];
+      final more = i == shown - 1 && hidden > 0;
+      return GestureDetector(
+        key: image.key,
+        onTap:
+            image.onTap ??
+            () => openChatImageGallery(context, [
+              for (final m in images)
+                (path: m.path, onSave: m.onSave, onDelete: m.onDelete),
+            ], initialIndex: i),
+        onLongPress: image.onLongPress,
+        child: SizedBox(
+          width: w,
+          height: tile,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.file(
+                File(image.path),
+                fit: BoxFit.cover,
+                // A GIF in a grid is a still: it plays when opened.
+                cacheWidth: cache,
+                errorBuilder: (_, _, _) => ColoredBox(
+                  color: AppColors.paperRaised,
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    color: AppColors.textDim,
+                  ),
+                ),
               ),
-            if (onSave != null)
-              IconButton(
-                tooltip: 'Download',
-                icon: const Icon(Icons.download_outlined),
-                onPressed: onSave,
-              ),
-          ],
+              if (more)
+                ColoredBox(
+                  color: const Color(0x8C000000),
+                  child: Center(
+                    child: Text(
+                      '+${hidden + 1}',
+                      key: const ValueKey('chat-image-grid-more'),
+                      style: AppTextStyles.displayHeading.copyWith(
+                        color: Colors.white,
+                        fontSize: 22,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
-        body: Center(child: InteractiveViewer(child: Image.file(File(path)))),
+      );
+    }
+
+    return SizedBox(
+      key: const ValueKey('chat-image-grid'),
+      width: width,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var row = 0; row < shown; row += 2) ...[
+            if (row > 0) const SizedBox(height: gap),
+            row + 1 < shown
+                ? Row(
+                    children: [
+                      cell(row, tile),
+                      const SizedBox(width: gap),
+                      cell(row + 1, tile),
+                    ],
+                  )
+                : cell(row, width),
+          ],
+        ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _StatusRow extends StatelessWidget {

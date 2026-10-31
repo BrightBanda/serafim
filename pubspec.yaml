@@ -57,6 +57,7 @@ dependencies:
   file_picker: ^11.0.3
   crop_your_image: ^2.0.1
   video_player: ^2.14.1
+  get_thumbnail_video: ^0.7.3
 
 dev_dependencies:
   flutter_test:

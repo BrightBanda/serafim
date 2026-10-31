@@ -9,6 +9,7 @@ import 'package:serafim/src/data/models/sticker_collection.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/providers/sticker_providers.dart';
+import 'package:serafim/src/utils/stickers/sticker_packs.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -183,6 +184,46 @@ void main() {
       final restored = again.read(stickerCollectionsProvider).single;
       expect(restored.name, 'Frogs');
       expect(restored.stickerIds, ['doodles/frog']);
+    });
+
+    test(
+      'a sent GIF stays in the recents after leaving every collection',
+      () async {
+        final n = c.read(stickerCollectionsProvider.notifier);
+        final recents = c.read(recentStickersProvider.notifier);
+        final a = n.createCollection('A');
+        final gif = await n.prepareFile(
+          source('dance.gif', [0x47, 0x49, 0x46, 0x38]).path,
+          StickerCollectionItemKind.gif,
+        );
+        await n.add(a.id, gif);
+        recents.used(gif.item);
+        expect(c.read(recentStickersProvider).first.key, gif.item.key);
+
+        // Removed from the collection: the recents still show it.
+        await n.remove(gif.item.key);
+        expect(savedFiles(), [gif.item.file]);
+
+        // Pushed out of the recents too: now nothing needs the file.
+        for (final s in stickerPacks.first.stickers.take(
+          RecentStickersNotifier.max,
+        )) {
+          recents.usedSticker(s.id);
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(c.read(recentStickersProvider).any((i) => i.isGif), isFalse);
+        expect(savedFiles(), isEmpty);
+      },
+    );
+
+    test('videos and audio are not kept in the recents', () async {
+      final n = c.read(stickerCollectionsProvider.notifier);
+      final video = await n.prepareFile(
+        source('clip.mp4', [1]).path,
+        StickerCollectionItemKind.video,
+      );
+      c.read(recentStickersProvider.notifier).used(video.item);
+      expect(c.read(recentStickersProvider), isEmpty);
     });
 
     test("an older version's inline GIFs move to files once", () async {

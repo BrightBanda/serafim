@@ -92,6 +92,7 @@ class FakeChatFiles extends ChatFileService {
   FakeChatFiles() : super(Dio(), Dio());
 
   final announced = <String>[];
+  final thumbnails = <Uint8List?>[];
   final uploaded = <String>[];
   final forwards = <(String, String?)>[];
   int failUploads = 0;
@@ -105,11 +106,13 @@ class FakeChatFiles extends ChatFileService {
     required int size,
     required String fileName,
     int durationMs = 0,
+    Uint8List? thumbnail,
     String? recipientId,
     String? groupId,
   }) async {
     if (refuse case final error?) throw error;
     announced.add('$clientId $contentType $size $fileName');
+    thumbnails.add(thumbnail);
     // Like the server: the same client id is the same upload.
     return ChatFileUpload(
       id: 'media-$clientId',
@@ -180,6 +183,17 @@ class TempStore extends ChatMediaStore {
     required String extension,
   }) async =>
       (await File(sourcePath).copy('${dir.path}/$messageId.$extension')).path;
+
+  @override
+  Future<String> save(
+    String messageId,
+    Uint8List bytes, {
+    String? extension,
+  }) async {
+    final f = File('${dir.path}/$messageId.${extension ?? 'bin'}');
+    await f.writeAsBytes(bytes);
+    return f.path;
+  }
 
   @override
   Future<String> pathFor(String messageId, {required String extension}) async =>
@@ -461,6 +475,8 @@ void main() {
     late ProviderContainer c;
     late FakeChatFiles files;
     late FakeSocket socket;
+    late List<String> thumbnailed;
+    const jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
 
     setUpAll(() async {
       if (haveLib) {
@@ -480,6 +496,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       files = FakeChatFiles();
       socket = FakeSocket();
+      thumbnailed = [];
       c = ProviderContainer(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -490,6 +507,10 @@ void main() {
           webSocketEventsProvider.overrideWith((ref) => const Stream.empty()),
           webSocketServiceProvider.overrideWithValue(socket),
           chatFileServiceProvider.overrideWithValue(files),
+          videoThumbnailerProvider.overrideWithValue((path) async {
+            thumbnailed.add(path);
+            return Uint8List.fromList(jpeg);
+          }),
           chatMediaStoreProvider.overrideWithValue(TempStore(dir)),
         ],
       );
@@ -545,6 +566,10 @@ void main() {
         expect(payload['media_id'], msg.mediaRemoteId);
         expect(payload.containsKey('attachment'), isFalse);
         expect(c.read(fileTransfersProvider), isEmpty);
+        // A preview is made from the chat's copy, kept here and sent along.
+        expect(thumbnailed, [msg.localMediaPath]);
+        expect(File(msg.thumbnailPath!).readAsBytesSync(), jpeg);
+        expect(files.thumbnails.single, jpeg);
       },
     );
 
@@ -560,6 +585,8 @@ void main() {
       await settle();
       final msg = await only();
       expect(msg.type, MessageType.audioFile);
+      expect(thumbnailed, isEmpty);
+      expect(msg.thumbnailPath, isNull);
       expect(socket.sent.single['kind'], 'audio');
       expect(socket.sent.single['group_id'], 'g1');
     });
@@ -632,6 +659,9 @@ void main() {
       final msg = await service.getMessageById('srv1');
       expect(msg!.localMediaPath, endsWith('srv1.mov'));
       expect(File(msg.localMediaPath!).readAsBytesSync(), [9, 9, 9]);
+      // Sent without a preview (from a desktop): one is made here.
+      expect(thumbnailed, [msg.localMediaPath]);
+      expect(File(msg.thumbnailPath!).readAsBytesSync(), jpeg);
     });
 
     test('forwarding copies on the server and keeps a local copy', () async {
@@ -647,6 +677,9 @@ void main() {
         ..localMediaPath = local.path
         ..fileName = 'clip.mp4'
         ..fileSize = 2
+        ..thumbnailPath = (File(
+          '${dir.path}/src.thumb.jpg',
+        )..writeAsBytesSync(jpeg)).path
         ..timestamp = DateTime.utc(2026);
       await isar.writeTxn(() => isar.localMessages.put(source));
 
@@ -667,6 +700,8 @@ void main() {
       // Its own file, so deleting one message never breaks the other.
       expect(copy.localMediaPath, isNot(local.path));
       expect(File(copy.localMediaPath!).readAsBytesSync(), [7, 7]);
+      expect(copy.thumbnailPath, isNot(source.thumbnailPath));
+      expect(File(copy.thumbnailPath!).readAsBytesSync(), jpeg);
     });
   }, skip: haveLib ? false : 'Isar native library not found');
 }

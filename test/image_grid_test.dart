@@ -1,61 +1,102 @@
-import 'dart:typed_data';
+import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:serafim/src/utils/image_shrink.dart';
-
-Uint8List _photo(int red, int green, int blue) => Uint8List.fromList(
-  img.encodePng(
-    img.Image(
-      width: 20,
-      height: 20,
-      numChannels: 3,
-      backgroundColor: img.ColorRgb8(red, green, blue),
-    ),
-  ),
-);
+import 'package:serafim/src/utils/chat/chat_bubble.dart';
+import 'package:serafim/src/utils/limited_gif.dart';
 
 void main() {
-  test('four photos compose into a two-column, two-row grid', () async {
-    final bytes = await composeImageGrid(
-      [
-        _photo(255, 0, 0),
-        _photo(0, 255, 0),
-        _photo(0, 0, 255),
-        _photo(0, 0, 0),
-      ],
-      maxSide: 120,
-      quality: 90,
-    );
-    final decoded = img.decodeImage(bytes)!;
+  late Directory dir;
 
-    expect(decoded.width, 120);
-    expect(decoded.height, 120);
+  setUp(() => dir = Directory.systemTemp.createTempSync('image_grid'));
+  tearDown(() => dir.deleteSync(recursive: true));
+
+  List<ChatImageAttachment> photos(int n) => [
+    for (var i = 0; i < n; i++)
+      ChatImageAttachment(
+        path:
+            (File('${dir.path}/p$i.png')..writeAsBytesSync(
+                  img.encodePng(img.Image(width: 8, height: 8)),
+                ))
+                .path,
+      ),
+  ];
+
+  Future<void> pumpGrid(WidgetTester tester, int n) => tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(body: ChatImageGrid(images: photos(n))),
+    ),
+  );
+
+  testWidgets('at most four tiles; the fourth counts the rest', (tester) async {
+    await pumpGrid(tester, 6);
+    expect(find.byType(Image), findsNWidgets(4));
+    // The fourth tile and the two not shown: three more to see.
+    expect(find.text('+3'), findsOneWidget);
   });
 
-  test('six photos compose into the full two-column, three-row grid', () async {
-    final bytes = await composeImageGrid(
-      [
-        _photo(255, 0, 0),
-        _photo(0, 255, 0),
-        _photo(0, 0, 255),
-        _photo(0, 0, 0),
-        _photo(255, 255, 0),
-        _photo(255, 0, 255),
-      ],
-      maxSide: 120,
-      quality: 90,
-    );
-    final decoded = img.decodeImage(bytes)!;
-
-    expect(decoded.width, lessThan(decoded.height));
-    expect(decoded.height, 120);
+  testWidgets('four or fewer show them all, with no counter', (tester) async {
+    await pumpGrid(tester, 3);
+    expect(find.byType(Image), findsNWidgets(3));
+    expect(find.byKey(const ValueKey('chat-image-grid-more')), findsNothing);
   });
 
-  test('multi-photo grid rejects unsupported counts', () async {
-    await expectLater(
-      composeImageGrid([_photo(255, 0, 0)], maxSide: 120),
-      throwsArgumentError,
-    );
+  testWidgets('the grid is compact', (tester) async {
+    await pumpGrid(tester, 4);
+    final width = tester
+        .getSize(find.byKey(const ValueKey('chat-image-grid')))
+        .width;
+    expect(width, lessThanOrEqualTo(230));
+  });
+
+  testWidgets('a tile opens them all, to swipe through', (tester) async {
+    await pumpGrid(tester, 6);
+    await tester.tap(find.text('+3'));
+    await tester.pumpAndSettle();
+    expect(find.text('4 of 6'), findsOneWidget);
+
+    await tester.drag(find.byType(PageView), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('5 of 6'), findsOneWidget);
+
+    await tester.drag(find.byType(PageView), const Offset(500, 0));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(PageView), const Offset(500, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('3 of 6'), findsOneWidget);
+  });
+
+  testWidgets('a GIF plays a few times, then stops with a replay button', (
+    tester,
+  ) async {
+    final anim = img.Image(width: 4, height: 4)..frameDuration = 30;
+    anim.addFrame(img.Image(width: 4, height: 4)..frameDuration = 30);
+    final gif = File('${dir.path}/a.gif')
+      ..writeAsBytesSync(img.encodeGif(anim));
+
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(child: LimitedGif(path: gif.path, loops: 2)),
+        ),
+      );
+      // Two frames of 30 ms, twice over, with room to spare.
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    });
+    await tester.pump();
+    expect(find.byIcon(Icons.replay), findsOneWidget);
+
+    await tester.runAsync(() async {
+      await tester.tap(find.byIcon(Icons.replay));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pump();
+    expect(find.byIcon(Icons.replay), findsNothing, reason: 'playing again');
+  });
+
+  test('GIFs are told apart by name', () {
+    expect(isGifPath('/a/b/123.GIF'), isTrue);
+    expect(isGifPath('/a/b/123.png'), isFalse);
   });
 }

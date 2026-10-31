@@ -10,32 +10,45 @@ import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/utils/stickers/sticker_packs.dart';
 
-/// Stickers this account sent recently, newest first (kept on the device).
-class RecentStickersNotifier extends Notifier<List<String>> {
+/// Stickers and GIFs this account sent recently, newest first (kept on the
+/// device). A GIF here points at a file in [SavedMediaStore], which stays
+/// while either this list or a collection holds it.
+class RecentStickersNotifier extends Notifier<List<StickerCollectionItem>> {
   static const max = 16;
 
   @override
-  List<String> build() {
+  List<StickerCollectionItem> build() {
     final account = ref.watch(currentAccountIdProvider);
     if (account == null) return const [];
-    // Drop ids this version of the app no longer has.
-    return ref
-        .read(localCacheProvider)
-        .recentStickers(account)
-        .where((id) => stickerById(id) != null)
-        .toList();
+    // Drop stickers this version of the app no longer has.
+    return [
+      for (final item in ref.read(localCacheProvider).recentItems(account))
+        if (item.isGif ||
+            (item.isSticker && stickerById(item.stickerId!) != null))
+          item,
+    ];
   }
 
-  void used(String id) {
+  /// [item] was just sent. Only stickers and GIFs are kept.
+  void used(StickerCollectionItem item) {
     final account = ref.read(currentAccountIdProvider);
-    if (account == null) return;
-    state = [id, ...state.where((s) => s != id)].take(max).toList();
-    ref.read(localCacheProvider).saveRecentStickers(account, state);
+    if (account == null || !(item.isSticker || item.isGif)) return;
+    final all = [item, ...state.where((s) => s.key != item.key)];
+    state = all.take(max).toList();
+    ref.read(localCacheProvider).saveRecentItems(account, state);
+    for (final gone in all.skip(max)) {
+      ref.read(stickerCollectionsProvider.notifier).releaseFile(gone);
+    }
   }
+
+  void usedSticker(String stickerId) =>
+      used(StickerCollectionItem.sticker(stickerId));
+
+  bool holds(String itemKey) => state.any((i) => i.key == itemKey);
 }
 
 final recentStickersProvider =
-    NotifierProvider<RecentStickersNotifier, List<String>>(
+    NotifierProvider<RecentStickersNotifier, List<StickerCollectionItem>>(
       RecentStickersNotifier.new,
     );
 
@@ -192,10 +205,23 @@ class StickerCollectionsNotifier extends Notifier<List<StickerCollection>> {
           c,
     ];
     _commit(account, collections);
-    if (file != null && !collections.any((c) => c.contains(itemKey))) {
+    if (file != null &&
+        !collections.any((c) => c.contains(itemKey)) &&
+        !ref.read(recentStickersProvider.notifier).holds(itemKey)) {
       await _store.delete(account, file);
     }
     return holders.length;
+  }
+
+  /// Deletes [item]'s file once nothing holds it: called when it leaves the
+  /// recents.
+  Future<void> releaseFile(StickerCollectionItem item) async {
+    final account = ref.read(currentAccountIdProvider);
+    final file = item.file;
+    if (account == null || file == null) return;
+    if (state.any((c) => c.contains(item.key))) return;
+    if (ref.read(recentStickersProvider.notifier).holds(item.key)) return;
+    await _store.delete(account, file);
   }
 
   /// Where [item]'s file is on this device (GIFs, videos, audio).

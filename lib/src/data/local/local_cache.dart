@@ -200,9 +200,31 @@ class LocalCache {
   Future<void> saveRecentStickers(String account, List<String> ids) =>
       _write(_key(account, 'recentStickers'), ids);
 
+  /// Recently sent stickers and GIFs, newest first.
+  List<StickerCollectionItem> recentItems(String account) =>
+      _read(
+        _key(account, 'recentItems'),
+        (j) => [
+          for (final e in j! as List)
+            if (e is Map<String, dynamic>) ?StickerCollectionItem.fromJson(e),
+        ],
+      ) ??
+      // Older versions kept sticker ids only.
+      [
+        for (final id in recentStickers(account))
+          StickerCollectionItem.sticker(id),
+      ];
+
+  Future<void> saveRecentItems(
+    String account,
+    List<StickerCollectionItem> items,
+  ) =>
+      _write(_key(account, 'recentItems'), [for (final i in items) i.toJson()]);
+
   // --- sticker collections --------------------------------------------------
 
-  List<StickerCollection> stickerCollections(String account) => _read(
+  List<StickerCollection> stickerCollections(String account) =>
+      _read(
         _key(account, 'stickerCollections'),
         (j) => [
           for (final e in j! as List)
@@ -214,11 +236,9 @@ class LocalCache {
   Future<void> saveStickerCollections(
     String account,
     List<StickerCollection> collections,
-  ) =>
-      _write(
-        _key(account, 'stickerCollections'),
-        [for (final c in collections) c.toJson()],
-      );
+  ) => _write(_key(account, 'stickerCollections'), [
+    for (final c in collections) c.toJson(),
+  ]);
 
   // --- link previews --------------------------------------------------------
 

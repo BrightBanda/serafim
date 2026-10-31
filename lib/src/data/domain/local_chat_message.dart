@@ -57,6 +57,10 @@ class LocalMessage {
   /// Videos and audio files: size in bytes, shown before downloading.
   int? fileSize;
 
+  /// Videos: a small preview picture on this device (sent along by the
+  /// sender, or made here once the video is downloaded).
+  String? thumbnailPath;
+
   /// Voice notes: a coarse loudness outline (0–31 per bar) for the waveform.
   List<int>? waveform;
 

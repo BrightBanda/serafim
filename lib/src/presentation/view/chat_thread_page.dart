@@ -1075,32 +1075,45 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           stickerId: stickerId,
           replyToId: _reply.value?.messageId,
         );
-    ref.read(recentStickersProvider.notifier).used(stickerId);
+    ref.read(recentStickersProvider.notifier).usedSticker(stickerId);
     _reply.clear();
     _scheduleScrollToBottom();
   }
 
-  /// A sticker, or a saved GIF, video or audio file, tapped in the picker:
-  /// send it, save it to another collection, or remove it.
-  Future<void> _onCollectionItem(StickerCollectionItem item) async {
-    final choice = await showCollectionItemSheet(context, ref, item);
-    if (choice == null || !mounted) return;
-    switch (choice) {
-      case CollectionItemChoice.send:
-        await _sendCollectionItem(item);
-      case CollectionItemChoice.save:
-        // Already saved once: the file is in place, nothing to read.
-        await _saveToCollection(() async => PendingCollectionItem(item));
-      case CollectionItemChoice.remove:
-        final removed = await ref
-            .read(stickerCollectionsProvider.notifier)
-            .remove(item.key);
-        if (mounted) {
-          _toast('Removed from $removed collection${removed == 1 ? '' : 's'}');
-        }
-    }
+  /// Asks before sending a saved video or audio file from the picker: unlike
+  /// a sticker, one stray tap could spend a lot of data and of today's
+  /// allowance.
+  Future<bool> _confirmSendFile(StickerCollectionItem item, int size) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.paperAlt,
+        shape: const RoundedRectangleBorder(),
+        title: Text(
+          'Send ${item.isVideo ? 'video' : 'audio'}?',
+          style: AppTextStyles.displayHeading.copyWith(fontSize: 20),
+        ),
+        content: Text(
+          '“${collectionItemLabel(item)}” · ${formatFileSize(size)}',
+          style: AppTextStyles.body,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
+  /// Something tapped in the sticker panel: a sticker or GIF goes at once
+  /// (and into the recents); a saved video or audio file after a check.
   Future<void> _sendCollectionItem(StickerCollectionItem item) async {
     if (item.isSticker) {
       _sendSticker(item.stickerId!);
@@ -1139,19 +1152,22 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             imageBytes: bytes,
             replyToId: _reply.value?.messageId,
           );
+      ref.read(recentStickersProvider.notifier).used(item);
       _reply.clear();
       _scheduleScrollToBottom();
       return;
     }
 
     final kind = item.isVideo ? ChatFileKind.video : ChatFileKind.audio;
+    final size = await file.length();
+    if (!mounted || !await _confirmSendFile(item, size) || !mounted) return;
     try {
       await _sendFile(
         checkChatFile(
           PickedChatFile(
             path: path!,
             name: item.name ?? collectionItemLabel(item),
-            size: await file.length(),
+            size: size,
             kind: kind,
           ),
         ),
@@ -1648,16 +1664,6 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                           for (final image in group.reversed)
                                             ChatImageAttachment(
                                               path: image.localMediaPath!,
-                                              onTap:
-                                                  image.localMediaPath!
-                                                      .toLowerCase()
-                                                      .endsWith('.gif')
-                                                  ? () => _showMessageActions(
-                                                      image,
-                                                      isOutgoing: isOutgoing,
-                                                      senderLabel: who,
-                                                    )
-                                                  : null,
                                               key: _itemKeys.putIfAbsent(
                                                 image.messageId,
                                                 GlobalKey.new,
@@ -1830,14 +1836,12 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                   ),
                 if (_stickersOpen)
                   StickerPicker(
-                    onPick: (id) => _onCollectionItem(
-                      StickerCollectionItem.sticker(
-                        id,
-                        name: stickerById(id)?.name,
-                      ),
+                    onSend: _sendCollectionItem,
+                    onSave: (item) => _saveToCollection(
+                      // Already in the app (a pack sticker, or a GIF from
+                      // the recents): nothing to read.
+                      () async => PendingCollectionItem(item),
                     ),
-                    onSave: _saveStickerToCollection,
-                    onPickItem: _onCollectionItem,
                   ),
               ],
             ),

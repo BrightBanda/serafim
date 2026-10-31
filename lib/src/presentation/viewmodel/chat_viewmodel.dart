@@ -423,6 +423,9 @@ class ChatViewModel extends Notifier<ChatState> {
             ..status = _statusFromString(data['status'] as String?)
             ..timestamp = parsedTimestamp;
           _applyMediaFields(msg, data);
+          if (msg.type == MessageType.video) {
+            msg.thumbnailPath = await _storeThumbnail(messageId, data);
+          }
           await isar.saveMessage(msg);
 
           // Confirm real, on-device receipt. This is the ONLY signal the
@@ -654,6 +657,9 @@ class ChatViewModel extends Notifier<ChatState> {
       ..status = MessageStatus.sent
       ..timestamp = _parseServerTimestamp(data['timestamp'] as String?);
     if (!deleted) _applyMediaFields(msg, data);
+    if (msg.type == MessageType.video) {
+      msg.thumbnailPath = await _storeThumbnail(messageId, data);
+    }
     await isar.saveMessage(msg);
 
     if (msg.type == MessageType.audio && msg.mediaRemoteId != null) {
@@ -1209,6 +1215,11 @@ class ChatViewModel extends Notifier<ChatState> {
           extension: chatFileExtension(file.name, file.kind),
         );
 
+    // A preview for the bubble, here and (sent along) for the recipient.
+    final thumbnailPath = file.kind == ChatFileKind.video
+        ? await _makeThumbnail(tempId, stored)
+        : null;
+
     final msg = LocalMessage()
       ..messageId = tempId
       ..roomId = roomId
@@ -1217,6 +1228,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ..groupId = groupId
       ..textContent = ''
       ..localMediaPath = stored
+      ..thumbnailPath = thumbnailPath
       ..fileName = file.name
       ..fileSize = file.size
       ..durationMs = file.durationMs
@@ -1280,6 +1292,7 @@ class ChatViewModel extends Notifier<ChatState> {
           size: await File(path).length(),
           fileName: msg.fileName ?? path.split('/').last,
           durationMs: msg.durationMs ?? 0,
+          thumbnail: await _readThumbnail(msg),
           recipientId: msg.groupId == null ? msg.recipientId : null,
           groupId: msg.groupId,
         );
@@ -1347,6 +1360,13 @@ class ChatViewModel extends Notifier<ChatState> {
                 transfers.set(messageId, FileTransferDirection.download, p),
           );
       await isar.updateMedia(messageId, localMediaPath: path);
+      if (kind == ChatFileKind.video && msg.thumbnailPath == null) {
+        // Sent from a device that couldn't make a preview: make one here.
+        final thumbnail = await _makeThumbnail(messageId, path);
+        if (thumbnail != null) {
+          await isar.updateMedia(messageId, thumbnailPath: thumbnail);
+        }
+      }
       return true;
     } catch (error) {
       _log('file download failed: $error');
@@ -1395,6 +1415,14 @@ class ChatViewModel extends Notifier<ChatState> {
           );
     }
 
+    String? thumbnailPath;
+    final sourceThumbnail = source.thumbnailPath;
+    if (sourceThumbnail != null && await File(sourceThumbnail).exists()) {
+      thumbnailPath = await ref
+          .read(chatMediaStoreProvider)
+          .copyIn(tempId, sourceThumbnail, extension: 'thumb.jpg');
+    }
+
     final msg = LocalMessage()
       ..messageId = tempId
       ..roomId = roomId
@@ -1403,6 +1431,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ..groupId = groupId
       ..textContent = ''
       ..localMediaPath = localPath
+      ..thumbnailPath = thumbnailPath
       ..mediaRemoteId = copy.id
       ..fileName = source.fileName
       ..fileSize = source.fileSize
@@ -1414,6 +1443,39 @@ class ChatViewModel extends Notifier<ChatState> {
     await ref.read(isarServiceProvider).saveMessage(msg);
     ref.read(webSocketServiceProvider).sendMessage(await _outgoingPayload(msg));
     return true;
+  }
+
+  /// Makes and stores a preview for the video at [videoPath]; its path, or
+  /// null where previews can't be made.
+  Future<String?> _makeThumbnail(String messageId, String videoPath) async {
+    final bytes = await ref.read(videoThumbnailerProvider)(videoPath);
+    if (bytes == null) return null;
+    return ref
+        .read(chatMediaStoreProvider)
+        .save(messageId, bytes, extension: 'thumb.jpg');
+  }
+
+  Future<Uint8List?> _readThumbnail(LocalMessage msg) async {
+    final path = msg.thumbnailPath;
+    if (msg.type != MessageType.video || path == null) return null;
+    final file = File(path);
+    return await file.exists() ? file.readAsBytes() : null;
+  }
+
+  /// Stores the preview that came with a received video, if any.
+  Future<String?> _storeThumbnail(
+    String messageId,
+    Map<String, dynamic> data,
+  ) async {
+    final raw = data['thumbnail'];
+    if (raw is! String || raw.isEmpty) return null;
+    try {
+      return await ref
+          .read(chatMediaStoreProvider)
+          .save(messageId, base64Decode(raw), extension: 'thumb.jpg');
+    } catch (_) {
+      return null; // Unreadable: the bubble shows a placeholder.
+    }
   }
 
   final Set<String> _downloading = {};

@@ -239,6 +239,7 @@ class IsarService {
     String messageId, {
     String? mediaRemoteId,
     String? localMediaPath,
+    String? thumbnailPath,
   }) async {
     final isar = await db;
     await isar.writeTxn(() async {
@@ -249,6 +250,7 @@ class IsarService {
       if (msg == null || msg.isDeleted || msg.isHiddenForMe) return;
       if (mediaRemoteId != null) msg.mediaRemoteId = mediaRemoteId;
       if (localMediaPath != null) msg.localMediaPath = localMediaPath;
+      if (thumbnailPath != null) msg.thumbnailPath = thumbnailPath;
       await isar.localMessages.put(msg);
     });
   }
@@ -341,49 +343,46 @@ class IsarService {
   /// keep the row so history and ordering stay intact.
   Future<void> applyDelete(String messageId) async {
     final isar = await db;
-    String? mediaPath;
+    var files = const <String>[];
     await isar.writeTxn(() async {
       final msg = await isar.localMessages
           .filter()
           .messageIdEqualTo(messageId)
           .findFirst();
       if (msg == null || msg.isDeleted) return;
-      mediaPath = msg.localMediaPath;
+      files = _filesOf(msg);
       msg.isDeleted = true;
       msg.textContent = null;
       msg.localMediaPath = null;
+      msg.thumbnailPath = null;
       msg.type = MessageType.text;
       await isar.localMessages.put(msg);
       await _syncRoom(isar, msg.roomId);
     });
-    if (mediaPath != null) {
-      try {
-        final file = File(mediaPath!);
-        if (await file.exists()) await file.delete();
-      } catch (_) {}
-    }
+    await _deleteFiles(files);
   }
 
   /// "Delete for me": clear the message from this device (text and image file)
   /// but keep a hidden tombstone so it can't reappear.
   Future<void> hideMessageForMe(String messageId) async {
     final isar = await db;
-    String? mediaPath;
+    var files = const <String>[];
     await isar.writeTxn(() async {
       final msg = await isar.localMessages
           .filter()
           .messageIdEqualTo(messageId)
           .findFirst();
       if (msg == null) return;
-      mediaPath = msg.localMediaPath;
+      files = _filesOf(msg);
       msg.isHiddenForMe = true;
       msg.textContent = null;
       msg.localMediaPath = null;
+      msg.thumbnailPath = null;
       msg.type = MessageType.text;
       await isar.localMessages.put(msg);
       await _syncRoom(isar, msg.roomId);
     });
-    await _deleteFile(mediaPath);
+    await _deleteFiles(files);
   }
 
   /// "Clear chat": every message in [roomId] goes from this device, with its
@@ -402,7 +401,7 @@ class IsarService {
       final unsent = <int>[];
       final hidden = <LocalMessage>[];
       for (final m in all) {
-        if (m.localMediaPath != null) paths.add(m.localMediaPath!);
+        paths.addAll(_filesOf(m));
         if (m.status == MessageStatus.sending ||
             m.status == MessageStatus.failed) {
           unsent.add(m.id);
@@ -412,6 +411,7 @@ class IsarService {
               ..isHiddenForMe = true
               ..textContent = null
               ..localMediaPath = null
+              ..thumbnailPath = null
               ..type = MessageType.text,
           );
         }
@@ -420,9 +420,7 @@ class IsarService {
       await isar.localMessages.putAll(hidden);
       await _syncRoom(isar, roomId);
     });
-    for (final p in paths) {
-      await _deleteFile(p);
-    }
+    await _deleteFiles(paths);
   }
 
   /// Retention: removes messages older than [cutoff] and their image files.
@@ -437,8 +435,7 @@ class IsarService {
           .timestampLessThan(cutoff)
           .findAll();
       for (final m in old) {
-        final path = m.localMediaPath;
-        if (path != null) paths.add(path);
+        paths.addAll(_filesOf(m));
       }
       removed = await isar.localMessages.deleteAll(
         old.map((m) => m.id).toList(),
@@ -447,40 +444,40 @@ class IsarService {
         await _syncRoom(isar, roomId);
       }
     });
-    for (final path in paths) {
-      await _deleteFile(path);
-    }
+    await _deleteFiles(paths);
     return removed;
   }
 
-  Future<void> _deleteFile(String? path) async {
-    if (path == null) return;
-    try {
-      final file = File(path);
-      if (await file.exists()) await file.delete();
-    } catch (_) {}
+  /// The files on this device that belong to [m]: its media and preview.
+  static List<String> _filesOf(LocalMessage m) => [
+    ?m.localMediaPath,
+    ?m.thumbnailPath,
+  ];
+
+  Future<void> _deleteFiles(Iterable<String> paths) async {
+    for (final path in paths) {
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
   }
 
   /// Removes a message that only exists on this device.
   Future<void> deleteLocalMessage(String messageId) async {
     final isar = await db;
-    String? mediaPath;
+    var files = const <String>[];
     await isar.writeTxn(() async {
       final msg = await isar.localMessages
           .filter()
           .messageIdEqualTo(messageId)
           .findFirst();
       if (msg == null) return;
-      mediaPath = msg.localMediaPath;
+      files = _filesOf(msg);
       await isar.localMessages.delete(msg.id);
       await _syncRoom(isar, msg.roomId);
     });
-    if (mediaPath != null) {
-      try {
-        final file = File(mediaPath!);
-        if (await file.exists()) await file.delete();
-      } catch (_) {}
-    }
+    await _deleteFiles(files);
   }
 
   /// Ids of the newest server-known messages in either direction, sent to the
@@ -624,14 +621,12 @@ class IsarService {
           .roomIdEqualTo(roomId)
           .findAll();
       for (final m in all) {
-        if (m.localMediaPath != null) paths.add(m.localMediaPath!);
+        paths.addAll(_filesOf(m));
       }
       await isar.localMessages.deleteAll(all.map((m) => m.id).toList());
       await isar.localChatRooms.deleteByRoomId(roomId);
     });
-    for (final p in paths) {
-      await _deleteFile(p);
-    }
+    await _deleteFiles(paths);
   }
 
   static bool _isGroupRoom(String roomId) => roomId.startsWith('group_');

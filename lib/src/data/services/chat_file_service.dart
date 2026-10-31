@@ -171,6 +171,7 @@ class ChatFileService {
     required int size,
     required String fileName,
     int durationMs = 0,
+    Uint8List? thumbnail,
     String? recipientId,
     String? groupId,
   }) async {
@@ -184,6 +185,7 @@ class ChatFileService {
           'size': size,
           'file_name': fileName,
           'duration_ms': durationMs,
+          if (thumbnail != null) 'thumbnail': base64Encode(thumbnail),
           if (recipientId != null) 'recipient_id': recipientId,
           if (groupId != null) 'group_id': groupId,
         },

@@ -96,19 +96,24 @@ const LocalMessageSchema = CollectionSchema(
       name: r'textContent',
       type: IsarType.string,
     ),
-    r'timestamp': PropertySchema(
+    r'thumbnailPath': PropertySchema(
       id: 18,
+      name: r'thumbnailPath',
+      type: IsarType.string,
+    ),
+    r'timestamp': PropertySchema(
+      id: 19,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'type': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'type',
       type: IsarType.byte,
       enumMap: _LocalMessagetypeEnumValueMap,
     ),
     r'waveform': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'waveform',
       type: IsarType.longList,
     ),
@@ -229,6 +234,12 @@ int _localMessageEstimateSize(
     }
   }
   {
+    final value = object.thumbnailPath;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.waveform;
     if (value != null) {
       bytesCount += 3 + value.length * 8;
@@ -261,9 +272,10 @@ void _localMessageSerialize(
   writer.writeString(offsets[15], object.senderId);
   writer.writeByte(offsets[16], object.status.index);
   writer.writeString(offsets[17], object.textContent);
-  writer.writeDateTime(offsets[18], object.timestamp);
-  writer.writeByte(offsets[19], object.type.index);
-  writer.writeLongList(offsets[20], object.waveform);
+  writer.writeString(offsets[18], object.thumbnailPath);
+  writer.writeDateTime(offsets[19], object.timestamp);
+  writer.writeByte(offsets[20], object.type.index);
+  writer.writeLongList(offsets[21], object.waveform);
 }
 
 LocalMessage _localMessageDeserialize(
@@ -294,11 +306,12 @@ LocalMessage _localMessageDeserialize(
       _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[16])] ??
       MessageStatus.sending;
   object.textContent = reader.readStringOrNull(offsets[17]);
-  object.timestamp = reader.readDateTime(offsets[18]);
+  object.thumbnailPath = reader.readStringOrNull(offsets[18]);
+  object.timestamp = reader.readDateTime(offsets[19]);
   object.type =
-      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[19])] ??
+      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[20])] ??
       MessageType.text;
-  object.waveform = reader.readLongList(offsets[20]);
+  object.waveform = reader.readLongList(offsets[21]);
   return object;
 }
 
@@ -348,12 +361,14 @@ P _localMessageDeserializeProp<P>(
     case 17:
       return (reader.readStringOrNull(offset)) as P;
     case 18:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 19:
+      return (reader.readDateTime(offset)) as P;
+    case 20:
       return (_LocalMessagetypeValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageType.text)
           as P;
-    case 20:
+    case 21:
       return (reader.readLongList(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -2734,6 +2749,165 @@ extension LocalMessageQueryFilter
   }
 
   QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'thumbnailPath'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'thumbnailPath'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'thumbnailPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'thumbnailPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'thumbnailPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'thumbnailPath',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'thumbnailPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'thumbnailPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'thumbnailPath',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'thumbnailPath',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'thumbnailPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  thumbnailPathIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'thumbnailPath', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
   timestampEqualTo(DateTime value) {
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
@@ -3205,6 +3379,19 @@ extension LocalMessageQuerySortBy
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByThumbnailPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'thumbnailPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  sortByThumbnailPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'thumbnailPath', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'timestamp', Sort.asc);
@@ -3469,6 +3656,19 @@ extension LocalMessageQuerySortThenBy
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByThumbnailPath() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'thumbnailPath', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy>
+  thenByThumbnailPathDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'thumbnailPath', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'timestamp', Sort.asc);
@@ -3632,6 +3832,17 @@ extension LocalMessageQueryWhereDistinct
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByThumbnailPath({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(
+        r'thumbnailPath',
+        caseSensitive: caseSensitive,
+      );
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByTimestamp() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'timestamp');
@@ -3766,6 +3977,13 @@ extension LocalMessageQueryProperty
   QueryBuilder<LocalMessage, String?, QQueryOperations> textContentProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'textContent');
+    });
+  }
+
+  QueryBuilder<LocalMessage, String?, QQueryOperations>
+  thumbnailPathProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'thumbnailPath');
     });
   }
 
