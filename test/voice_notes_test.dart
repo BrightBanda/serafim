@@ -12,11 +12,13 @@ import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/data/domain/local_chat_room.dart';
 import 'package:serafim/src/data/local/isar_service.dart';
 import 'package:serafim/src/data/models/app_user.dart';
+import 'package:serafim/src/data/services/chat_file_service.dart';
 import 'package:serafim/src/data/services/chat_media_store.dart';
 import 'package:serafim/src/data/services/media_service.dart';
 import 'package:serafim/src/data/services/websocket_service.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/providers/chat_file_providers.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
 import 'package:serafim/src/providers/service_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
@@ -123,6 +125,23 @@ class FakeMedia extends MediaService {
 
   @override
   Future<Uint8List> download(String mediaId) async => Uint8List.fromList([9]);
+}
+
+/// The server's media copy for forwarding (POST /media/{id}/forward).
+class FakeForwarder extends ChatFileService {
+  FakeForwarder() : super(Dio(), Dio());
+  final forwards = <(String mediaId, String? recipientId)>[];
+
+  @override
+  Future<ChatFileUpload> forward(
+    String mediaId, {
+    required String clientId,
+    String? recipientId,
+    String? groupId,
+  }) async {
+    forwards.add((mediaId, recipientId ?? groupId));
+    return ChatFileUpload(id: 'copy-of-$mediaId', uploaded: true);
+  }
 }
 
 class FakeSocket extends WebSocketService {
@@ -262,13 +281,25 @@ void main() {
       expect(c.read(voiceRecorderProvider).active, isFalse);
     });
 
-    test('the length limit stops and sends it', () async {
+    test('the length limit pauses it and warns, without sending', () async {
       VoiceRecorderController.limit = const Duration(milliseconds: 900);
-      final sent = Completer<RecordedVoice>();
-      await rec().start(onLimit: sent.complete);
-      final voice = await sent.future.timeout(const Duration(seconds: 3));
-      expect(voice.durationMs, lessThanOrEqualTo(900));
-      expect(c.read(voiceRecorderProvider).active, isFalse);
+      final warned = Completer<void>();
+      await rec().start(onLimit: warned.complete);
+      await warned.future.timeout(const Duration(seconds: 3));
+
+      // Kept, paused and hands-free, so they can send or delete it.
+      final state = c.read(voiceRecorderProvider);
+      expect(state.phase, RecordingPhase.paused);
+      expect(state.locked, isTrue);
+      expect(rec().atLimit, isTrue);
+
+      // It can't be resumed past the limit.
+      await rec().resume();
+      expect(c.read(voiceRecorderProvider).phase, RecordingPhase.paused);
+
+      final voice = await rec().finish();
+      expect(voice, isNotNull);
+      expect(voice!.durationMs, lessThanOrEqualTo(900));
     });
   });
 
@@ -318,6 +349,7 @@ void main() {
     late ProviderContainer c;
     late FakeMedia media;
     late FakeSocket socket;
+    late FakeForwarder forwarder;
 
     setUpAll(() async {
       if (haveLib) {
@@ -337,6 +369,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       media = FakeMedia();
       socket = FakeSocket();
+      forwarder = FakeForwarder();
       c = ProviderContainer(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -347,6 +380,7 @@ void main() {
           webSocketEventsProvider.overrideWith((ref) => const Stream.empty()),
           webSocketServiceProvider.overrideWithValue(socket),
           mediaServiceProvider.overrideWithValue(media),
+          chatFileServiceProvider.overrideWithValue(forwarder),
           chatMediaStoreProvider.overrideWithValue(TempStore(dir)),
         ],
       );
@@ -432,7 +466,11 @@ void main() {
             .forwardMessage(source: source, recipientId: 'bob');
 
         expect(sent, isTrue);
-        expect(socket.sent.single['media_id'], 'remote-audio');
+        // The server only takes audio uploaded for the chat it is sent in,
+        // so it copies the note into Bob's chat first; nothing is uploaded.
+        expect(forwarder.forwards, [('remote-audio', 'bob')]);
+        expect(socket.sent.single['media_id'], 'copy-of-remote-audio');
+        expect(socket.sent.single['kind'], 'voice');
         expect(media.uploads, isEmpty);
         final forwarded = (await isar.localMessages.where().findAll())
             .singleWhere((message) => message.roomId == 'bob_me');

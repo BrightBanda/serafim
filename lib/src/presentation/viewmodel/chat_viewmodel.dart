@@ -18,6 +18,9 @@ import 'package:serafim/src/presentation/view/official_chat_page.dart';
 import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/providers/official_providers.dart';
 import 'package:serafim/src/providers/voice_providers.dart';
+import 'package:serafim/src/providers/chat_file_providers.dart';
+import 'package:serafim/src/data/services/chat_file_service.dart';
+import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/providers/group_providers.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/data/local/isar_service.dart' show previewTextOf;
@@ -402,9 +405,8 @@ class ChatViewModel extends Notifier<ChatState> {
                 .save(messageId, base64Decode(attachment));
           }
 
-          final isSticker = data['kind'] == 'sticker';
-          final isVoice = data['kind'] == 'voice';
-          final isPost = data['kind'] == 'post';
+          final kind = data['kind'] as String?;
+          final isVoice = kind == 'voice';
           final msg = LocalMessage()
             ..messageId = messageId
             ..roomId = roomId
@@ -414,28 +416,13 @@ class ChatViewModel extends Notifier<ChatState> {
             ..textContent = data['content'] as String?
             ..localMediaPath = mediaPath
             ..replyToId = data['reply_to'] as String?
-            ..type = isSticker
-                ? MessageType.sticker
-                : isPost
-                ? MessageType.post
-                : isVoice
-                ? MessageType.audio
-                : mediaPath != null
-                ? MessageType.image
-                : MessageType.text
-            ..mediaRemoteId = isVoice ? data['media_id'] as String? : null
-            ..durationMs = isVoice ? data['duration_ms'] as int? : null
-            ..waveform = isVoice
-                ? [
-                    for (final v in (data['waveform'] as List? ?? const []))
-                      v as int,
-                  ]
-                : null
+            ..type = messageTypeOfKind(kind, hasAttachment: mediaPath != null)
             ..editedAt = data['edited_at'] != null
                 ? _parseServerTimestamp(data['edited_at'] as String?)
                 : null
             ..status = _statusFromString(data['status'] as String?)
             ..timestamp = parsedTimestamp;
+          _applyMediaFields(msg, data);
           await isar.saveMessage(msg);
 
           // Confirm real, on-device receipt. This is the ONLY signal the
@@ -450,11 +437,7 @@ class ChatViewModel extends Notifier<ChatState> {
             messageId: messageId,
             roomId: roomId,
             senderId: senderId,
-            text: isSticker
-                ? '🙂 Sticker'
-                : isVoice
-                ? '🎤 Voice message'
-                : msg.textContent,
+            text: previewTextOf(msg),
             isImage: mediaPath != null,
           );
           // Fetch the audio now, so it plays instantly (and offline) later.
@@ -661,23 +644,16 @@ class ChatViewModel extends Notifier<ChatState> {
       ..recipientId = gid
       ..textContent = deleted ? null : data['content'] as String?
       ..replyToId = data['reply_to'] as String?
-      ..type = switch (kind) {
-        'sticker' when !deleted => MessageType.sticker,
-        'post' when !deleted => MessageType.post,
-        'voice' when !deleted => MessageType.audio,
-        _ => MessageType.text,
-      }
-      ..mediaRemoteId = kind == 'voice' ? data['media_id'] as String? : null
-      ..durationMs = data['duration_ms'] as int?
-      ..waveform = [
-        for (final v in (data['waveform'] as List? ?? const [])) v as int,
-      ]
+      ..type = deleted
+          ? MessageType.text
+          : messageTypeOfKind(kind, hasAttachment: false)
       ..isDeleted = deleted
       ..editedAt = data['edited_at'] != null
           ? _parseServerTimestamp(data['edited_at'] as String?)
           : null
       ..status = MessageStatus.sent
       ..timestamp = _parseServerTimestamp(data['timestamp'] as String?);
+    if (!deleted) _applyMediaFields(msg, data);
     await isar.saveMessage(msg);
 
     if (msg.type == MessageType.audio && msg.mediaRemoteId != null) {
@@ -788,6 +764,11 @@ class ChatViewModel extends Notifier<ChatState> {
         unawaited(_deliverVoice(msg.messageId));
         continue;
       }
+      if (isChatFile(msg.type)) {
+        // Likewise a video or audio file: every step is safe to repeat.
+        unawaited(_deliverFile(msg.messageId));
+        continue;
+      }
       ref
           .read(webSocketServiceProvider)
           .sendMessage(await _outgoingPayload(msg));
@@ -798,12 +779,20 @@ class ChatViewModel extends Notifier<ChatState> {
     final target = msg.groupId != null
         ? {"group_id": msg.groupId}
         : {"recipient_id": msg.recipientId};
-    if (msg.type == MessageType.audio) {
+    // Voice notes, videos and audio files were uploaded first; the message
+    // only names them. Their local file is never attached.
+    final mediaKind = switch (msg.type) {
+      MessageType.audio => 'voice',
+      MessageType.video => 'video',
+      MessageType.audioFile => 'audio',
+      _ => null,
+    };
+    if (mediaKind != null) {
       return {
         "type": "message",
         "temp_id": msg.messageId,
         ...target,
-        "kind": "voice",
+        "kind": mediaKind,
         "media_id": msg.mediaRemoteId,
         "content": "",
         if (msg.replyToId != null) "reply_to": msg.replyToId,
@@ -970,6 +959,8 @@ class ChatViewModel extends Notifier<ChatState> {
     // sent as it is instead of being uploaded again.
     String? mediaRemoteId,
     bool forwarded = false,
+    // Told why, if the upload fails (e.g. today's allowance is used up).
+    void Function(Object error)? onError,
   }) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -997,7 +988,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ..timestamp = DateTime.now().toUtc();
     await ref.read(isarServiceProvider).saveMessage(msg);
     if (mediaRemoteId == null) {
-      await _deliverVoice(tempId);
+      await _deliverVoice(tempId, onError: onError);
     } else {
       // Already uploaded: just tell the server about it.
       ref
@@ -1007,14 +998,20 @@ class ChatViewModel extends Notifier<ChatState> {
   }
 
   /// Tap-to-retry on a voice note that failed to send.
-  Future<void> retryVoice(String messageId) async {
+  Future<void> retryVoice(
+    String messageId, {
+    void Function(Object error)? onError,
+  }) async {
     await ref
         .read(isarServiceProvider)
         .updateMessageStatus(messageId, MessageStatus.sending);
-    await _deliverVoice(messageId);
+    await _deliverVoice(messageId, onError: onError);
   }
 
-  Future<void> _deliverVoice(String messageId) async {
+  Future<void> _deliverVoice(
+    String messageId, {
+    void Function(Object error)? onError,
+  }) async {
     if (!_voiceInFlight.add(messageId)) return;
     final isar = ref.read(isarServiceProvider);
     final progress = ref.read(voiceUploadProgressProvider.notifier);
@@ -1055,6 +1052,7 @@ class ChatViewModel extends Notifier<ChatState> {
     } catch (error) {
       _log('voice upload failed: $error');
       await isar.updateMessageStatus(messageId, MessageStatus.failed);
+      onError?.call(error);
     } finally {
       progress.clear(messageId);
       _voiceInFlight.remove(messageId);
@@ -1124,10 +1122,19 @@ class ChatViewModel extends Notifier<ChatState> {
         return true;
 
       case MessageType.audio:
-        // The audio is already on the server, so it is sent as it is
-        // rather than uploaded again.
+        // The audio is already on the server. The server only takes audio
+        // uploaded for the chat it is sent in, so it copies it into the new
+        // chat first; nothing is uploaded again.
         final mediaId = source.mediaRemoteId;
         if (mediaId == null) return false;
+        final copy = await ref
+            .read(chatFileServiceProvider)
+            .forward(
+              mediaId,
+              clientId: 'fwd_${DateTime.now().microsecondsSinceEpoch}',
+              recipientId: groupId == null ? recipientId : null,
+              groupId: groupId,
+            );
         await sendVoice(
           roomId: roomId,
           recipientId: recipientId,
@@ -1135,7 +1142,7 @@ class ChatViewModel extends Notifier<ChatState> {
           durationMs: source.durationMs ?? 0,
           waveform: source.waveform ?? const [],
           groupId: groupId,
-          mediaRemoteId: mediaId,
+          mediaRemoteId: copy.id,
           forwarded: true,
         );
         return true;
@@ -1158,8 +1165,255 @@ class ChatViewModel extends Notifier<ChatState> {
         return true;
 
       case MessageType.video:
-        return false;
+      case MessageType.audioFile:
+        return _forwardFile(
+          source,
+          roomId: roomId,
+          recipientId: recipientId,
+          groupId: groupId,
+        );
     }
+  }
+
+  // ------------------------------------------------- videos and audio files
+
+  final Set<String> _filesInFlight = {};
+
+  /// Sends a video or audio file: copied into chat storage and shown at once
+  /// (with upload progress), uploaded straight to storage, then announced
+  /// over the socket.
+  ///
+  /// Returns once the message is saved and showing; the upload carries on in
+  /// the background. If it fails, the message shows as failed with
+  /// tap-to-retry, and [onError] gets the reason (the server refused it, the
+  /// connection dropped…).
+  Future<void> sendFile({
+    required String roomId,
+    required String recipientId,
+    required PickedChatFile file,
+    String? replyToId,
+    String? groupId,
+    void Function(Object error)? onError,
+  }) async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+    if (file.size > maxChatFileBytes) {
+      throw const ApiException('Videos and audio files can be up to 35 MB.');
+    }
+    final tempId = DateTime.now().microsecondsSinceEpoch.toString();
+    final stored = await ref
+        .read(chatMediaStoreProvider)
+        .copyIn(
+          tempId,
+          file.path,
+          extension: chatFileExtension(file.name, file.kind),
+        );
+
+    final msg = LocalMessage()
+      ..messageId = tempId
+      ..roomId = roomId
+      ..senderId = user.id
+      ..recipientId = recipientId
+      ..groupId = groupId
+      ..textContent = ''
+      ..localMediaPath = stored
+      ..fileName = file.name
+      ..fileSize = file.size
+      ..durationMs = file.durationMs
+      ..replyToId = replyToId
+      ..type = file.kind == ChatFileKind.video
+          ? MessageType.video
+          : MessageType.audioFile
+      ..status = MessageStatus.sending
+      ..timestamp = DateTime.now().toUtc();
+    await ref.read(isarServiceProvider).saveMessage(msg);
+    unawaited(_deliverFile(tempId, onError: onError));
+  }
+
+  /// Tap-to-retry on a video or audio file that failed to send.
+  Future<void> retryFile(
+    String messageId, {
+    void Function(Object error)? onError,
+  }) async {
+    await ref
+        .read(isarServiceProvider)
+        .updateMessageStatus(messageId, MessageStatus.sending);
+    await _deliverFile(messageId, onError: onError);
+  }
+
+  Future<void> _deliverFile(
+    String messageId, {
+    void Function(Object error)? onError,
+  }) async {
+    if (!_filesInFlight.add(messageId)) return;
+    final isar = ref.read(isarServiceProvider);
+    final transfers = ref.read(fileTransfersProvider.notifier);
+    try {
+      var msg = await isar.getMessageById(messageId);
+      if (msg == null || !isChatFile(msg.type)) return;
+      if (msg.status != MessageStatus.sending) return; // Already through.
+
+      if (msg.mediaRemoteId == null) {
+        final path = msg.localMediaPath;
+        if (path == null || !await File(path).exists()) {
+          await isar.updateMessageStatus(messageId, MessageStatus.failed);
+          return;
+        }
+        final kind = msg.type == MessageType.video
+            ? ChatFileKind.video
+            : ChatFileKind.audio;
+        // The stored copy always has a usable extension.
+        final contentType =
+            chatFileContentType(msg.fileName ?? '', kind) ??
+            chatFileContentType(path, kind);
+        if (contentType == null) {
+          throw const ApiException("That file type can't be sent.");
+        }
+        final service = ref.read(chatFileServiceProvider);
+        transfers.set(messageId, FileTransferDirection.upload, 0);
+        // The temp id is the client id: every step below, repeated after a
+        // failure, continues the same upload instead of starting another.
+        var upload = await service.announce(
+          clientId: messageId,
+          kind: kind,
+          contentType: contentType,
+          size: await File(path).length(),
+          fileName: msg.fileName ?? path.split('/').last,
+          durationMs: msg.durationMs ?? 0,
+          recipientId: msg.groupId == null ? msg.recipientId : null,
+          groupId: msg.groupId,
+        );
+        if (!upload.uploaded) {
+          final uploadPath = upload.uploadPath;
+          if (uploadPath == null) {
+            throw const ApiException('The server sent an unexpected response.');
+          }
+          await service.upload(
+            clientId: messageId,
+            path: path,
+            uploadPath: uploadPath,
+            contentType: contentType,
+            onProgress: (p) =>
+                transfers.set(messageId, FileTransferDirection.upload, p),
+          );
+          upload = await service.complete(upload.id);
+        }
+        await isar.updateMedia(messageId, mediaRemoteId: upload.id);
+        msg = await isar.getMessageById(messageId);
+        if (msg == null) return;
+      }
+      // Offline: it stays "sending" and goes out on reconnect. The server
+      // ignores a repeat of the same temp id.
+      ref
+          .read(webSocketServiceProvider)
+          .sendMessage(await _outgoingPayload(msg));
+    } catch (error) {
+      _log('file upload failed: $error');
+      await isar.updateMessageStatus(messageId, MessageStatus.failed);
+      onError?.call(error);
+    } finally {
+      transfers.clear(messageId);
+      _filesInFlight.remove(messageId);
+    }
+  }
+
+  /// Fetches a video or audio file someone sent. Files can be large, so this
+  /// only happens when the person asks. Returns whether it is now on this
+  /// device.
+  Future<bool> downloadFile(String messageId) async {
+    final isar = ref.read(isarServiceProvider);
+    final msg = await isar.getMessageById(messageId);
+    if (msg == null || msg.mediaRemoteId == null || !isChatFile(msg.type)) {
+      return false;
+    }
+    final existing = msg.localMediaPath;
+    if (existing != null && await File(existing).exists()) return true;
+    if (!_downloading.add(messageId)) return false;
+    final transfers = ref.read(fileTransfersProvider.notifier);
+    try {
+      final kind = msg.type == MessageType.video
+          ? ChatFileKind.video
+          : ChatFileKind.audio;
+      final path = await ref
+          .read(chatMediaStoreProvider)
+          .pathFor(messageId, extension: chatFileExtension(msg.fileName, kind));
+      transfers.set(messageId, FileTransferDirection.download, 0);
+      await ref
+          .read(chatFileServiceProvider)
+          .download(
+            msg.mediaRemoteId!,
+            path,
+            onProgress: (p) =>
+                transfers.set(messageId, FileTransferDirection.download, p),
+          );
+      await isar.updateMedia(messageId, localMediaPath: path);
+      return true;
+    } catch (error) {
+      _log('file download failed: $error');
+      return false;
+    } finally {
+      _downloading.remove(messageId);
+      transfers.clear(messageId);
+    }
+  }
+
+  /// Forwards a video or audio file: the server copies it into the other
+  /// chat, so nothing is uploaded again.
+  Future<bool> _forwardFile(
+    LocalMessage source, {
+    required String roomId,
+    required String recipientId,
+    String? groupId,
+  }) async {
+    final user = ref.read(currentUserProvider);
+    final mediaId = source.mediaRemoteId;
+    if (user == null || mediaId == null) return false;
+    final tempId = DateTime.now().microsecondsSinceEpoch.toString();
+    final copy = await ref
+        .read(chatFileServiceProvider)
+        .forward(
+          mediaId,
+          clientId: tempId,
+          recipientId: groupId == null ? recipientId : null,
+          groupId: groupId,
+        );
+
+    // Each message owns its local file (deleting a message deletes its
+    // file), so the forwarded one gets its own copy when there is one.
+    String? localPath;
+    final sourcePath = source.localMediaPath;
+    if (sourcePath != null && await File(sourcePath).exists()) {
+      final kind = source.type == MessageType.video
+          ? ChatFileKind.video
+          : ChatFileKind.audio;
+      localPath = await ref
+          .read(chatMediaStoreProvider)
+          .copyIn(
+            tempId,
+            sourcePath,
+            extension: chatFileExtension(source.fileName, kind),
+          );
+    }
+
+    final msg = LocalMessage()
+      ..messageId = tempId
+      ..roomId = roomId
+      ..senderId = user.id
+      ..recipientId = recipientId
+      ..groupId = groupId
+      ..textContent = ''
+      ..localMediaPath = localPath
+      ..mediaRemoteId = copy.id
+      ..fileName = source.fileName
+      ..fileSize = source.fileSize
+      ..durationMs = source.durationMs
+      ..forwarded = true
+      ..type = source.type
+      ..status = MessageStatus.sending
+      ..timestamp = DateTime.now().toUtc();
+    await ref.read(isarServiceProvider).saveMessage(msg);
+    ref.read(webSocketServiceProvider).sendMessage(await _outgoingPayload(msg));
+    return true;
   }
 
   final Set<String> _downloading = {};
@@ -1298,4 +1552,40 @@ DateTime parseServerTimestamp(String? raw) {
       raw.endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(raw);
   final normalized = hasOffset ? raw : '${raw}Z';
   return DateTime.tryParse(normalized)?.toUtc() ?? DateTime.now().toUtc();
+}
+
+/// The local message type for a message of the server's [kind].
+@visibleForTesting
+MessageType messageTypeOfKind(String? kind, {required bool hasAttachment}) =>
+    switch (kind) {
+      'sticker' => MessageType.sticker,
+      'post' => MessageType.post,
+      'voice' => MessageType.audio,
+      'video' => MessageType.video,
+      'audio' => MessageType.audioFile,
+      _ => hasAttachment ? MessageType.image : MessageType.text,
+    };
+
+/// Copies what the server says about a message's uploaded media (voice note,
+/// video or audio file) onto [msg].
+void _applyMediaFields(LocalMessage msg, Map<String, dynamic> data) {
+  final mediaId = data['media_id'] as String?;
+  switch (msg.type) {
+    case MessageType.audio:
+      msg
+        ..mediaRemoteId = mediaId
+        ..durationMs = data['duration_ms'] as int?
+        ..waveform = [
+          for (final v in (data['waveform'] as List? ?? const [])) v as int,
+        ];
+    case MessageType.video || MessageType.audioFile:
+      final duration = data['duration_ms'] as int?;
+      msg
+        ..mediaRemoteId = mediaId
+        ..durationMs = duration == null || duration <= 0 ? null : duration
+        ..fileName = data['file_name'] as String?
+        ..fileSize = (data['size'] as num?)?.toInt();
+    default:
+      break;
+  }
 }

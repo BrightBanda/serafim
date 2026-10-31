@@ -14,6 +14,7 @@ class ChatInputBar extends StatelessWidget {
     this.onAttach,
     this.onScribble,
     this.attachDisabledReason,
+    this.scribbleDisabledReason,
     this.attachBusy = false,
     this.replyPreview,
     this.onStickers,
@@ -65,12 +66,18 @@ class ChatInputBar extends StatelessWidget {
   /// reason instead of picking a file. (The server enforces the rule too.)
   final String? attachDisabledReason;
 
+  /// Holds back just the scribble button (a scribble is a picture, which
+  /// some chats can't take even when videos and audio can). Defaults to
+  /// [attachDisabledReason].
+  final String? scribbleDisabledReason;
+
   /// A photo is being prepared or sent: the attach button shows a spinner and
   /// ignores taps.
   final bool attachBusy;
 
   @override
   Widget build(BuildContext context) {
+    final scribbleReason = scribbleDisabledReason ?? attachDisabledReason;
     final bar = Container(
       // The extra bottom padding lifts the bar clear of the screen edge.
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
@@ -134,13 +141,11 @@ class ChatInputBar extends StatelessWidget {
                 key: const ValueKey('scribble-button'),
                 onTap: attachBusy
                     ? null
-                    : attachDisabledReason == null
+                    : scribbleReason == null
                     ? onScribble
                     : () => ScaffoldMessenger.of(context)
                         ..clearSnackBars()
-                        ..showSnackBar(
-                          SnackBar(content: Text(attachDisabledReason!)),
-                        ),
+                        ..showSnackBar(SnackBar(content: Text(scribbleReason))),
                 child: Container(
                   width: 38,
                   height: 38,
@@ -151,7 +156,7 @@ class ChatInputBar extends StatelessWidget {
                   child: Icon(
                     Icons.draw_outlined,
                     size: 18,
-                    color: attachDisabledReason == null
+                    color: scribbleReason == null
                         ? AppColors.textDim
                         : AppColors.lineSoft,
                   ),

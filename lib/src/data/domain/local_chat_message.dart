@@ -3,9 +3,10 @@ import 'package:isar_community/isar.dart';
 part 'local_chat_message.g.dart';
 
 /// New values go at the END: the index is what is stored on the device.
-/// `audio` is a voice note; `sticker` keeps its sticker id in [textContent].
+/// `audio` is a voice note; `audioFile` is a music/audio file someone picked
+/// (MP3, M4A, …); `sticker` keeps its sticker id in [textContent].
 /// Stored by position: add new kinds at the end only.
-enum MessageType { text, image, video, audio, sticker, post }
+enum MessageType { text, image, video, audio, sticker, post, audioFile }
 
 enum MessageStatus { sending, sent, delivered, read, failed }
 
@@ -42,11 +43,19 @@ class LocalMessage {
   /// Set when the sender edited the text after sending.
   DateTime? editedAt;
 
-  /// Voice notes: the server's media id, once uploaded.
+  /// Voice notes, videos and audio files: the server's media id, once
+  /// uploaded.
   String? mediaRemoteId;
 
-  /// Voice notes: length in milliseconds.
+  /// Voice notes (and videos/audio files when known): length in
+  /// milliseconds.
   int? durationMs;
+
+  /// Videos and audio files: the name it had on the sender's device.
+  String? fileName;
+
+  /// Videos and audio files: size in bytes, shown before downloading.
+  int? fileSize;
 
   /// Voice notes: a coarse loudness outline (0–31 per bar) for the waveform.
   List<int>? waveform;
@@ -74,3 +83,8 @@ class LocalMessage {
   @Index()
   late DateTime timestamp;
 }
+
+/// Whether [type] is a video or audio file (uploaded to storage, fetched on
+/// request), as opposed to a voice note or a picture.
+bool isChatFile(MessageType type) =>
+    type == MessageType.video || type == MessageType.audioFile;

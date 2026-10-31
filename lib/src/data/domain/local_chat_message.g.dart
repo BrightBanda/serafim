@@ -27,82 +27,88 @@ const LocalMessageSchema = CollectionSchema(
       name: r'editedAt',
       type: IsarType.dateTime,
     ),
-    r'forwarded': PropertySchema(
+    r'fileName': PropertySchema(
       id: 2,
+      name: r'fileName',
+      type: IsarType.string,
+    ),
+    r'fileSize': PropertySchema(id: 3, name: r'fileSize', type: IsarType.long),
+    r'forwarded': PropertySchema(
+      id: 4,
       name: r'forwarded',
       type: IsarType.bool,
     ),
-    r'groupId': PropertySchema(id: 3, name: r'groupId', type: IsarType.string),
+    r'groupId': PropertySchema(id: 5, name: r'groupId', type: IsarType.string),
     r'isDeleted': PropertySchema(
-      id: 4,
+      id: 6,
       name: r'isDeleted',
       type: IsarType.bool,
     ),
     r'isHiddenForMe': PropertySchema(
-      id: 5,
+      id: 7,
       name: r'isHiddenForMe',
       type: IsarType.bool,
     ),
     r'localMediaPath': PropertySchema(
-      id: 6,
+      id: 8,
       name: r'localMediaPath',
       type: IsarType.string,
     ),
     r'mediaRemoteId': PropertySchema(
-      id: 7,
+      id: 9,
       name: r'mediaRemoteId',
       type: IsarType.string,
     ),
     r'messageId': PropertySchema(
-      id: 8,
+      id: 10,
       name: r'messageId',
       type: IsarType.string,
     ),
     r'readAckPending': PropertySchema(
-      id: 9,
+      id: 11,
       name: r'readAckPending',
       type: IsarType.bool,
     ),
     r'recipientId': PropertySchema(
-      id: 10,
+      id: 12,
       name: r'recipientId',
       type: IsarType.string,
     ),
     r'replyToId': PropertySchema(
-      id: 11,
+      id: 13,
       name: r'replyToId',
       type: IsarType.string,
     ),
-    r'roomId': PropertySchema(id: 12, name: r'roomId', type: IsarType.string),
+    r'roomId': PropertySchema(id: 14, name: r'roomId', type: IsarType.string),
     r'senderId': PropertySchema(
-      id: 13,
+      id: 15,
       name: r'senderId',
       type: IsarType.string,
     ),
     r'status': PropertySchema(
-      id: 14,
+      id: 16,
       name: r'status',
       type: IsarType.byte,
       enumMap: _LocalMessagestatusEnumValueMap,
     ),
     r'textContent': PropertySchema(
-      id: 15,
+      id: 17,
       name: r'textContent',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 16,
+      id: 18,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'type': PropertySchema(
-      id: 17,
+      id: 19,
       name: r'type',
       type: IsarType.byte,
       enumMap: _LocalMessagetypeEnumValueMap,
     ),
     r'waveform': PropertySchema(
-      id: 18,
+      id: 20,
       name: r'waveform',
       type: IsarType.longList,
     ),
@@ -183,6 +189,12 @@ int _localMessageEstimateSize(
 ) {
   var bytesCount = offsets.last;
   {
+    final value = object.fileName;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
+  {
     final value = object.groupId;
     if (value != null) {
       bytesCount += 3 + value.length * 3;
@@ -233,23 +245,25 @@ void _localMessageSerialize(
 ) {
   writer.writeLong(offsets[0], object.durationMs);
   writer.writeDateTime(offsets[1], object.editedAt);
-  writer.writeBool(offsets[2], object.forwarded);
-  writer.writeString(offsets[3], object.groupId);
-  writer.writeBool(offsets[4], object.isDeleted);
-  writer.writeBool(offsets[5], object.isHiddenForMe);
-  writer.writeString(offsets[6], object.localMediaPath);
-  writer.writeString(offsets[7], object.mediaRemoteId);
-  writer.writeString(offsets[8], object.messageId);
-  writer.writeBool(offsets[9], object.readAckPending);
-  writer.writeString(offsets[10], object.recipientId);
-  writer.writeString(offsets[11], object.replyToId);
-  writer.writeString(offsets[12], object.roomId);
-  writer.writeString(offsets[13], object.senderId);
-  writer.writeByte(offsets[14], object.status.index);
-  writer.writeString(offsets[15], object.textContent);
-  writer.writeDateTime(offsets[16], object.timestamp);
-  writer.writeByte(offsets[17], object.type.index);
-  writer.writeLongList(offsets[18], object.waveform);
+  writer.writeString(offsets[2], object.fileName);
+  writer.writeLong(offsets[3], object.fileSize);
+  writer.writeBool(offsets[4], object.forwarded);
+  writer.writeString(offsets[5], object.groupId);
+  writer.writeBool(offsets[6], object.isDeleted);
+  writer.writeBool(offsets[7], object.isHiddenForMe);
+  writer.writeString(offsets[8], object.localMediaPath);
+  writer.writeString(offsets[9], object.mediaRemoteId);
+  writer.writeString(offsets[10], object.messageId);
+  writer.writeBool(offsets[11], object.readAckPending);
+  writer.writeString(offsets[12], object.recipientId);
+  writer.writeString(offsets[13], object.replyToId);
+  writer.writeString(offsets[14], object.roomId);
+  writer.writeString(offsets[15], object.senderId);
+  writer.writeByte(offsets[16], object.status.index);
+  writer.writeString(offsets[17], object.textContent);
+  writer.writeDateTime(offsets[18], object.timestamp);
+  writer.writeByte(offsets[19], object.type.index);
+  writer.writeLongList(offsets[20], object.waveform);
 }
 
 LocalMessage _localMessageDeserialize(
@@ -261,28 +275,30 @@ LocalMessage _localMessageDeserialize(
   final object = LocalMessage();
   object.durationMs = reader.readLongOrNull(offsets[0]);
   object.editedAt = reader.readDateTimeOrNull(offsets[1]);
-  object.forwarded = reader.readBool(offsets[2]);
-  object.groupId = reader.readStringOrNull(offsets[3]);
+  object.fileName = reader.readStringOrNull(offsets[2]);
+  object.fileSize = reader.readLongOrNull(offsets[3]);
+  object.forwarded = reader.readBool(offsets[4]);
+  object.groupId = reader.readStringOrNull(offsets[5]);
   object.id = id;
-  object.isDeleted = reader.readBool(offsets[4]);
-  object.isHiddenForMe = reader.readBool(offsets[5]);
-  object.localMediaPath = reader.readStringOrNull(offsets[6]);
-  object.mediaRemoteId = reader.readStringOrNull(offsets[7]);
-  object.messageId = reader.readString(offsets[8]);
-  object.readAckPending = reader.readBool(offsets[9]);
-  object.recipientId = reader.readString(offsets[10]);
-  object.replyToId = reader.readStringOrNull(offsets[11]);
-  object.roomId = reader.readString(offsets[12]);
-  object.senderId = reader.readString(offsets[13]);
+  object.isDeleted = reader.readBool(offsets[6]);
+  object.isHiddenForMe = reader.readBool(offsets[7]);
+  object.localMediaPath = reader.readStringOrNull(offsets[8]);
+  object.mediaRemoteId = reader.readStringOrNull(offsets[9]);
+  object.messageId = reader.readString(offsets[10]);
+  object.readAckPending = reader.readBool(offsets[11]);
+  object.recipientId = reader.readString(offsets[12]);
+  object.replyToId = reader.readStringOrNull(offsets[13]);
+  object.roomId = reader.readString(offsets[14]);
+  object.senderId = reader.readString(offsets[15]);
   object.status =
-      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[14])] ??
+      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[16])] ??
       MessageStatus.sending;
-  object.textContent = reader.readStringOrNull(offsets[15]);
-  object.timestamp = reader.readDateTime(offsets[16]);
+  object.textContent = reader.readStringOrNull(offsets[17]);
+  object.timestamp = reader.readDateTime(offsets[18]);
   object.type =
-      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[17])] ??
+      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[19])] ??
       MessageType.text;
-  object.waveform = reader.readLongList(offsets[18]);
+  object.waveform = reader.readLongList(offsets[20]);
   return object;
 }
 
@@ -298,42 +314,46 @@ P _localMessageDeserializeProp<P>(
     case 1:
       return (reader.readDateTimeOrNull(offset)) as P;
     case 2:
-      return (reader.readBool(offset)) as P;
-    case 3:
       return (reader.readStringOrNull(offset)) as P;
+    case 3:
+      return (reader.readLongOrNull(offset)) as P;
     case 4:
       return (reader.readBool(offset)) as P;
     case 5:
-      return (reader.readBool(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 6:
-      return (reader.readStringOrNull(offset)) as P;
-    case 7:
-      return (reader.readStringOrNull(offset)) as P;
-    case 8:
-      return (reader.readString(offset)) as P;
-    case 9:
       return (reader.readBool(offset)) as P;
+    case 7:
+      return (reader.readBool(offset)) as P;
+    case 8:
+      return (reader.readStringOrNull(offset)) as P;
+    case 9:
+      return (reader.readStringOrNull(offset)) as P;
     case 10:
       return (reader.readString(offset)) as P;
     case 11:
-      return (reader.readStringOrNull(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 12:
       return (reader.readString(offset)) as P;
     case 13:
-      return (reader.readString(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 14:
+      return (reader.readString(offset)) as P;
+    case 15:
+      return (reader.readString(offset)) as P;
+    case 16:
       return (_LocalMessagestatusValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageStatus.sending)
           as P;
-    case 15:
-      return (reader.readStringOrNull(offset)) as P;
-    case 16:
-      return (reader.readDateTime(offset)) as P;
     case 17:
+      return (reader.readStringOrNull(offset)) as P;
+    case 18:
+      return (reader.readDateTime(offset)) as P;
+    case 19:
       return (_LocalMessagetypeValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageType.text)
           as P;
-    case 18:
+    case 20:
       return (reader.readLongList(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -361,6 +381,7 @@ const _LocalMessagetypeEnumValueMap = {
   'audio': 3,
   'sticker': 4,
   'post': 5,
+  'audioFile': 6,
 };
 const _LocalMessagetypeValueEnumMap = {
   0: MessageType.text,
@@ -369,6 +390,7 @@ const _LocalMessagetypeValueEnumMap = {
   3: MessageType.audio,
   4: MessageType.sticker,
   5: MessageType.post,
+  6: MessageType.audioFile,
 };
 
 Id _localMessageGetId(LocalMessage object) {
@@ -958,6 +980,238 @@ extension LocalMessageQueryFilter
       return query.addFilterCondition(
         FilterCondition.between(
           property: r'editedAt',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'fileName'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'fileName'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameEqualTo(String? value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'fileName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'fileName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'fileName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'fileName',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'fileName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'fileName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'fileName',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'fileName',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'fileName', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileNameIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'fileName', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileSizeIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'fileSize'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileSizeIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'fileSize'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileSizeEqualTo(int? value) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'fileSize', value: value),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileSizeGreaterThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'fileSize',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileSizeLessThan(int? value, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'fileSize',
+          value: value,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  fileSizeBetween(
+    int? lower,
+    int? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'fileSize',
           lower: lower,
           includeLower: includeLower,
           upper: upper,
@@ -2751,6 +3005,30 @@ extension LocalMessageQuerySortBy
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByFileName() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileName', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByFileNameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileName', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByFileSize() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileSize', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByFileSizeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileSize', Sort.desc);
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> sortByForwarded() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'forwarded', Sort.asc);
@@ -2976,6 +3254,30 @@ extension LocalMessageQuerySortThenBy
   QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByEditedAtDesc() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'editedAt', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByFileName() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileName', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByFileNameDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileName', Sort.desc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByFileSize() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileSize', Sort.asc);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterSortBy> thenByFileSizeDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'fileSize', Sort.desc);
     });
   }
 
@@ -3206,6 +3508,20 @@ extension LocalMessageQueryWhereDistinct
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByFileName({
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'fileName', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByFileSize() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'fileSize');
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByForwarded() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'forwarded');
@@ -3352,6 +3668,18 @@ extension LocalMessageQueryProperty
   QueryBuilder<LocalMessage, DateTime?, QQueryOperations> editedAtProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'editedAt');
+    });
+  }
+
+  QueryBuilder<LocalMessage, String?, QQueryOperations> fileNameProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fileName');
+    });
+  }
+
+  QueryBuilder<LocalMessage, int?, QQueryOperations> fileSizeProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'fileSize');
     });
   }
 

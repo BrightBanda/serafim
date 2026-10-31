@@ -33,6 +33,24 @@ class ChatMediaStore {
     return file.path;
   }
 
+  /// Copies a picked video or audio file into chat storage as
+  /// `<messageId>.<extension>`, streaming it (videos can be large). The
+  /// original stays where the person keeps it.
+  Future<String> copyIn(
+    String messageId,
+    String sourcePath, {
+    required String extension,
+  }) async {
+    final dir = await _dir();
+    return (await File(
+      sourcePath,
+    ).copy('${dir.path}/$messageId.$extension')).path;
+  }
+
+  /// Where a downloaded file for [messageId] goes.
+  Future<String> pathFor(String messageId, {required String extension}) async =>
+      '${(await _dir()).path}/$messageId.$extension';
+
   /// Moves a finished recording into chat storage as `<messageId>.m4a`.
   Future<String> adoptRecording(String messageId, String tempPath) async {
     final dir = await _dir();

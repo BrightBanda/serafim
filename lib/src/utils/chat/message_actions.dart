@@ -12,8 +12,12 @@ enum MessageAction { copy, download, edit, delete, reply, forward, save }
 /// - Replying to and forwarding both need a message the server has
 ///   accepted, so they are offered together and never for a message that is
 ///   still sending, has failed, or has been deleted.
-/// - [MessageAction.save] is offered for confirmed sticker messages and GIFs
-///   so the media can be added to a collection.
+/// - [MessageAction.save] (to a collection) is offered for confirmed
+///   stickers, GIFs, videos and audio files.
+/// - Videos and audio files ([isFile]) are fetched only when asked, so saving
+///   them (to the device or a collection) waits until [fileOnDevice]. They
+///   can still be replied to and forwarded before that: forwarding copies
+///   them on the server.
 List<MessageAction> availableMessageActions({
   required bool isOutgoing,
   required bool isDeleted,
@@ -21,15 +25,18 @@ List<MessageAction> availableMessageActions({
   required bool isImage,
   required bool isGif,
   required bool isSticker,
+  required bool isFile,
+  required bool fileOnDevice,
   required bool isConfirmed,
 }) {
   if (isDeleted) return const [MessageAction.delete];
+  final fileReady = isFile && fileOnDevice;
   return [
     if (hasText) MessageAction.copy,
-    if (isImage) MessageAction.download,
-    if (isOutgoing && !isImage && isConfirmed) MessageAction.edit,
+    if (isImage || fileReady) MessageAction.download,
+    if (isOutgoing && !isImage && !isFile && isConfirmed) MessageAction.edit,
     if (isConfirmed) ...[MessageAction.reply, MessageAction.forward],
-    if ((isSticker || isGif) && isConfirmed) MessageAction.save,
+    if ((isSticker || isGif || fileReady) && isConfirmed) MessageAction.save,
     MessageAction.delete,
   ];
 }

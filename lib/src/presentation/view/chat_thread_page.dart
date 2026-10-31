@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -44,6 +43,12 @@ import 'package:serafim/src/utils/image_shrink.dart';
 import 'package:serafim/src/utils/stickers/sticker_message.dart';
 import 'package:serafim/src/utils/stickers/sticker_packs.dart';
 import 'package:serafim/src/utils/stickers/sticker_picker.dart';
+import 'package:serafim/src/utils/stickers/collection_sheets.dart';
+import 'package:serafim/src/utils/chat/chat_file_view.dart';
+import 'package:serafim/src/utils/chat_file_picking.dart';
+import 'package:serafim/src/data/services/chat_file_service.dart';
+import 'package:serafim/src/providers/chat_file_providers.dart';
+import 'package:serafim/src/presentation/view/video_player_page.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/data/models/sticker_collection.dart';
 import 'package:serafim/src/presentation/view/group_info_page.dart';
@@ -242,11 +247,185 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     ref.read(chatViewModelProvider.notifier).markRoomRead(_roomId);
   }
 
-  Future<void> _handleAttach() async {
-    final currentUser = ref.read(currentUserProvider);
-    if (currentUser == null) return;
+  /// Today's upload allowance, as last fetched (when the attach sheet
+  /// opened). Only used to warn early: the server has the final say.
+  ChatFileQuota? _quota;
 
+  Future<ChatFileQuota?> _loadQuota() async {
+    try {
+      final quota = await ref.read(chatFileServiceProvider).quota();
+      if (mounted) _quota = quota;
+      return quota;
+    } catch (_) {
+      return null; // Offline or old server: the upload itself will tell.
+    }
+  }
+
+  String _sizeLimitText(ChatFileQuota? quota) {
+    final perFile =
+        'Up to ${formatFileSize(quota?.maxFile ?? maxChatFileBytes)}';
+    if (quota == null) return perFile;
+    return '$perFile · ${formatFileSize(quota.remaining)} left today';
+  }
+
+  /// The paperclip: a photo, a video or an audio file. Photos can't go to
+  /// groups yet (the server relays them to one person only); videos and
+  /// audio go through storage, so they can.
+  Future<void> _handleAttach() async {
+    if (ref.read(currentUserProvider) == null || _attaching) return;
+    final photosBlocked = widget.groupId != null;
+    final quota = _loadQuota();
+
+    Widget option(
+      BuildContext ctx,
+      IconData icon,
+      String title,
+      String subtitle,
+      String value, {
+      bool enabled = true,
+    }) => ListTile(
+      enabled: enabled,
+      leading: Icon(icon, color: enabled ? AppColors.text : AppColors.lineSoft),
+      title: Text(title, style: AppTextStyles.body),
+      subtitle: Text(subtitle, style: AppTextStyles.smallDim),
+      onTap: () => Navigator.pop(ctx, value),
+    );
+
+    final choice = await showSettledSheet<String>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            option(
+              ctx,
+              Icons.photo_library_outlined,
+              'Photo',
+              photosBlocked
+                  ? "Photos can't be shared in groups yet"
+                  : 'From your gallery or camera',
+              'photo',
+              enabled: !photosBlocked,
+            ),
+            FutureBuilder<ChatFileQuota?>(
+              future: quota,
+              builder: (_, snap) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  option(
+                    ctx,
+                    Icons.movie_outlined,
+                    'Video',
+                    _sizeLimitText(snap.data),
+                    'video',
+                  ),
+                  option(
+                    ctx,
+                    Icons.audiotrack_outlined,
+                    'Audio file',
+                    'MP3, M4A, WAV… ${_sizeLimitText(snap.data).toLowerCase()}',
+                    'audio',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case 'photo':
+        await _attachPhotos();
+      case 'video':
+        await _attachFile(ChatFileKind.video);
+      case 'audio':
+        await _attachFile(ChatFileKind.audio);
+    }
+  }
+
+  Future<void> _attachFile(ChatFileKind kind) async {
+    final PickedChatFile? file;
+    try {
+      file = await pickChatFile(kind);
+    } on ChatFilePickException catch (e) {
+      _toast(e.message, error: true);
+      return;
+    } catch (error) {
+      _toast(
+        humanError(error, fallback: "Couldn't open that file."),
+        error: true,
+      );
+      return;
+    }
+    if (file == null || !mounted) return;
+    await _sendFile(file);
+  }
+
+  /// Sends a video or audio file. Only copying it into the chat holds the
+  /// composer up; the upload shows its progress in the bubble.
+  Future<void> _sendFile(PickedChatFile file) async {
     if (_attaching) return;
+    final quota = _quota;
+    if (quota != null && file.size > quota.remaining) {
+      final resets = MaterialLocalizations.of(
+        context,
+      ).formatTimeOfDay(TimeOfDay.fromDateTime(quota.resetsAt.toLocal()));
+      _toast(
+        quota.remaining == 0
+            ? "You've used today's ${formatFileSize(quota.limit)} for videos, "
+                  'audio and voice messages. It resets at $resets.'
+            : 'That file is ${formatFileSize(file.size)}, but you have '
+                  '${formatFileSize(quota.remaining)} left today. It resets '
+                  'at $resets.',
+        error: true,
+      );
+      return;
+    }
+    // Stale after this send; fetched again when the sheet next opens.
+    _quota = null;
+    setState(() => _attaching = true);
+    try {
+      await ref
+          .read(chatViewModelProvider.notifier)
+          .sendFile(
+            roomId: _roomId,
+            recipientId: widget.recipientId,
+            groupId: widget.groupId,
+            file: file,
+            replyToId: _reply.value?.messageId,
+            onError: _mediaSendFailed,
+          );
+      _reply.clear();
+      _scheduleScrollToBottom();
+    } catch (error) {
+      _mediaSendFailed(error);
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+  }
+
+  void _mediaSendFailed(Object error) {
+    if (!mounted) return;
+    _toast(humanError(error, fallback: "Couldn't send that."), error: true);
+  }
+
+  Future<void> _downloadFile(LocalMessage message) async {
+    final ok = await ref
+        .read(chatViewModelProvider.notifier)
+        .downloadFile(message.messageId);
+    if (!ok && mounted) {
+      _toast(
+        "Couldn't download that. Check your connection and try again.",
+        error: true,
+      );
+    }
+  }
+
+  Future<void> _attachPhotos() async {
+    if (ref.read(currentUserProvider) == null || _attaching) return;
     final quality = ref.read(settingsProvider).imageQuality;
     try {
       final photos = await pickShrunkImages(
@@ -491,211 +670,85 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       );
   }
 
-  /// Exports a received/sent image to the gallery or Downloads folder.
-  Future<void> _saveImage(LocalMessage message, String senderLabel) async {
+  /// Exports a picture, video or audio file to where the person keeps such
+  /// things: the gallery for pictures and videos (Downloads on desktop), a
+  /// place they choose for audio.
+  Future<void> _saveToDevice(LocalMessage message, String senderLabel) async {
     final path = message.localMediaPath;
     if (path == null) return;
-
-    _toast('Saving image…');
+    final downloads = ref.read(attachmentDownloadServiceProvider);
     try {
-      final where = await ref
-          .read(attachmentDownloadServiceProvider)
-          .saveImage(path, senderLabel: senderLabel, sentAt: message.timestamp);
-      _toast(where);
+      final String? where;
+      switch (message.type) {
+        case MessageType.video:
+          _toast('Saving video…');
+          where = await downloads.saveVideo(
+            path,
+            senderLabel: senderLabel,
+            sentAt: message.timestamp,
+          );
+        case MessageType.audioFile:
+          where = await downloads.saveAudio(
+            path,
+            fileName: message.fileName ?? path.split('/').last,
+          );
+        default:
+          _toast('Saving image…');
+          where = await downloads.saveImage(
+            path,
+            senderLabel: senderLabel,
+            sentAt: message.timestamp,
+          );
+      }
+      if (where != null) _toast(where);
     } on AttachmentSaveException catch (e) {
       _toast(e.message, error: true);
     } catch (_) {
-      _toast('Could not save the image.', error: true);
+      _toast('Could not save that.', error: true);
     }
   }
 
-  /// Shows a bottom sheet letting the person add a sticker or GIF to an
-  /// existing collection or create a new one. Either [stickerId] (for stickers)
-  /// or [gifPath] + [gifName] (for GIFs) must be provided.
-  Future<void> _saveMediaToCollection({
-    String? stickerId,
-    String? gifPath,
-    String? gifName,
-    Uint8List? gifBytes,
-  }) async {
-    final isGif = gifPath != null || gifBytes != null;
-    final resolvedStickerId = stickerId?.trim();
-    final sticker = resolvedStickerId == null
-        ? null
-        : stickerById(resolvedStickerId);
-    final label = isGif
-        ? (gifName ?? gifPath?.split('/').last ?? 'GIF')
-        : (sticker?.name ?? stickerId ?? '');
-
-    // Read GIF bytes if we don't already have them.
-    Uint8List? resolvedGifBytes = gifBytes;
-    if (isGif && resolvedGifBytes == null && gifPath != null) {
-      try {
-        resolvedGifBytes = await File(gifPath).readAsBytes();
-      } catch (_) {
-        if (!mounted) return;
-        _toast('Could not read the GIF.', error: true);
-        return;
-      }
-    }
-
-    if (isGif && resolvedGifBytes == null) {
-      if (mounted) _toast('Could not read the GIF.', error: true);
+  /// Asks which collection to save to, then saves. [prepare] gets the item
+  /// ready (for a file: reads it through once to name it by its contents).
+  Future<void> _saveToCollection(
+    Future<PendingCollectionItem> Function() prepare,
+  ) async {
+    final PendingCollectionItem pending;
+    try {
+      pending = await prepare();
+    } catch (error) {
+      _toast(humanError(error, fallback: "Couldn't read that."), error: true);
       return;
     }
-    if (!isGif && (resolvedStickerId == null || resolvedStickerId.isEmpty)) {
-      if (mounted) _toast('Could not save that sticker.', error: true);
-      return;
-    }
-
     if (!mounted) return;
+    final result = await showSaveToCollectionSheet(context, ref, pending);
+    if (result != null && mounted) _toast(result);
+  }
 
-    final result = await showSettledSheet<String>(
-      context: context,
-      backgroundColor: AppColors.paperAlt,
-      shape: const RoundedRectangleBorder(),
-      builder: (ctx) {
-        final collections = ref.read(stickerCollectionsProvider);
+  Future<void> _saveStickerToCollection(String stickerId) => _saveToCollection(
+    () async => PendingCollectionItem.sticker(
+      stickerId,
+      name: stickerById(stickerId)?.name,
+    ),
+  );
 
-        Widget collectionTile(StickerCollection c) {
-          final already = isGif
-              ? c.containsGifName(gifName ?? '')
-              : c.containsSticker(stickerId ?? '');
-          return ListTile(
-            leading: Icon(
-              Icons.collections_bookmark,
-              size: 20,
-              color: AppColors.text,
-            ),
-            title: Text(
-              c.name,
-              style: AppTextStyles.body.copyWith(color: AppColors.text),
-            ),
-            trailing: already
-                ? Icon(Icons.check, color: AppColors.primary, size: 20)
-                : null,
-            onTap: () => Navigator.pop(ctx, c.id),
-          );
-        }
-
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Save “$label”',
-                style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
-              ),
-              const SizedBox(height: 12),
-              if (collections.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    'No collections yet. Create one below.',
-                    style: AppTextStyles.smallDim,
-                  ),
-                )
-              else ...[
-                const SizedBox(height: 8),
-                ...[for (final c in collections) collectionTile(c)],
-                const Divider(height: 1),
-              ],
-              ListTile(
-                leading: Icon(
-                  Icons.add_circle_outline,
-                  size: 20,
-                  color: AppColors.primary,
-                ),
-                title: Text(
-                  'Create new collection',
-                  style: AppTextStyles.body.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                onTap: () => Navigator.pop(ctx, 'create_new'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (result == null || !mounted) return;
-
-    if (result == 'create_new') {
-      final newName = await showTextEditDialog(
-        context,
-        title: 'New collection',
-        initial: '',
-        maxLength: 10,
-        titleStyle: AppTextStyles.fieldInput,
-        validate: (text) {
-          final t = text.trim();
-          if (t.isEmpty) return 'Give the collection a name.';
-          final existing = ref
-              .read(stickerCollectionsProvider)
-              .any((c) => c.name.toLowerCase() == t.toLowerCase());
-          if (existing) return 'A collection with that name already exists.';
-          return null;
-        },
-      );
-      if (newName == null || !mounted) return;
-      final id = 'coll_${DateTime.now().millisecondsSinceEpoch}';
-      final item = isGif
-          ? StickerCollectionItem(
-              kind: StickerCollectionItemKind.gif,
-              stickerId: '',
-              name: gifName ?? '',
-              gifBytesBase64: base64Encode(resolvedGifBytes!),
-            )
-          : StickerCollectionItem(
-              kind: StickerCollectionItemKind.sticker,
-              stickerId: resolvedStickerId!,
-              name: sticker?.name,
-            );
-      ref
+  /// Saves a sticker, GIF, video or audio file from a message.
+  Future<void> _saveMessageToCollection(LocalMessage message) async {
+    if (message.type == MessageType.sticker) {
+      return _saveStickerToCollection(message.textContent ?? '');
+    }
+    final path = message.localMediaPath;
+    if (path == null) return;
+    final kind = switch (message.type) {
+      MessageType.video => StickerCollectionItemKind.video,
+      MessageType.audioFile => StickerCollectionItemKind.audio,
+      _ => StickerCollectionItemKind.gif,
+    };
+    return _saveToCollection(
+      () => ref
           .read(stickerCollectionsProvider.notifier)
-          .addToCollection(
-            collectionId: id,
-            collectionName: newName.trim(),
-            item: item,
-          );
-      _toast('Saved to “${newName.trim()}”');
-      return;
-    }
-
-    StickerCollection? collection;
-    for (final c in ref.read(stickerCollectionsProvider)) {
-      if (c.id == result) {
-        collection = c;
-        break;
-      }
-    }
-    if (collection == null || !mounted) return;
-    final already = isGif
-        ? collection.containsGifName(gifName ?? '')
-        : collection.containsSticker(stickerId ?? '');
-    if (already) {
-      _toast('Already in “${collection.name}”');
-      return;
-    }
-    final item = isGif
-        ? StickerCollectionItem(
-            kind: StickerCollectionItemKind.gif,
-            stickerId: '',
-            name: gifName ?? '',
-            gifBytesBase64: base64Encode(resolvedGifBytes!),
-          )
-        : StickerCollectionItem(
-            kind: StickerCollectionItemKind.sticker,
-            stickerId: resolvedStickerId!,
-            name: sticker?.name,
-          );
-    ref
-        .read(stickerCollectionsProvider.notifier)
-        .addToCollection(collectionId: result, item: item);
-    _toast('Saved to “${collection.name}”');
+          .prepareFile(path, kind, name: message.fileName),
+    );
   }
 
   Future<void> _showMessageActions(
@@ -716,6 +769,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     final isGif =
         isImage && message.localMediaPath!.toLowerCase().endsWith('.gif');
     final isSticker = message.type == MessageType.sticker;
+    final isFile = isChatFile(message.type);
     final isConfirmed =
         message.status != MessageStatus.sending &&
         message.status != MessageStatus.failed;
@@ -727,6 +781,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       isImage: isImage,
       isGif: isGif,
       isSticker: isSticker,
+      isFile: isFile,
+      fileOnDevice: message.localMediaPath != null,
       isConfirmed: isConfirmed,
     );
     if (actions.isEmpty) return;
@@ -754,7 +810,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                   MessageAction.copy => tile(Icons.copy, 'Copy text', 'copy'),
                   MessageAction.download => tile(
                     Icons.download_outlined,
-                    'Download image',
+                    switch (message.type) {
+                      MessageType.video => 'Save video',
+                      MessageType.audioFile => 'Save audio',
+                      _ => isGif ? 'Download GIF' : 'Download image',
+                    },
                     'download',
                   ),
                   MessageAction.edit => tile(
@@ -791,7 +851,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
         await Clipboard.setData(ClipboardData(text: text));
         _toast('Copied');
       case 'download':
-        await _saveImage(message, senderLabel);
+        await _saveToDevice(message, senderLabel);
       case 'edit':
         await _editMessage(message);
       case 'reply':
@@ -799,16 +859,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       case 'forward':
         await _forwardMessage(message);
       case 'save':
-        if (isSticker) {
-          await _saveMediaToCollection(stickerId: message.textContent ?? '');
-        } else if (isGif) {
-          await _saveMediaToCollection(
-            gifPath: message.localMediaPath,
-            gifName: message.textContent?.isNotEmpty == true
-                ? message.textContent
-                : message.localMediaPath?.split('/').last,
-          );
-        }
+        await _saveMessageToCollection(message);
       case 'delete':
         await _deleteFlow(
           message,
@@ -931,6 +982,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     if (m.type == MessageType.sticker) return '🙂 Sticker';
     if (m.type == MessageType.audio) return '🎤 Voice message';
     if (m.type == MessageType.post) return '📝 Post';
+    if (m.type == MessageType.video) return '🎬 Video';
+    if (m.type == MessageType.audioFile) return '🎵 ${m.fileName ?? 'Audio'}';
     final text = (m.textContent ?? '').trim();
     if (m.type == MessageType.image) {
       return text.isEmpty ? '📷 Photo' : '📷 $text';
@@ -995,6 +1048,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           durationMs: voice.durationMs,
           waveform: voice.waveform,
           replyToId: _reply.value?.messageId,
+          onError: _mediaSendFailed,
         );
     _reply.clear();
     _scheduleScrollToBottom();
@@ -1026,154 +1080,84 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     _scheduleScrollToBottom();
   }
 
-  /// Re-sends a GIF that was previously saved to a collection. The GIF bytes
-  /// are stored as an image attachment (kept as-is so it still animates).
-  Future<void> _resendGifFromCollection((Uint8List, String) gif) async {
-    final (bytes, name) = gif;
-    final me = _currentUserId;
-    if (me == null) return;
-    final attachDisabledReason = widget.groupId != null
-        ? "Photos and GIFs can't be shared in groups yet."
-        : null;
-    if (attachDisabledReason != null) {
-      _toast(attachDisabledReason);
-      return;
+  /// A sticker, or a saved GIF, video or audio file, tapped in the picker:
+  /// send it, save it to another collection, or remove it.
+  Future<void> _onCollectionItem(StickerCollectionItem item) async {
+    final choice = await showCollectionItemSheet(context, ref, item);
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case CollectionItemChoice.send:
+        await _sendCollectionItem(item);
+      case CollectionItemChoice.save:
+        // Already saved once: the file is in place, nothing to read.
+        await _saveToCollection(() async => PendingCollectionItem(item));
+      case CollectionItemChoice.remove:
+        final removed = await ref
+            .read(stickerCollectionsProvider.notifier)
+            .remove(item.key);
+        if (mounted) {
+          _toast('Removed from $removed collection${removed == 1 ? '' : 's'}');
+        }
     }
-    await ref
-        .read(chatViewModelProvider.notifier)
-        .sendMessage(
-          roomId: _roomId,
-          recipientId: widget.recipientId,
-          groupId: widget.groupId,
-          imageBytes: bytes,
-          replyToId: _reply.value?.messageId,
-        );
-    _reply.clear();
-    _scheduleScrollToBottom();
   }
 
-  /// Shows forward / save / delete options for a tapped sticker or GIF.
-  /// [stickerId] is for stickers; [gifBytes] + [gifName] for GIFs.
-  Future<void> _showMediaActionSheet({
-    String? stickerId,
-    Uint8List? gifBytes,
-    String? gifName,
-  }) async {
-    final isGif = gifBytes != null;
-    final label = isGif
-        ? (gifName ?? 'GIF')
-        : (stickerById(stickerId!)?.name ?? stickerId);
+  Future<void> _sendCollectionItem(StickerCollectionItem item) async {
+    if (item.isSticker) {
+      _sendSticker(item.stickerId!);
+      return;
+    }
+    final path = await ref
+        .read(stickerCollectionsProvider.notifier)
+        .pathOf(item);
+    final file = path == null ? null : File(path);
+    if (file == null || !await file.exists()) {
+      if (mounted) {
+        _toast('That file is no longer on this phone.', error: true);
+      }
+      return;
+    }
+    if (!mounted) return;
 
-    // Which collections already contain this item.
-    final collections = ref.read(stickerCollectionsProvider);
-    final containing = <StickerCollection>[];
-    for (final c in collections) {
-      final already = isGif
-          ? c.containsGifName(gifName ?? '')
-          : c.containsSticker(stickerId!);
-      if (already) containing.add(c);
+    if (item.isGif) {
+      // A GIF travels like a picture: relayed to one person, so not to
+      // groups, and only up to the relay's size.
+      if (widget.groupId != null) {
+        _toast("GIFs can't be shared in groups yet.");
+        return;
+      }
+      final bytes = await file.readAsBytes();
+      if (bytes.length > maxRawInsertBytes) {
+        _toast('That GIF is too big to send.', error: true);
+        return;
+      }
+      await ref
+          .read(chatViewModelProvider.notifier)
+          .sendMessage(
+            roomId: _roomId,
+            recipientId: widget.recipientId,
+            groupId: null,
+            imageBytes: bytes,
+            replyToId: _reply.value?.messageId,
+          );
+      _reply.clear();
+      _scheduleScrollToBottom();
+      return;
     }
 
-    final action = await showSettledSheet<String>(
-      context: context,
-      backgroundColor: AppColors.paperAlt,
-      shape: const RoundedRectangleBorder(),
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: Icon(Icons.send, size: 20, color: AppColors.text),
-                title: Text(
-                  'Send',
-                  style: AppTextStyles.body.copyWith(color: AppColors.text),
-                ),
-                onTap: () => Navigator.pop(ctx, 'send'),
-              ),
-              ListTile(
-                leading: Icon(
-                  Icons.collections_bookmark,
-                  size: 20,
-                  color: AppColors.text,
-                ),
-                title: Text(
-                  containing.isEmpty
-                      ? 'Save to collection'
-                      : 'Save to another collection',
-                  style: AppTextStyles.body.copyWith(color: AppColors.text),
-                ),
-                onTap: () => Navigator.pop(ctx, 'save'),
-              ),
-              if (containing.isNotEmpty) ...[
-                const Divider(height: 1),
-                ListTile(
-                  leading: Icon(
-                    Icons.delete_outline,
-                    size: 20,
-                    color: AppColors.rust,
-                  ),
-                  title: Text(
-                    'Remove from ${containing.length} collection'
-                    '${containing.length > 1 ? 's' : ''}',
-                    style: AppTextStyles.body.copyWith(color: AppColors.rust),
-                  ),
-                  onTap: () => Navigator.pop(ctx, 'delete'),
-                ),
-              ],
-            ],
+    final kind = item.isVideo ? ChatFileKind.video : ChatFileKind.audio;
+    try {
+      await _sendFile(
+        checkChatFile(
+          PickedChatFile(
+            path: path!,
+            name: item.name ?? collectionItemLabel(item),
+            size: await file.length(),
+            kind: kind,
           ),
-        );
-      },
-    );
-
-    if (action == null || !mounted) return;
-
-    switch (action) {
-      case 'send':
-        if (isGif) {
-          await _resendGifFromCollection((gifBytes, gifName ?? 'GIF'));
-        } else {
-          _sendSticker(stickerId!);
-        }
-      case 'save':
-        if (isGif) {
-          await _saveMediaToCollection(
-            gifPath: '', // placeholder, not used since we have bytes
-            gifName: gifName,
-            gifBytes: gifBytes,
-          );
-        } else {
-          await _saveMediaToCollection(stickerId: stickerId!);
-        }
-      case 'delete':
-        // Remove from all collections that contain it.
-        for (final c in containing) {
-          if (isGif) {
-            ref
-                .read(stickerCollectionsProvider.notifier)
-                .removeGifFromCollection(
-                  collectionId: c.id,
-                  gifName: gifName ?? '',
-                );
-          } else {
-            ref
-                .read(stickerCollectionsProvider.notifier)
-                .removeStickerFromCollection(
-                  collectionId: c.id,
-                  stickerId: stickerId!,
-                );
-          }
-        }
-        _toast(
-          'Removed from ${containing.length} collection'
-          '${containing.length > 1 ? 's' : ''}',
-        );
+        ),
+      );
+    } on ChatFilePickException catch (e) {
+      _toast(e.message, error: true);
     }
   }
 
@@ -1422,15 +1406,19 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       if (group != null) _maybeShowRules(group);
     }
 
-    final attachDisabledReason = gid != null
-        ? "Photos and GIFs can't be shared in groups yet. Stickers and voice "
-              'messages work.'
-        : isFriend
+    // Pictures (photos, GIFs, scribbles) are relayed to one person, so not
+    // to groups; in a 1:1 chat every attachment needs friendship.
+    final String? notFriendsReason = gid != null || isFriend
         ? null
         : !friendsView.hasData && friendsView.isRefreshing
         ? 'Checking whether you are friends…'
         : 'Attachments are only available between friends. '
-              'Add ${widget.contactName} as a friend to share images.';
+              'Add ${widget.contactName} as a friend to share photos, videos '
+              'and audio.';
+    final photoDisabledReason = gid != null
+        ? "Photos and GIFs can't be shared in groups yet. Videos, audio, "
+              'stickers and voice messages work.'
+        : notFriendsReason;
 
     return PopScope(
       canPop: !_stickersOpen,
@@ -1681,7 +1669,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                                     senderLabel: who,
                                                   ),
                                               onSave: () =>
-                                                  _saveImage(image, who),
+                                                  _saveToDevice(image, who),
                                               onDelete: () => _deleteFlow(
                                                 image,
                                                 isOutgoing: isOutgoing,
@@ -1719,12 +1707,36 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                               .read(
                                                 chatViewModelProvider.notifier,
                                               )
-                                              .retryVoice(message.messageId),
+                                              .retryVoice(
+                                                message.messageId,
+                                                onError: _mediaSendFailed,
+                                              ),
                                           onDownload: () => ref
                                               .read(
                                                 chatViewModelProvider.notifier,
                                               )
                                               .downloadVoice(message.messageId),
+                                        )
+                                      : isChatFile(message.type) &&
+                                            !message.isDeleted
+                                      ? ChatFileView(
+                                          message: message,
+                                          outgoing: isOutgoing,
+                                          onRetry: () => ref
+                                              .read(
+                                                chatViewModelProvider.notifier,
+                                              )
+                                              .retryFile(
+                                                message.messageId,
+                                                onError: _mediaSendFailed,
+                                              ),
+                                          onDownload: () =>
+                                              _downloadFile(message),
+                                          onOpenVideo: () => openChatVideo(
+                                            context,
+                                            path: message.localMediaPath!,
+                                            title: message.fileName ?? 'Video',
+                                          ),
                                         )
                                       : message.type == MessageType.post &&
                                             !message.isDeleted
@@ -1744,7 +1756,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                     isOutgoing: isOutgoing,
                                     senderLabel: who,
                                   ),
-                                  onSaveImage: () => _saveImage(message, who),
+                                  onSaveImage: () =>
+                                      _saveToDevice(message, who),
                                   onDeleteImage: () => _deleteFlow(
                                     message,
                                     isOutgoing: isOutgoing,
@@ -1787,7 +1800,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                       onSend: _handleSend,
                       onAttach: _handleAttach,
                       onScribble: _handlePencil,
-                      attachDisabledReason: attachDisabledReason,
+                      attachDisabledReason: notFriendsReason,
+                      scribbleDisabledReason: photoDisabledReason,
                       attachBusy: _attaching,
                       onStickers: _toggleStickers,
                       stickersOpen: _stickersOpen,
@@ -1802,7 +1816,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                         onTell: (m) => _toast(m),
                       ),
                       onContentInserted: (content) =>
-                          _handleInserted(content, attachDisabledReason),
+                          _handleInserted(content, photoDisabledReason),
                       replyPreview: replyTarget == null
                           ? null
                           : (
@@ -1816,12 +1830,14 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                   ),
                 if (_stickersOpen)
                   StickerPicker(
-                    onPick: (id) => _showMediaActionSheet(stickerId: id),
-                    onSave: (id) => _saveMediaToCollection(stickerId: id),
-                    onPickGif: (gif) => _showMediaActionSheet(
-                      gifBytes: gif.$1,
-                      gifName: gif.$2,
+                    onPick: (id) => _onCollectionItem(
+                      StickerCollectionItem.sticker(
+                        id,
+                        name: stickerById(id)?.name,
+                      ),
                     ),
+                    onSave: _saveStickerToCollection,
+                    onPickItem: _onCollectionItem,
                   ),
               ],
             ),

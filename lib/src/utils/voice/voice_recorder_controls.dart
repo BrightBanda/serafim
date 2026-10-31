@@ -24,7 +24,11 @@ class _MicButtonState extends ConsumerState<MicButton> {
   VoiceRecorderController get _rec => ref.read(voiceRecorderProvider.notifier);
 
   Future<void> _start() async {
-    final result = await _rec.start(onLimit: widget.onRecorded);
+    final result = await _rec.start(
+      onLimit: () => widget.onTell(
+        'Voice messages can be up to 5 minutes. Send it or delete it.',
+      ),
+    );
     switch (result) {
       case RecordStartResult.denied:
         widget.onTell(
@@ -171,7 +175,9 @@ class RecordingStrip extends ConsumerWidget {
     final state = ref.watch(voiceRecorderProvider);
     final rec = ref.read(voiceRecorderProvider.notifier);
     final paused = state.phase == RecordingPhase.paused;
-    final remaining = maxVoiceDuration - state.elapsed;
+    final limit = VoiceRecorderController.limit;
+    final remaining = limit - state.elapsed;
+    final atLimit = remaining <= Duration.zero;
 
     return Container(
       height: 38,
@@ -209,9 +215,13 @@ class RecordingStrip extends ConsumerWidget {
                       if (paused)
                         Flexible(
                           child: Text(
-                            'Paused',
+                            atLimit ? '5-minute limit' : 'Paused',
                             overflow: TextOverflow.ellipsis,
-                            style: AppTextStyles.smallDim,
+                            style: atLimit
+                                ? AppTextStyles.smallDim.copyWith(
+                                    color: AppColors.rustPale,
+                                  )
+                                : AppTextStyles.smallDim,
                           ),
                         ),
                       IconButton(
@@ -225,16 +235,22 @@ class RecordingStrip extends ConsumerWidget {
                         onPressed: rec.cancel,
                       ),
                       IconButton(
-                        tooltip: paused
+                        tooltip: atLimit
+                            ? 'Voice messages can be up to 5 minutes'
+                            : paused
                             ? 'Resume recording'
                             : 'Pause recording',
                         visualDensity: VisualDensity.compact,
                         icon: Icon(
                           paused ? Icons.mic_rounded : Icons.pause_rounded,
                           size: 20,
-                          color: AppColors.text,
+                          color: atLimit ? AppColors.lineSoft : AppColors.text,
                         ),
-                        onPressed: paused ? rec.resume : rec.pause,
+                        onPressed: atLimit
+                            ? null
+                            : paused
+                            ? rec.resume
+                            : rec.pause,
                       ),
                     ],
                   )

@@ -15,6 +15,8 @@ import 'old_message_schema.dart';
 /// `editedAt` and `groupId`) shifts the id of every property after it. If
 /// the migration matches properties by id, `groupId` would be renamed to
 /// `forwarded` and every group message on the phone would lose its group.
+/// (`fileName` and `fileSize`, for videos and audio files, shifted them
+/// again; the same holds.)
 ///
 /// These tests open a database with the old layout, write a message, and
 /// then open it with the new one.
@@ -46,15 +48,18 @@ void main() {
       2,
       reason: 'groupId used to be id 2',
     );
+    final nowAt2 = LocalMessageSchema.properties.entries
+        .singleWhere((e) => e.value.id == 2)
+        .key;
     expect(
-      LocalMessageSchema.properties['forwarded']!.id,
-      2,
-      reason: 'forwarded now takes id 2',
+      nowAt2,
+      isNot('groupId'),
+      reason: 'a newer field now takes id 2',
     );
     expect(
       LocalMessageSchema.properties['groupId']!.id,
-      3,
-      reason: 'groupId moved to id 3',
+      greaterThan(2),
+      reason: 'groupId moved',
     );
   });
 
@@ -97,5 +102,8 @@ void main() {
       reason: 'the group id must survive the migration',
     );
     expect(after.forwarded, isFalse);
+    expect(after.type, MessageType.text);
+    expect(after.fileName, isNull);
+    expect(after.fileSize, isNull);
   });
 }

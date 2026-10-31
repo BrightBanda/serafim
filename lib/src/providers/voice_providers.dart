@@ -132,7 +132,9 @@ class VoiceRecordingState {
 enum RecordStartResult { started, denied, failed, busy }
 
 /// Records one voice note at a time: hold to record, slide to lock or cancel,
-/// a 5-minute limit, and pausing (never losing) on interruptions.
+/// a 5-minute limit, and pausing (never losing) on interruptions. Reaching
+/// the limit pauses the recording too: nothing is sent or thrown away until
+/// the person chooses.
 class VoiceRecorderController extends Notifier<VoiceRecordingState> {
   VoiceRecorderEngine get _engine => ref.read(voiceRecorderEngineProvider);
 
@@ -143,8 +145,8 @@ class VoiceRecorderController extends Notifier<VoiceRecordingState> {
   StreamSubscription<bool>? _pauseSub;
   String? _path;
 
-  /// Called with the recording when the 5-minute limit stops it.
-  void Function(RecordedVoice voice)? _onLimit;
+  /// Called when the recording reaches the 5-minute limit and is paused.
+  void Function()? _onLimit;
 
   @override
   VoiceRecordingState build() {
@@ -159,9 +161,10 @@ class VoiceRecorderController extends Notifier<VoiceRecordingState> {
   static Future<String> Function() tempDir = () async =>
       (await getTemporaryDirectory()).path;
 
-  Future<RecordStartResult> start({
-    void Function(RecordedVoice voice)? onLimit,
-  }) async {
+  /// Whether the recording has reached [limit] (it can't be resumed).
+  bool get atLimit => _clock.elapsed >= limit;
+
+  Future<RecordStartResult> start({void Function()? onLimit}) async {
     if (state.active) return RecordStartResult.busy;
     state = state.copyWith(phase: RecordingPhase.starting);
     try {
@@ -216,10 +219,8 @@ class VoiceRecorderController extends Notifier<VoiceRecordingState> {
   void _tick() {
     final elapsed = _clock.elapsed;
     state = state.copyWith(elapsed: elapsed);
-    if (elapsed >= limit) {
-      finish().then((voice) {
-        if (voice != null) _onLimit?.call(voice);
-      });
+    if (elapsed >= limit && state.phase == RecordingPhase.recording) {
+      pause().then((_) => _onLimit?.call());
     }
   }
 
@@ -239,7 +240,7 @@ class VoiceRecorderController extends Notifier<VoiceRecordingState> {
   }
 
   Future<void> resume() async {
-    if (state.phase != RecordingPhase.paused) return;
+    if (state.phase != RecordingPhase.paused || atLimit) return;
     try {
       await _engine.resume();
       _clock.start();
@@ -441,6 +442,7 @@ class VoicePlayerController extends Notifier<VoicePlaybackState> {
     _engineRef = engine;
     return engine;
   }
+
   final List<StreamSubscription<Object?>> _subs = [];
   bool _listening = false;
 

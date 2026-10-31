@@ -669,5 +669,7 @@ String? previewTextOf(LocalMessage m) => switch (m.type) {
   MessageType.sticker => '🙂 Sticker',
   MessageType.post => '📝 Post',
   MessageType.audio => '🎤 Voice message',
+  MessageType.video => '🎬 Video',
+  MessageType.audioFile => '🎵 ${m.fileName ?? 'Audio'}',
   _ => m.textContent,
 };

@@ -61,6 +61,8 @@ void main() {
       bool image = false,
       bool gif = false,
       bool sticker = false,
+      bool file = false,
+      bool onDevice = false,
       bool confirmed = true,
     }) => availableMessageActions(
       isOutgoing: out,
@@ -69,6 +71,8 @@ void main() {
       isImage: image,
       isGif: gif,
       isSticker: sticker,
+      isFile: file,
+      fileOnDevice: onDevice,
       isConfirmed: confirmed,
     );
 
@@ -125,17 +129,48 @@ void main() {
       expect(actions(sticker: true), contains(MessageAction.save));
       expect(actions(sticker: false), isNot(contains(MessageAction.save)));
       // An unsent sticker is not saved.
-      expect(actions(sticker: true, confirmed: false),
-          isNot(contains(MessageAction.save)));
+      expect(
+        actions(sticker: true, confirmed: false),
+        isNot(contains(MessageAction.save)),
+      );
       // A deleted sticker only offers delete.
       expect(actions(sticker: true, deleted: true), [MessageAction.delete]);
+    });
+    test('a downloaded video or audio file can be saved and forwarded', () {
+      expect(actions(file: true, onDevice: true, text: false), [
+        MessageAction.download,
+        MessageAction.reply,
+        MessageAction.forward,
+        MessageAction.save,
+        MessageAction.delete,
+      ]);
+    });
+    test('a file not downloaded yet can still be replied to and forwarded', () {
+      // Forwarding copies it on the server, so it needn't be on the phone.
+      expect(actions(file: true, text: false, out: false), [
+        MessageAction.reply,
+        MessageAction.forward,
+        MessageAction.delete,
+      ]);
+    });
+    test('files are never edited, and unsent ones are not saved', () {
+      expect(
+        actions(file: true, onDevice: true),
+        isNot(contains(MessageAction.edit)),
+      );
+      expect(
+        actions(file: true, onDevice: true, confirmed: false),
+        isNot(contains(MessageAction.save)),
+      );
     });
     test('a confirmed GIF gets a save action', () {
       expect(actions(gif: true), contains(MessageAction.save));
       expect(actions(gif: false), isNot(contains(MessageAction.save)));
       // An unsent GIF is not saved.
-      expect(actions(gif: true, confirmed: false),
-          isNot(contains(MessageAction.save)));
+      expect(
+        actions(gif: true, confirmed: false),
+        isNot(contains(MessageAction.save)),
+      );
       // A deleted GIF only offers delete.
       expect(actions(gif: true, deleted: true), [MessageAction.delete]);
     });
