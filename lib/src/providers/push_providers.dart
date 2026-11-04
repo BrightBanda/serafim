@@ -8,6 +8,7 @@ import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/firebase_options.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
+import 'package:serafim/src/core/platform/chat_notifications.dart';
 
 import 'package:serafim/src/data/services/push_service.dart';
 import 'package:flutter/material.dart' show Icons;
@@ -32,6 +33,11 @@ import 'package:serafim/src/utils/user_card.dart';
 final pushServiceProvider = Provider<PushService>((ref) {
   return PushService(ref.watch(apiDioProvider));
 });
+
+/// Replies typed into chat notifications, waiting to be put in their chat.
+final notificationReplyQueueProvider = Provider<NotificationReplyQueue>(
+  (ref) => ChatNotifications.instance,
+);
 
 /// How push registration on this phone is going, in words for the settings
 /// screen. [ok] is true only once the server has this phone's token.
@@ -161,9 +167,13 @@ class PushRegistrar {
       ..add(FirebaseMessaging.onMessage.listen(_onForegroundMessage))
       ..add(FirebaseMessaging.onMessageOpenedApp.listen(_openChatFrom));
 
-    // The app was launched by tapping a notification.
+    // The app was launched by tapping a notification: one the system drew,
+    // or one of the app's own chat notifications.
     final initial = await messaging.getInitialMessage();
     if (initial != null) _openChatFrom(initial);
+    await ChatNotifications.instance.init(onTap: _openChatNotification);
+    final tapped = await ChatNotifications.instance.launchTarget();
+    if (tapped != null) _openChatNotification(tapped);
   }
 
   /// Stops listening (e.g. on sign-out) without touching the backend.
@@ -184,6 +194,7 @@ class PushRegistrar {
             token: token,
             platform: Platform.isIOS ? 'ios' : 'android',
             showPreview: showPreview,
+            drawsChatNotifications: ChatNotifications.supported,
           );
       return true;
     } catch (error) {
@@ -196,8 +207,10 @@ class PushRegistrar {
 
   /// Stops pushes to this phone: tells the backend, then discards the token so
   /// it can never be reused by whoever signs in next. Safe to call anytime.
+  /// Chat notifications still on screen go too.
   Future<void> unregisterThisDevice() async {
     stopListening();
+    await ChatNotifications.instance.clearAll();
     if (!_supported || !_firebaseReady) return;
     try {
       final token = await FirebaseMessaging.instance.getToken();
@@ -245,8 +258,10 @@ class PushRegistrar {
     _ref
         .read(inAppBannerProvider)
         .show(
-          title: notification?.title ?? 'New message',
-          body: notification?.body ?? '',
+          // Chat pushes to this app are data only: the words are in the data.
+          title:
+              notification?.title ?? data['title'] as String? ?? 'New message',
+          body: notification?.body ?? data['body'] as String? ?? '',
           onTap: () => _openChatFrom(message),
         );
     if (_ref.read(settingsProvider).alertSound) {
@@ -329,6 +344,17 @@ class PushRegistrar {
     if (_ref.read(settingsProvider).alertSound) {
       SystemSound.play(SystemSoundType.alert);
     }
+  }
+
+  /// One of the app's own chat notifications was tapped.
+  void _openChatNotification(NotificationTarget target) {
+    _openChatFrom(
+      RemoteMessage(
+        data: target.isGroup
+            ? {'type': 'group_message', 'group_id': target.target}
+            : {'type': 'message', 'sender_id': target.target},
+      ),
+    );
   }
 
   Future<void> _openChatFrom(RemoteMessage message) async {
@@ -415,6 +441,11 @@ final pushLifecycleProvider = Provider<void>((ref) {
   final registrar = ref.read(pushRegistrarProvider);
 
   if (account == null) return;
+
+  // A conversation opened in the app takes its notification with it.
+  ref.listen<String?>(activeRoomProvider, (_, room) {
+    if (room != null) unawaited(ChatNotifications.instance.clear(room));
+  });
 
   if (enabled) {
     unawaited(registrar.start(showPreview: preview));

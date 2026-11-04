@@ -9,8 +9,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:serafim/src/core/platform/app_installer.dart';
 import 'package:serafim/src/data/models/app_update.dart';
+import 'package:serafim/src/data/services/google_auth_service.dart'
+    show GoogleSignInCancelled;
 import 'package:serafim/src/data/services/update_service.dart';
 import 'package:serafim/src/providers/app_providers.dart';
+import 'package:serafim/src/providers/backup_providers.dart';
 import 'package:serafim/src/providers/network_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 
@@ -234,6 +237,9 @@ final updateCheckProvider =
 
 enum UpdatePhase {
   idle,
+
+  /// "Back up & update": the Drive backup runs before anything downloads.
+  backingUp,
   preparing,
   downloading,
   verifying,
@@ -249,6 +255,7 @@ class UpdateFlowState {
     this.received = 0,
     this.total = -1,
     this.error,
+    this.apkReady = false,
   });
 
   final UpdatePhase phase;
@@ -260,6 +267,10 @@ class UpdateFlowState {
   /// -1 while unknown.
   final int total;
   final UpdateFailure? error;
+
+  /// The checked download is still on the phone, so installing can be tried
+  /// again without downloading it again.
+  final bool apkReady;
 
   bool get busy =>
       phase != UpdatePhase.idle &&
@@ -281,6 +292,9 @@ class UpdateFlowController extends Notifier<UpdateFlowState> {
   AppInstaller get _installer => ref.read(appInstallerProvider);
   CancelToken? _cancel;
   File? _file;
+
+  /// The version whose download in [_file] passed every check.
+  int? _verified;
   AppLifecycleListener? _lifecycle;
 
   @override
@@ -290,13 +304,76 @@ class UpdateFlowController extends Notifier<UpdateFlowState> {
   }
 
   void _fail(UpdateFailure f) {
+    final update = state.update;
     state = UpdateFlowState(
       phase: UpdatePhase.failed,
-      update: state.update,
+      update: update,
       received: state.received,
       total: state.total,
       error: f,
+      apkReady: update != null && _verified == update.versionCode,
     );
+  }
+
+  /// Backs up to Google Drive, then updates. If the backup can't be made,
+  /// nothing is downloaded: the person decides whether to update anyway.
+  Future<void> startWithBackup(AppUpdate release) async {
+    if (state.busy) return;
+    state = UpdateFlowState(phase: UpdatePhase.backingUp, update: release);
+    String? problem;
+    try {
+      problem = await ref.read(autoBackupProvider.notifier).backUpNow();
+    } on GoogleSignInCancelled {
+      problem = 'It needs access to Google Drive.';
+    } catch (_) {
+      problem = 'The backup could not be made.';
+    }
+    if (problem != null) {
+      _fail(
+        UpdateFailure(
+          UpdateErrorKind.backupFailed,
+          "Your data wasn't backed up, so nothing was updated. $problem",
+        ),
+      );
+      return;
+    }
+    state = const UpdateFlowState();
+    await start(release);
+  }
+
+  /// Installs the download that is already on the phone again (after Android
+  /// refused it, or the installer was closed). Downloads only if it is gone.
+  Future<void> retryInstall(AppUpdate release) async {
+    final update = state.update;
+    final file = _file;
+    if (state.busy ||
+        update == null ||
+        file == null ||
+        _verified != update.versionCode ||
+        !await file.exists()) {
+      state = const UpdateFlowState();
+      return start(release);
+    }
+    try {
+      await _install(update);
+    } on UpdateFailure catch (f) {
+      _fail(f);
+    } on PlatformException catch (e) {
+      _fail(
+        UpdateFailure(
+          UpdateErrorKind.installFailed,
+          e.message ?? "Android couldn't install the update.",
+        ),
+      );
+    }
+  }
+
+  /// Throws the kept download away and fetches a fresh copy.
+  Future<void> redownload(AppUpdate release) async {
+    if (state.busy) return;
+    await _delete();
+    state = const UpdateFlowState();
+    await start(release);
   }
 
   Future<void> start(AppUpdate release) async {
@@ -414,6 +491,7 @@ class UpdateFlowController extends Notifier<UpdateFlowState> {
           'Serafim and install the new version from the release page.',
         );
       }
+      _verified = update.versionCode;
       await _install(update);
     } on UpdateFailure catch (f) {
       if (f.kind == UpdateErrorKind.cancelled) {
@@ -424,7 +502,8 @@ class UpdateFlowController extends Notifier<UpdateFlowState> {
       }
       _fail(f);
     } on PlatformException catch (e) {
-      await _delete();
+      // A checked download is kept, so installing can be tried again.
+      if (_verified != state.update?.versionCode) await _delete();
       _fail(
         UpdateFailure(
           UpdateErrorKind.installFailed,
@@ -462,20 +541,23 @@ class UpdateFlowController extends Notifier<UpdateFlowState> {
       case InstallOutcome.installed:
         // Usually Android has already replaced the app by now.
         await _delete();
+        _verified = null;
         state = const UpdateFlowState();
       case InstallOutcome.cancelled:
-        // The verified file is kept so trying again is instant; it is
-        // cleaned up at the next launch either way.
+        // The verified file is kept so trying again is instant (also after
+        // a restart, until this version is installed).
         throw const UpdateFailure(
           UpdateErrorKind.installerCancelled,
-          'The update was not installed. Tap Try again when you are ready.',
+          'The update was not installed. Tap Retry install when you are '
+          'ready.',
         );
       case InstallOutcome.failed:
-        await _delete();
+        // Kept: the file passed every check, so trying again needs no
+        // second download. Download again replaces it if it keeps failing.
         throw const UpdateFailure(
           UpdateErrorKind.installFailed,
-          "Android couldn't install the update. Try again, or download it "
-          'from the release page.',
+          "Android couldn't install the update. Tap Retry install, or "
+          'Download again if it keeps failing.',
         );
     }
   }
@@ -524,23 +606,37 @@ class UpdateFlowController extends Notifier<UpdateFlowState> {
   }
 
   Future<void> _delete() async {
+    _verified = null;
     final f = _file;
     try {
       if (f != null && await f.exists()) await f.delete();
     } catch (_) {}
   }
 
-  /// At launch: downloads left over from earlier (an update that installed,
-  /// or one abandoned) are removed.
+  /// At launch: downloads of versions already installed (or older) are
+  /// removed. One for a newer version is kept, so an update that downloaded
+  /// but didn't install isn't downloaded again; it is checked again before
+  /// it is installed.
   Future<void> cleanUpDownloads() async {
     if (state.busy) return;
     try {
+      final installed = await _installer.installedVersion();
       final dir = await updatesDirectory();
       await for (final f in dir.list()) {
-        if (f is File && f.path.endsWith('.apk')) await f.delete();
+        if (f is! File || !f.path.endsWith('.apk')) continue;
+        final code = apkVersionCodeOf(f.path);
+        if (installed == null || code == null || code <= installed.code) {
+          await f.delete();
+        }
       }
     } catch (_) {}
   }
+}
+
+/// The version code in a download's name (`serafim-<code>.apk`), or null.
+int? apkVersionCodeOf(String path) {
+  final match = RegExp(r'serafim-(\d+)\.apk$').firstMatch(path);
+  return match == null ? null : int.tryParse(match.group(1)!);
 }
 
 final updateFlowProvider =

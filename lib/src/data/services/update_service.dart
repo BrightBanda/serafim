@@ -21,6 +21,7 @@ enum UpdateErrorKind {
   installFailed,
   cancelled,
   unverifiable,
+  backupFailed,
   unknown,
 }
 
@@ -39,6 +40,7 @@ class UpdateFailure implements Exception {
     UpdateErrorKind.installerCancelled ||
     UpdateErrorKind.installFailed ||
     UpdateErrorKind.cancelled ||
+    UpdateErrorKind.backupFailed ||
     UpdateErrorKind.unknown => true,
     _ => false,
   };

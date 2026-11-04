@@ -110,6 +110,42 @@ class CircleService {
         await _map(() => _dio.post<dynamic>('/circles/$id/leave')),
       );
 
+  /// Invites friends, or (Owner and Overseers, [add]) adds those whose
+  /// privacy allows it; the rest are invited instead.
+  Future<List<CircleInviteResult>> invite(
+    String id,
+    List<String> userIds, {
+    bool add = false,
+  }) async {
+    final data = await _call(
+      () => _dio.post<dynamic>(
+        '/circles/$id/invites',
+        data: {'user_ids': userIds, 'add': add},
+      ),
+    );
+    if (data is! List) throw _unexpected;
+    return [
+      for (final r in data)
+        CircleInviteResult.fromJson(r as Map<String, dynamic>),
+    ];
+  }
+
+  /// The Circles you've been invited to and not answered.
+  Future<List<CircleSummary>> invitations() async {
+    final data = await _call(() => _dio.get<dynamic>('/circles/invites'));
+    if (data is! List) throw _unexpected;
+    return [
+      for (final c in data) CircleSummary.fromJson(c as Map<String, dynamic>),
+    ];
+  }
+
+  Future<CircleSummary> acceptInvite(String id) async => CircleSummary.fromJson(
+    await _map(() => _dio.post<dynamic>('/circles/$id/invite/accept')),
+  );
+
+  Future<void> declineInvite(String id) =>
+      _call(() => _dio.post<dynamic>('/circles/$id/invite/decline'));
+
   Future<List<CircleJoinRequest>> requests(String id) async {
     final data = await _call(() => _dio.get<dynamic>('/circles/$id/requests'));
     if (data is! List) throw _unexpected;

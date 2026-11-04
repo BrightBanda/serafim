@@ -65,6 +65,20 @@ Supabase dashboard → **Authentication** → **Providers** → **Google** → E
    Never commit this file. Without it, push is simply off and chat works as before.
 3. Redeploy.
 
+### Chat notifications with Reply (Android)
+Android apps from this version on register with `notification_style: app`.
+The server then sends their chat pushes as **data only**, and the app draws
+them (`lib/src/core/platform/chat_notifications.dart`): one notification per
+conversation listing the latest messages (nothing is replaced), with a
+**Reply** field. A reply goes straight to `POST /messages/reply` using a
+short-lived reply link signed by the server (only that person, that chat,
+that phone, 3 days; signing out ends it) and is added to the chat the next
+time the app opens. Older apps and iOS keep system notifications.
+
+Backend: run `sql/020_notification_style.sql` before deploying. Reply links
+are signed with `REPLY_TOKEN_SECRET` if set (any long random string, server
+only), otherwise with a key derived from the Firebase service-account key.
+
 ### 6. Before release
 - Add your **release** keystore SHA-1/SHA-256 to the Android app (Project
   settings → Your apps), or Google sign-in fails in release builds:

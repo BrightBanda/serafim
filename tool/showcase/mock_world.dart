@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 // The mock people, posts, Circles and chats shown in the showcase
 // screenshots, and the provider overrides that feed them to the real screens.
 //
@@ -6,10 +7,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/data/domain/local_chat_room.dart';
 import 'package:serafim/src/data/local/local_cache.dart';
 import 'package:serafim/src/data/models/announcement.dart';
+import 'package:serafim/src/utils/image_editor/stroke.dart';
+import 'package:serafim/src/providers/draw_together_providers.dart';
+import 'package:serafim/src/presentation/view/notifications_page.dart';
+import 'package:serafim/src/presentation/view/draw_together_page.dart';
+import 'package:serafim/src/providers/websocket_providers.dart';
+import 'package:serafim/src/data/services/websocket_service.dart';
+import 'package:serafim/src/data/models/app_notification.dart';
 import 'package:serafim/src/data/models/app_user.dart';
 import 'package:serafim/src/data/models/circle.dart';
 import 'package:serafim/src/data/models/group.dart';
@@ -37,6 +46,7 @@ import 'package:serafim/src/providers/social_providers.dart';
 import 'package:serafim/src/providers/update_providers.dart';
 import 'package:serafim/src/providers/wings_providers.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/user_card.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -522,7 +532,23 @@ class _Wings extends WingsNotifier {
   List<PublicUser> build() => [tamara];
 }
 
-List mockOverrides(SharedPreferences prefs, {required MockTab tab}) => [
+class _QuietSocket extends WebSocketService {
+  @override
+  bool sendMessage(Map<String, dynamic> payload) => true;
+}
+
+class _Notifications extends NotificationsController {
+  @override
+  Future<List<AppNotification>> build() async => mockNotifications();
+}
+
+List mockOverrides(
+  SharedPreferences prefs, {
+  required MockTab tab,
+  List<PublicUser> extraFriends = const [],
+}) => [
+  webSocketServiceProvider.overrideWithValue(_QuietSocket()),
+  notificationsProvider.overrideWith(_Notifications.new),
   sharedPreferencesProvider.overrideWithValue(prefs),
   localCacheProvider.overrideWithValue(LocalCache(prefs)),
   currentUserProvider.overrideWithValue(
@@ -540,7 +566,7 @@ List mockOverrides(SharedPreferences prefs, {required MockTab tab}) => [
   feedProvider.overrideWith(_Feed.new),
   followingProvider.overrideWith((ref) => [tamara, chisomo, kondwani]),
   // Chats
-  friendsProvider.overrideWith((ref) => friends),
+  friendsProvider.overrideWith((ref) => [...friends, ...extraFriends]),
   conversationPeerIdsProvider.overrideWith(_Peers.new),
   chatRoomsProvider.overrideWith(_NoRooms.new),
   roomPreviewsProvider.overrideWithValue(chatPreviews()),
@@ -557,7 +583,7 @@ List mockOverrides(SharedPreferences prefs, {required MockTab tab}) => [
   discoverCirclesProvider.overrideWith((ref, query) => forYouCircles),
   // A conversation, and the post shared in it
   roomMessagesStreamProvider.overrideWith(
-    (ref, roomId) => Stream.value(conversation()),
+    (ref, roomId) => Stream.value(messagesInChat()),
   ),
   quotedMessagesProvider.overrideWith(
     (ref, ids) async => {
@@ -574,17 +600,19 @@ List mockOverrides(SharedPreferences prefs, {required MockTab tab}) => [
 Widget mainScreen() => const MainScreen();
 
 /// The app's own theme (dark: the original Serafim look).
-class MockApp extends StatelessWidget {
+class MockApp extends ConsumerWidget {
   const MockApp({super.key, required this.home});
 
   final Widget home;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     AppColors.apply(Brightness.dark);
     final base = ThemeData.dark();
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      // The app's own key: the in-app banner shows in its overlay.
+      navigatorKey: ref.watch(navigatorKeyProvider),
       theme: base.copyWith(
         scaffoldBackgroundColor: AppColors.paper,
         canvasColor: AppColors.paper,
@@ -642,4 +670,331 @@ class StatusBar extends StatelessWidget {
       ),
     );
   }
+}
+
+// ------------------------------------------------------ draw together ---
+
+/// A stroke on the shared sheet, as the server hands the canvas over: points
+/// are fractions of the square (0..1).
+class _Line {
+  const _Line(
+    this.owner,
+    this.color,
+    this.width,
+    this.points,
+    this.from,
+    this.to,
+  );
+
+  final String owner;
+  final Color color;
+  final double width;
+  final List<Offset> points;
+
+  /// When it is drawn, as a share of the whole animation (0..1).
+  final double from;
+  final double to;
+}
+
+List<Offset> _path(List<Offset> corners, {int each = 14}) => [
+  for (var i = 0; i < corners.length - 1; i++)
+    for (var k = 0; k < each; k++)
+      Offset.lerp(corners[i], corners[i + 1], k / each)!,
+  corners.last,
+];
+
+List<Offset> _arc(
+  Offset c,
+  double r, {
+  double from = 0,
+  double to = 2 * math.pi,
+  int n = 48,
+}) => [
+  for (var i = 0; i <= n; i++)
+    c +
+        Offset(
+              math.cos(from + (to - from) * i / n),
+              math.sin(from + (to - from) * i / n),
+            ) *
+            r,
+];
+
+List<Offset> _heart(Offset c, double s) => [
+  for (var i = 0; i <= 60; i++)
+    () {
+      final t = 2 * math.pi * i / 60;
+      final x = 16 * math.pow(math.sin(t), 3);
+      final y =
+          13 * math.cos(t) -
+          5 * math.cos(2 * t) -
+          2 * math.cos(3 * t) -
+          math.cos(4 * t);
+      return c + Offset(x * s, -y * s);
+    }(),
+];
+
+const _pen = 8 / 360; // a medium pen, as a share of the sheet
+const _thick = 16 / 360;
+
+/// You draw mountains with snow on top; Tamara draws a sun, its rays and a
+/// heart. At the same time, like two friends on one sheet.
+final _drawing = <_Line>[
+  _Line(
+    me,
+    drawColors[5],
+    _thick,
+    _path(const [
+      Offset(0.04, 0.80),
+      Offset(0.24, 0.48),
+      Offset(0.36, 0.64),
+      Offset(0.55, 0.34),
+      Offset(0.72, 0.62),
+      Offset(0.83, 0.50),
+      Offset(0.96, 0.74),
+    ]),
+    0.0,
+    0.55,
+  ),
+  _Line(
+    me,
+    drawColors[0],
+    _pen,
+    _path(const [
+      Offset(0.48, 0.45),
+      Offset(0.52, 0.41),
+      Offset(0.55, 0.45),
+      Offset(0.58, 0.41),
+      Offset(0.62, 0.45),
+    ], each: 6),
+    0.58,
+    0.72,
+  ),
+  _Line(
+    me,
+    drawColors[6],
+    _pen,
+    _path(const [
+      Offset(0.06, 0.88),
+      Offset(0.30, 0.86),
+      Offset(0.55, 0.90),
+      Offset(0.80, 0.86),
+      Offset(0.94, 0.88),
+    ]),
+    0.75,
+    0.95,
+  ),
+  _Line(
+    'tamara',
+    drawColors[4],
+    _thick,
+    _arc(const Offset(0.78, 0.20), 0.085),
+    0.05,
+    0.42,
+  ),
+  for (var i = 0; i < 8; i++)
+    _Line(
+      'tamara',
+      drawColors[3],
+      _pen,
+      () {
+        final a = 2 * math.pi * i / 8;
+        final d = Offset(math.cos(a), math.sin(a));
+        return _path([
+          const Offset(0.78, 0.20) + d * 0.12,
+          const Offset(0.78, 0.20) + d * 0.17,
+        ], each: 4);
+      }(),
+      0.45 + i * 0.03,
+      0.48 + i * 0.03,
+    ),
+  _Line(
+    'tamara',
+    drawColors[2],
+    _pen,
+    _heart(const Offset(0.22, 0.20), 0.0042),
+    0.75,
+    1.0,
+  ),
+];
+
+/// The canvas as it stands at [t] (0..1 of the animation), in the shape the
+/// server sends: each person's strokes, the one being drawn cut short.
+List<Map<String, dynamic>> drawingAt(double t) {
+  final next = <String, int>{};
+  final out = <Map<String, dynamic>>[];
+  for (final line in _drawing) {
+    final id = next[line.owner] = (next[line.owner] ?? -1) + 1;
+    if (t <= line.from) continue;
+    final share = ((t - line.from) / (line.to - line.from)).clamp(0.0, 1.0);
+    final count = math.max(2, (line.points.length * share).round());
+    out.add({
+      'owner': line.owner,
+      'id': '$id',
+      'c': line.color.toARGB32(),
+      'w': line.width,
+      'e': false,
+      'p': [
+        for (final p in line.points.take(count)) ...[p.dx, p.dy],
+      ],
+      'done': share >= 1,
+    });
+  }
+  return out;
+}
+
+/// Opens Draw Together with Tamara, live, on the sky paper.
+void startDrawing(ProviderContainer c, double t) {
+  final draw = c.read(drawTogetherProvider.notifier);
+  if (c.read(drawTogetherProvider) == null) {
+    draw.expectInvite(session: 'S', peerId: tamara.id);
+  }
+  draw.heard({
+    'type': 'draw',
+    'op': 'state',
+    'session': 'S',
+    'peer_id': tamara.id,
+    'status': 'live',
+    'paper': 2,
+    'strokes': drawingAt(t),
+  });
+}
+
+Widget drawPage() => const DrawTogetherPage();
+
+// ------------------------------------------------------- notifications ---
+
+List<AppNotification> mockNotifications() {
+  AppNotification n(
+    String id,
+    NotificationKind kind,
+    PublicUser who,
+    DateTime at, {
+    bool read = false,
+  }) => AppNotification(
+    id: id,
+    kind: kind,
+    isRead: read,
+    createdAt: at,
+    actor: who,
+    postId: 'p1',
+  );
+  return [
+    n('n1', NotificationKind.postCommented, tamara, _ago(minutes: 2)),
+    n('n2', NotificationKind.postSparked, chisomo, _ago(minutes: 9)),
+    n('n3', NotificationKind.circleNewPost, grace, _ago(minutes: 31)),
+    n(
+      'n4',
+      NotificationKind.friendPosted,
+      kondwani,
+      _ago(hours: 2),
+      read: true,
+    ),
+    n(
+      'n5',
+      NotificationKind.commentReplied,
+      kondwani,
+      _ago(hours: 3),
+      read: true,
+    ),
+    n(
+      'n6',
+      NotificationKind.newFollower,
+      suggestions[0],
+      _ago(hours: 5),
+      read: true,
+    ),
+  ];
+}
+
+Widget notificationsPage() => const NotificationsPage();
+
+/// The banner a comment brings in while you are in the app.
+void showCommentBanner(ProviderContainer c) {
+  c
+      .read(inAppBannerProvider)
+      .show(
+        label: NotificationKind.postCommented.bannerLabel,
+        icon: notificationIcon(NotificationKind.postCommented),
+        accent: notificationAccent(NotificationKind.postCommented),
+        title: tamara.displayName,
+        body: 'Commented on your post',
+        avatar: avatarImage(tamara.profilePic),
+      );
+}
+
+// ------------------------------------------- draw together, the story ---
+
+/// What the conversation with Tamara shows: normally [conversation]; for the
+/// Draw Together story, the finished drawing is added as the newest message.
+List<LocalMessage> Function() messagesInChat = conversation;
+
+/// The drawing, sent to the chat as a picture (the file the app's own
+/// "Send to chat" makes), as the newest message.
+List<LocalMessage> conversationWithDrawing(String drawingPath) => [
+  LocalMessage()
+    ..messageId = 'm10'
+    ..roomId = tamaraRoom
+    ..senderId = me
+    ..recipientId = tamara.id
+    ..type = MessageType.image
+    ..localMediaPath = drawingPath
+    ..status = MessageStatus.read
+    ..timestamp = _ago(minutes: 1),
+  ...conversation(),
+];
+
+/// The finished drawing as strokes, for the app's scribble renderer.
+List<Stroke> finishedDrawing() => [
+  for (final line in drawingAt(1))
+    Stroke(
+      color: Color(line['c'] as int),
+      width: (line['w'] as num).toDouble(),
+      erase: false,
+      points: [
+        for (var i = 0; i + 1 < (line['p'] as List).length; i += 2)
+          Offset(
+            ((line['p'] as List)[i] as num).toDouble(),
+            ((line['p'] as List)[i + 1] as num).toDouble(),
+          ),
+      ],
+    ),
+];
+
+/// You, as Tamara's phone knows you: for shots of her side.
+final meAsFriend = PublicUser(
+  id: me,
+  username: 'daylight',
+  displayName: 'Daylight',
+  profilePic: _img('limbani'),
+  friendStatus: FriendStatus.friends,
+);
+
+/// Opens the same live canvas on Tamara's phone: the peer is you.
+void startDrawingAsTamara(ProviderContainer c, double t) {
+  final draw = c.read(drawTogetherProvider.notifier);
+  if (c.read(drawTogetherProvider) == null) {
+    draw.expectInvite(session: 'S', peerId: me);
+  }
+  draw.heard({
+    'type': 'draw',
+    'op': 'state',
+    'session': 'S',
+    'peer_id': me,
+    'status': 'live',
+    'paper': 2,
+    'strokes': drawingAt(t),
+  });
+}
+
+/// The banner a Draw Together invitation brings, as the app shows it.
+void showDrawInviteBanner(ProviderContainer c) {
+  c
+      .read(inAppBannerProvider)
+      .show(
+        label: 'DRAW TOGETHER',
+        icon: Icons.draw_outlined,
+        title: tamara.displayName,
+        body: 'wants to draw together',
+        avatar: avatarImage(tamara.profilePic),
+      );
 }

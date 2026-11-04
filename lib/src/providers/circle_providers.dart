@@ -84,6 +84,8 @@ class CircleJoinController extends AsyncNotifier<void> {
     state = await AsyncValue.guard(() async {
       await ref.read(circleServiceProvider).join(circleId);
       ref.invalidate(myCirclesProvider);
+      // Joining also takes up an invitation, if there was one.
+      ref.invalidate(circleInvitationsProvider);
       ref.invalidate(discoverCirclesProvider);
       ref.invalidate(circleDetailProvider(circleId));
     });
@@ -92,6 +94,56 @@ class CircleJoinController extends AsyncNotifier<void> {
 
 final circleJoinProvider = AsyncNotifierProvider<CircleJoinController, void>(
   CircleJoinController.new,
+);
+
+/// The Circles you've been invited to and not answered yet.
+final circleInvitationsProvider = FutureProvider<List<CircleSummary>>((
+  ref,
+) async {
+  if (ref.watch(currentAccountIdProvider) == null) return const [];
+  return ref.watch(circleServiceProvider).invitations();
+});
+
+/// Inviting people into a Circle, and answering an invitation.
+class CircleInviteController {
+  const CircleInviteController(this._ref);
+
+  final Ref _ref;
+
+  /// Invites [userIds] (or adds them, for the Owner and Overseers with
+  /// [add]) and says what happened to each.
+  Future<List<CircleInviteResult>> invite(
+    String circleId,
+    List<String> userIds, {
+    bool add = false,
+  }) async {
+    final results = await _ref
+        .read(circleServiceProvider)
+        .invite(circleId, userIds, add: add);
+    _ref.invalidate(circleDetailProvider(circleId));
+    return results;
+  }
+
+  Future<void> accept(String circleId) async {
+    await _ref.read(circleServiceProvider).acceptInvite(circleId);
+    _refresh(circleId);
+  }
+
+  Future<void> decline(String circleId) async {
+    await _ref.read(circleServiceProvider).declineInvite(circleId);
+    _refresh(circleId);
+  }
+
+  void _refresh(String circleId) {
+    _ref.invalidate(circleInvitationsProvider);
+    _ref.invalidate(myCirclesProvider);
+    _ref.invalidate(discoverCirclesProvider);
+    _ref.invalidate(circleDetailProvider(circleId));
+  }
+}
+
+final circleInviteProvider = Provider<CircleInviteController>(
+  CircleInviteController.new,
 );
 
 /// Leaves a Circle.

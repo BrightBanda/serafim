@@ -16,6 +16,8 @@ enum NotificationKind {
   circleRoleChanged,
   circleBanned,
   circleNewPost,
+  circleInvited,
+  circleAdded,
 
   // About posts outside Circles, and Sparks anywhere.
   friendPosted,
@@ -40,6 +42,8 @@ enum NotificationKind {
     'circle_role_changed' => NotificationKind.circleRoleChanged,
     'circle_banned' => NotificationKind.circleBanned,
     'circle_new_post' => NotificationKind.circleNewPost,
+    'circle_invited' => NotificationKind.circleInvited,
+    'circle_added' => NotificationKind.circleAdded,
     'friend_posted' => NotificationKind.friendPosted,
     'post_commented' => NotificationKind.postCommented,
     'comment_replied' => NotificationKind.commentReplied,
@@ -85,6 +89,8 @@ enum NotificationKind {
     NotificationKind.circleRoleChanged => 'changed your role in a Circle',
     NotificationKind.circleBanned => 'banned you from a Circle',
     NotificationKind.circleNewPost => 'posted in a Circle you are in',
+    NotificationKind.circleInvited => 'invited you to join a Circle',
+    NotificationKind.circleAdded => 'added you to a Circle',
     NotificationKind.friendPosted => 'shared a new post',
     NotificationKind.postCommented => 'commented on your post',
     NotificationKind.commentReplied => 'replied to your comment',

@@ -1,9 +1,13 @@
+import 'dart:io' show Platform;
 import 'dart:ui' show PlatformDispatcher;
 
-import 'package:flutter/foundation.dart' show kReleaseMode;
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/platform/chat_notifications.dart';
 import 'package:serafim/src/core/platform/incoming_share.dart';
 import 'package:serafim/src/data/local/isar_service.dart';
 import 'package:serafim/src/providers/local_db_providers.dart';
@@ -19,6 +23,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
+
+  // Chat pushes arrive as data only on Android and are drawn by the app (one
+  // notification per conversation, with Reply), also while it is closed.
+  if (!kIsWeb && Platform.isAndroid) {
+    FirebaseMessaging.onBackgroundMessage(onBackgroundPush);
+  }
 
   // Open the chat database before the first frame, as a messenger does: the
   // chat list can then read every conversation, last message and unread count

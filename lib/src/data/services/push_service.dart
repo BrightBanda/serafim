@@ -34,10 +34,14 @@ class PushService {
   /// Registers (or re-registers) an FCM token for the signed-in user. Safe to
   /// repeat: the backend upserts by token, and moves a token to the current
   /// user if a previous account on this phone had it.
+  ///
+  /// [drawsChatNotifications] says this app shows chat pushes itself
+  /// (`ChatNotifications`); servers that predate it ignore the field.
   Future<void> registerDevice({
     required String token,
     required String platform,
     required bool showPreview,
+    bool drawsChatNotifications = false,
   }) async {
     try {
       await _dio.post<dynamic>(
@@ -46,6 +50,9 @@ class PushService {
           'token': token,
           'platform': platform,
           'show_preview': showPreview,
+          // The app draws chat notifications itself (Android): the server
+          // then sends chat pushes as data only, with a reply link.
+          if (drawsChatNotifications) 'notification_style': 'app',
         },
       );
     } on DioException catch (error) {

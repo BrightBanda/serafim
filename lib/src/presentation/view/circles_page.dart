@@ -95,10 +95,7 @@ class _CirclesPageState extends ConsumerState<CirclesPage> {
             GestureDetector(
               onTap: _openCreate,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 7,
-                  vertical: 7,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
                 decoration: BoxDecoration(
                   color: AppColors.primary,
                   border: Border.all(color: AppColors.line, width: 1.5),
@@ -318,10 +315,21 @@ class _JoinedAndSuggestions extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final joined = ref.watch(myCirclesProvider);
     final suggestions = ref.watch(discoverCirclesProvider(query));
+    final invited = ref.watch(circleInvitationsProvider).value ?? const [];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
       children: [
+        if (invited.isNotEmpty) ...[
+          _Label('INVITATIONS'),
+          const SizedBox(height: 6),
+          for (final circle in invited)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _CircleTile(circle: circle),
+            ),
+          const SizedBox(height: 20),
+        ],
         _Label('JOINED'),
         const SizedBox(height: 6),
         joined.when(
@@ -422,7 +430,8 @@ class _CircleTileState extends ConsumerState<_CircleTile> {
     final canJoin =
         !circle.isMember &&
         !circle.iAmBanned &&
-        circle.visibility != CircleVisibility.inviteOnly;
+        (circle.myInvitePending ||
+            circle.visibility != CircleVisibility.inviteOnly);
 
     return CircleCard(
       circle: circle,

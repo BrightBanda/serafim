@@ -18,6 +18,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/src/google_fonts_base.dart' as google_fonts;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:serafim/src/providers/draw_together_providers.dart';
+import 'package:serafim/src/providers/settings_providers.dart';
+import 'package:serafim/src/utils/serafim_mark.dart';
+import 'package:serafim/src/data/models/public_user.dart';
+import 'package:serafim/src/utils/image_editor/scribble.dart';
+import 'package:serafim/src/utils/chat/chat_input_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'mock_world.dart';
@@ -89,6 +95,24 @@ Future<void> _loadPhotos(WidgetTester tester) async {
   });
 }
 
+/// The photo in the chat with Tamara is a file on the phone: point it at
+/// one, and put it in the image cache like the others.
+Future<void> _loadChatPhoto(WidgetTester tester) async {
+  chatPhotoPath = '$_cache/photos/p429.jpg';
+  await tester.runAsync(() async {
+    final codec = await ui.instantiateImageCodec(
+      File(chatPhotoPath).readAsBytesSync(),
+    );
+    final frame = await codec.getNextFrame();
+    PaintingBinding.instance.imageCache.putIfAbsent(
+      FileImage(File(chatPhotoPath)),
+      () => OneFrameImageStreamCompleter(
+        SynchronousFuture(ImageInfo(image: frame.image)),
+      ),
+    );
+  });
+}
+
 /// Lets fonts, pictures and providers settle. Font loading starts inside the
 /// test's fake clock, so it only moves on when frames are pumped: alternate
 /// short real waits (for file and engine work) with pumps, until nothing is
@@ -113,6 +137,23 @@ Future<void> _shoot(WidgetTester tester, GlobalKey key, String name) async {
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
     Directory(_out).createSync(recursive: true);
     File('$_out/$name.png').writeAsBytesSync(png!.buffer.asUint8List());
+  });
+}
+
+/// One frame of an animation: no settling, just the picture now.
+Future<void> _shootFrame(
+  WidgetTester tester,
+  GlobalKey key,
+  String name,
+) async {
+  await tester.pump();
+  await tester.runAsync(() async {
+    final boundary =
+        key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+    final image = await boundary.toImage(pixelRatio: _pixelRatio);
+    final png = await image.toByteData(format: ui.ImageByteFormat.png);
+    Directory('$_out/frames').createSync(recursive: true);
+    File('$_out/frames/$name.png').writeAsBytesSync(png!.buffer.asUint8List());
   });
 }
 
@@ -209,4 +250,207 @@ void main() {
   });
 
   testWidgets('a post', (t) => shootPage(t, postPage(), '06_post'));
+
+  testWidgets('draw together, drawn live', (tester) async {
+    final key = GlobalKey();
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    await _loadPhotos(tester);
+    await _phone(
+      tester,
+      key,
+      mockOverrides(prefs, tab: MockTab.chats),
+      drawPage(),
+    );
+    final c = ProviderScope.containerOf(tester.element(find.byType(MockApp)));
+    startDrawing(c, 0);
+    await _settle(tester);
+    const frames = 45;
+    for (var i = 0; i <= frames; i++) {
+      startDrawing(c, i / frames);
+      await _shootFrame(tester, key, 'draw_${i.toString().padLeft(3, '0')}');
+    }
+    await _shoot(tester, key, '07_draw');
+    c.read(drawTogetherProvider.notifier).close();
+    await tester.pump();
+  });
+
+  testWidgets('notifications, and a banner', (tester) async {
+    final key = GlobalKey();
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    await _loadPhotos(tester);
+    await _phone(
+      tester,
+      key,
+      mockOverrides(prefs, tab: MockTab.chats),
+      notificationsPage(),
+    );
+    await _shoot(tester, key, '08_notifications');
+    final c = ProviderScope.containerOf(tester.element(find.byType(MockApp)));
+    showCommentBanner(c);
+    await _shoot(tester, key, '09_notifications_banner');
+    c.read(inAppBannerProvider).dismiss(animated: false);
+    await tester.pump();
+  });
+
+  testWidgets('the logo, on its own', (tester) async {
+    final key = GlobalKey();
+    tester.view.physicalSize = const Size(512, 512);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: RepaintBoundary(key: key, child: const SerafimMark(size: 512)),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(() async {
+      final boundary =
+          key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 2);
+      final png = await image.toByteData(format: ui.ImageByteFormat.png);
+      File('$_out/logo.png').writeAsBytesSync(png!.buffer.asUint8List());
+    });
+  });
+
+  // ------------------------------------------ Draw Together, the story ---
+
+  Future<(GlobalKey, ProviderContainer)> open(
+    WidgetTester tester,
+    Widget page, {
+    MockTab tab = MockTab.chats,
+    List<PublicUser> extraFriends = const [],
+  }) async {
+    final key = GlobalKey();
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    await _loadPhotos(tester);
+    await _loadChatPhoto(tester);
+    await _phone(
+      tester,
+      key,
+      mockOverrides(prefs, tab: tab, extraFriends: extraFriends),
+      page,
+    );
+    return (
+      key,
+      ProviderScope.containerOf(tester.element(find.byType(MockApp))),
+    );
+  }
+
+  /// Ends any session, so no invitation timer outlives the test.
+  Future<void> closeDrawing(WidgetTester tester, ProviderContainer c) async {
+    c.read(drawTogetherProvider.notifier).close();
+    await tester.pump(const Duration(seconds: 1));
+  }
+
+  testWidgets('dt: the pencil menu in a chat', (tester) async {
+    final (key, _) = await open(tester, conversationPage());
+    await _settle(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(ChatInputBar),
+        matching: find.byIcon(Icons.draw_outlined),
+      ),
+    );
+    await _shoot(tester, key, 'dt_01_pencil');
+  });
+
+  testWidgets('dt: waiting for your friend', (tester) async {
+    final (key, c) = await open(tester, drawPage());
+    c.read(drawTogetherProvider.notifier)
+      ..invite(tamara.id)
+      ..heard({
+        'type': 'draw',
+        'op': 'invited',
+        'session': 'S',
+        'peer_id': tamara.id,
+      });
+    await _shoot(tester, key, 'dt_02_waiting');
+    await closeDrawing(tester, c);
+  });
+
+  testWidgets('dt: the invitation arrives as a banner', (tester) async {
+    final (key, c) = await open(tester, mainScreen());
+    await _settle(tester);
+    showDrawInviteBanner(c);
+    await _shoot(tester, key, 'dt_03_banner');
+    c.read(inAppBannerProvider).dismiss(animated: false);
+    await tester.pump();
+  });
+
+  testWidgets('dt: the invitation, JOIN or not now', (tester) async {
+    final (key, c) = await open(tester, drawPage());
+    c
+        .read(drawTogetherProvider.notifier)
+        .expectInvite(session: 'S', peerId: tamara.id);
+    await _shoot(tester, key, 'dt_04_invite');
+    await closeDrawing(tester, c);
+  });
+
+  testWidgets('dt: the invitation inside the chat', (tester) async {
+    final (key, c) = await open(tester, conversationPage());
+    c
+        .read(drawTogetherProvider.notifier)
+        .expectInvite(session: 'S', peerId: tamara.id);
+    await _shoot(tester, key, 'dt_05_invite_bar');
+    await closeDrawing(tester, c);
+  });
+
+  testWidgets('dt: a friend drops out mid-drawing', (tester) async {
+    final (key, c) = await open(tester, drawPage());
+    startDrawing(c, 0.65);
+    c.read(drawTogetherProvider.notifier).heard({
+      'type': 'draw',
+      'op': 'away',
+      'session': 'S',
+    });
+    await _shoot(tester, key, 'dt_06_away');
+    await closeDrawing(tester, c);
+  });
+
+  testWidgets('dt: the same canvas on Tamara\'s phone', (tester) async {
+    final (key, c) = await open(tester, drawPage(), extraFriends: [meAsFriend]);
+    startDrawingAsTamara(c, 0);
+    await _settle(tester);
+    const frames = 45;
+    for (var i = 0; i <= frames; i++) {
+      startDrawingAsTamara(c, i / frames);
+      await _shootFrame(
+        tester,
+        key,
+        'draw_tamara_${i.toString().padLeft(3, '0')}',
+      );
+    }
+    await closeDrawing(tester, c);
+  });
+
+  testWidgets('dt: the drawing, sent to the chat', (tester) async {
+    // The picture "Send to chat" makes, by the app's own renderer.
+    final path = '$_out/dt_drawing.png';
+    await tester.runAsync(() async {
+      final png = await renderScribble(
+        strokes: finishedDrawing(),
+        displayedWidth: 1,
+        paper: scribblePapers[2],
+      );
+      File(path).writeAsBytesSync(png);
+      final codec = await ui.instantiateImageCodec(png);
+      final frame = await codec.getNextFrame();
+      PaintingBinding.instance.imageCache.putIfAbsent(
+        FileImage(File(path)),
+        () => OneFrameImageStreamCompleter(
+          SynchronousFuture(ImageInfo(image: frame.image)),
+        ),
+      );
+    });
+    messagesInChat = () => conversationWithDrawing(path);
+    final (key, _) = await open(tester, conversationPage());
+    await _shoot(tester, key, 'dt_07_sent');
+    messagesInChat = conversation;
+  });
 }

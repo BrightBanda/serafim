@@ -55,6 +55,10 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/notification_accent" />
+        <!-- Chat notifications: delivers a Reply typed into one to the app. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
         <!-- Shares a downloaded update with the system installer. -->
         <provider
             android:name="androidx.core.content.FileProvider"

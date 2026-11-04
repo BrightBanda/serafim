@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/platform/google_support.dart';
 import 'package:serafim/src/data/models/app_update.dart';
+import 'package:serafim/src/data/services/update_service.dart';
 import 'package:serafim/src/providers/update_providers.dart';
 import 'package:serafim/src/utils/links.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
@@ -57,9 +59,29 @@ class UpdateFlowPanel extends ConsumerWidget {
           );
         }
         final size = (forPhone ?? update).sizeBytes;
-        return SerafimButton(
-          label: size > 0 ? 'Update · ${formatBytes(size)}' : 'Update',
-          onPressed: () => controller.start(update),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SerafimButton(
+              label: size > 0 ? 'Update · ${formatBytes(size)}' : 'Update',
+              onPressed: () => controller.start(update),
+            ),
+            // Backups go to Google Drive, so only where Google sign-in works.
+            if (googleSignInSupported) ...[
+              const SizedBox(height: 8),
+              SerafimButton(
+                key: const ValueKey('update-with-backup'),
+                label: 'Back up & update',
+                isPrimary: false,
+                onPressed: () => controller.startWithBackup(update),
+              ),
+            ],
+          ],
+        );
+      case UpdatePhase.backingUp:
+        return const _Line(
+          text: 'Backing up to Google Drive first…',
+          spinner: true,
         );
       case UpdatePhase.preparing:
         return const _Line(text: 'Getting ready…', spinner: true);
@@ -130,7 +152,33 @@ class UpdateFlowPanel extends ConsumerWidget {
               style: AppTextStyles.body.copyWith(color: AppColors.rustPale),
             ),
             const SizedBox(height: 10),
-            if (error == null || error.retryable)
+            if (flow.apkReady) ...[
+              // Downloaded and checked already: no second download.
+              SerafimButton(
+                key: const ValueKey('update-retry-install'),
+                label: 'Retry install',
+                onPressed: () => controller.retryInstall(update),
+              ),
+              const SizedBox(height: 8),
+              SerafimButton(
+                key: const ValueKey('update-redownload'),
+                label: 'Download again',
+                isPrimary: false,
+                onPressed: () => controller.redownload(update),
+              ),
+            ] else if (error?.kind == UpdateErrorKind.backupFailed) ...[
+              SerafimButton(
+                label: 'Try the backup again',
+                onPressed: () => controller.startWithBackup(update),
+              ),
+              const SizedBox(height: 8),
+              SerafimButton(
+                key: const ValueKey('update-without-backup'),
+                label: 'Update without backup',
+                isPrimary: false,
+                onPressed: () => controller.start(update),
+              ),
+            ] else if (error == null || error.retryable)
               SerafimButton(
                 label: 'Try again',
                 onPressed: () => controller.start(update),

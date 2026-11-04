@@ -12,6 +12,7 @@ import 'package:serafim/src/presentation/view/circle_detail_page.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/circle_providers.dart';
 import 'package:serafim/src/providers/post_providers.dart';
+import 'package:serafim/src/providers/social_providers.dart';
 
 CircleMemberInfo person(String id, CircleRole role, int day) =>
     CircleMemberInfo(
@@ -22,11 +23,25 @@ CircleMemberInfo person(String id, CircleRole role, int day) =>
 
 /// A Circle the test can shape, and a server that records what it is asked.
 class _Server extends CircleService {
-  _Server(this.people, {this.myRole, this.settings}) : super(Dio());
+  _Server(
+    this.people, {
+    this.myRole,
+    this.settings,
+    this.visibility = CircleVisibility.private,
+    this.canInvite = false,
+    this.invited = false,
+  }) : super(Dio());
 
   final List<CircleMemberInfo> people;
   CircleRole? myRole;
   CircleNotificationSettings? settings;
+  CircleVisibility visibility;
+  bool canInvite;
+
+  /// The person has an invitation waiting.
+  bool invited;
+  String description = 'Weekend walks';
+  Map<String, Object?>? saved;
   final calls = <String>[];
   String? refuseWith;
 
@@ -34,17 +49,67 @@ class _Server extends CircleService {
     summary: CircleSummary(
       id: 'c1',
       name: 'Hikers',
-      visibility: CircleVisibility.private,
+      description: description,
+      visibility: visibility,
       memberCount: people.length,
       createdAt: DateTime.utc(2026),
       myRole: myRole,
+      myInvitePending: invited && myRole == null,
       myNotifications: myRole == null
           ? null
           : settings ?? const CircleNotificationSettings(),
     ),
     members: people,
     postingEnabled: true,
+    canInvite: canInvite,
   );
+
+  @override
+  Future<CircleDetail> update(
+    String id, {
+    String? name,
+    String? description,
+    String? category,
+    CircleVisibility? visibility,
+    String? rules,
+    bool? postingEnabled,
+  }) async {
+    saved = {
+      'name': name,
+      'description': description,
+      'category': category,
+      'visibility': visibility,
+      'rules': rules,
+      'posting': postingEnabled,
+    };
+    if (description != null) this.description = description;
+    return _detail;
+  }
+
+  @override
+  Future<List<CircleInviteResult>> invite(
+    String id,
+    List<String> userIds, {
+    bool add = false,
+  }) async {
+    calls.add('invite ${userIds.join(',')} add=$add');
+    return [
+      for (final u in userIds)
+        CircleInviteResult(userId: u, status: CircleInviteStatus.invited),
+    ];
+  }
+
+  @override
+  Future<CircleSummary> acceptInvite(String id) async {
+    calls.add('accept');
+    invited = false;
+    myRole = CircleRole.member;
+    people.add(person('me', CircleRole.member, 9));
+    return _detail.summary;
+  }
+
+  @override
+  Future<List<CircleSummary>> invitations() async => const [];
 
   @override
   Future<CircleDetail> detail(String id) async => _detail;
@@ -95,9 +160,13 @@ class _NoPosts extends PostService {
   }) async => const PostPage(items: []);
 }
 
-/// Opens the Circle from a home screen (so leaving can go back to it) and
-/// shows its About tab.
-Future<void> _openAbout(WidgetTester t, _Server server) async {
+/// Opens the Circle from a home screen (so leaving can go back to it), then
+/// its settings (members) or its About tab (everyone else).
+Future<void> _openSettings(
+  WidgetTester t,
+  _Server server, {
+  List<PublicUser> friends = const [],
+}) async {
   t.view.physicalSize = const Size(800, 2400);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -107,6 +176,7 @@ Future<void> _openAbout(WidgetTester t, _Server server) async {
         currentAccountIdProvider.overrideWithValue('me'),
         circleServiceProvider.overrideWithValue(server),
         postServiceProvider.overrideWithValue(_NoPosts()),
+        friendsProvider.overrideWith((ref) async => friends),
       ],
       child: MaterialApp(
         home: Builder(
@@ -126,7 +196,8 @@ Future<void> _openAbout(WidgetTester t, _Server server) async {
   );
   await t.tap(find.text('home'));
   await t.pumpAndSettle();
-  await t.tap(find.text('ABOUT'));
+  final gear = find.byKey(const ValueKey('circle-settings'));
+  await t.tap(gear.evaluate().isEmpty ? find.text('ABOUT') : gear);
   await t.pumpAndSettle();
 }
 
@@ -187,7 +258,7 @@ void main() {
         myRole: CircleRole.member,
         settings: const CircleNotificationSettings(replies: false),
       );
-      await _openAbout(t, server);
+      await _openSettings(t, server);
       expect(switchValue(t, 'circle-mute'), isFalse);
       expect(switchValue(t, 'circle-notify-posts'), isTrue);
       expect(switchValue(t, 'circle-notify-replies'), isFalse);
@@ -197,7 +268,7 @@ void main() {
       final server = _Server([
         person('me', CircleRole.member, 1),
       ], myRole: CircleRole.member);
-      await _openAbout(t, server);
+      await _openSettings(t, server);
       await t.tap(find.byKey(const ValueKey('circle-mute')));
       await t.pumpAndSettle();
       expect(server.calls, ['settings muted=true posts=null']);
@@ -209,7 +280,7 @@ void main() {
       final server = _Server([
         person('me', CircleRole.member, 1),
       ], myRole: CircleRole.member)..refuseWith = 'Could not save that.';
-      await _openAbout(t, server);
+      await _openSettings(t, server);
       await t.tap(find.byKey(const ValueKey('circle-notify-posts')));
       await t.pumpAndSettle();
       expect(switchValue(t, 'circle-notify-posts'), isTrue);
@@ -219,7 +290,7 @@ void main() {
     testWidgets('someone outside the circle has neither switches nor Leave', (
       t,
     ) async {
-      await _openAbout(t, _Server([person('ann', CircleRole.owner, 1)]));
+      await _openSettings(t, _Server([person('ann', CircleRole.owner, 1)]));
       expect(find.byKey(const ValueKey('circle-mute')), findsNothing);
       expect(find.byKey(const ValueKey('circle-leave')), findsNothing);
     });
@@ -231,7 +302,7 @@ void main() {
         person('ann', CircleRole.owner, 1),
         person('me', CircleRole.member, 2),
       ], myRole: CircleRole.member);
-      await _openAbout(t, server);
+      await _openSettings(t, server);
 
       await t.tap(find.byKey(const ValueKey('circle-leave')));
       await t.pumpAndSettle();
@@ -250,13 +321,17 @@ void main() {
         person('ann', CircleRole.owner, 1),
         person('me', CircleRole.member, 2),
       ], myRole: CircleRole.member);
-      await _openAbout(t, server);
+      await _openSettings(t, server);
       await t.tap(find.byKey(const ValueKey('circle-leave')));
       await t.pumpAndSettle();
       await t.tap(find.text('Stay'));
       await t.pumpAndSettle();
       expect(server.calls, isEmpty);
-      expect(find.byType(CircleDetailPage), findsOneWidget);
+      // Still in it: the Circle's page waits under its settings.
+      expect(
+        find.byType(CircleDetailPage, skipOffstage: false),
+        findsOneWidget,
+      );
     });
 
     testWidgets('an owner is told who takes over', (t) async {
@@ -265,7 +340,7 @@ void main() {
         person('ann', CircleRole.member, 2),
         person('bo', CircleRole.overseer, 3),
       ], myRole: CircleRole.owner);
-      await _openAbout(t, server);
+      await _openSettings(t, server);
       await t.tap(find.byKey(const ValueKey('circle-leave')));
       await t.pumpAndSettle();
       expect(
@@ -278,13 +353,98 @@ void main() {
       final server = _Server([
         person('me', CircleRole.owner, 1),
       ], myRole: CircleRole.owner);
-      await _openAbout(t, server);
+      await _openSettings(t, server);
       await t.tap(find.byKey(const ValueKey('circle-leave')));
       await t.pumpAndSettle();
       expect(find.textContaining('will be deleted'), findsOneWidget);
       await t.tap(find.byKey(const ValueKey('circle-leave-confirm')));
       await t.pumpAndSettle();
       expect(find.text('Hikers was deleted.'), findsOneWidget);
+    });
+  });
+
+  group('settings, editing and inviting', () {
+    testWidgets('the owner edits the description', (t) async {
+      final server = _Server([
+        person('me', CircleRole.owner, 1),
+      ], myRole: CircleRole.owner);
+      await _openSettings(t, server);
+      final field = find.descendant(
+        of: find.byKey(const ValueKey('circle-edit-description')),
+        matching: find.byType(TextField),
+      );
+      expect(t.widget<TextField>(field).controller!.text, 'Weekend walks');
+      await t.enterText(field, 'Walks on Saturdays');
+      await t.tap(find.byKey(const ValueKey('circle-edit-save')));
+      await t.pumpAndSettle();
+      // Only what changed is sent.
+      expect(server.saved, {
+        'name': null,
+        'description': 'Walks on Saturdays',
+        'category': null,
+        'visibility': null,
+        'rules': null,
+        'posting': null,
+      });
+      expect(find.text('Circle saved.'), findsOneWidget);
+    });
+
+    testWidgets('a member cannot edit, and invites only when allowed', (
+      t,
+    ) async {
+      final server = _Server([
+        person('ann', CircleRole.owner, 1),
+        person('me', CircleRole.member, 2),
+      ], myRole: CircleRole.member);
+      await _openSettings(t, server);
+      expect(find.byKey(const ValueKey('circle-edit-save')), findsNothing);
+      expect(find.textContaining('Only the Circle'), findsOneWidget);
+      expect(find.byKey(const ValueKey('circle-invite')), findsNothing);
+    });
+
+    testWidgets('inviting friends who are not in it yet', (t) async {
+      final server = _Server(
+        [
+          person('me', CircleRole.member, 1),
+          person('ann', CircleRole.owner, 2),
+        ],
+        myRole: CircleRole.member,
+        visibility: CircleVisibility.public,
+        canInvite: true,
+      );
+      await _openSettings(
+        t,
+        server,
+        friends: const [
+          PublicUser(id: 'ann', username: 'ann', displayName: 'Ann'),
+          PublicUser(id: 'bo', username: 'bo', displayName: 'Bo'),
+        ],
+      );
+      await t.tap(find.byKey(const ValueKey('circle-invite')));
+      await t.pumpAndSettle();
+      // Ann is already in it; a member can't add people directly.
+      expect(find.byKey(const ValueKey('circle-invite-ann')), findsNothing);
+      expect(find.byKey(const ValueKey('circle-invite-add')), findsNothing);
+      await t.tap(find.byKey(const ValueKey('circle-invite-bo')));
+      await t.pump();
+      await t.tap(find.byKey(const ValueKey('circle-invite-send')));
+      await t.pumpAndSettle();
+      expect(server.calls, ['invite bo add=false']);
+      expect(find.text('Bo: invited.'), findsOneWidget);
+    });
+
+    testWidgets('an invited person joins from the Circle page', (t) async {
+      final server = _Server(
+        [person('ann', CircleRole.owner, 1)],
+        invited: true,
+        visibility: CircleVisibility.inviteOnly,
+      );
+      await _openSettings(t, server);
+      await t.tap(find.byKey(const ValueKey('circle-invite-accept')));
+      await t.pumpAndSettle();
+      expect(server.calls, ['accept']);
+      expect(find.text('You joined Hikers.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('circle-settings')), findsOneWidget);
     });
   });
 }

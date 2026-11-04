@@ -8,6 +8,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show Icon, Icons;
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
+import 'package:serafim/src/core/platform/chat_notifications.dart';
 import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
@@ -19,6 +21,7 @@ import 'package:serafim/src/providers/notification_providers.dart';
 import 'package:serafim/src/providers/official_providers.dart';
 import 'package:serafim/src/providers/voice_providers.dart';
 import 'package:serafim/src/providers/chat_file_providers.dart';
+import 'package:serafim/src/providers/circle_providers.dart';
 import 'package:serafim/src/data/services/chat_file_service.dart';
 import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/providers/group_providers.dart';
@@ -88,7 +91,66 @@ class ChatViewModel extends Notifier<ChatState> {
       fireImmediately: true,
     );
 
+    // Replies typed into notifications go into their chats when the app
+    // starts and each time it comes back to the screen.
+    if (ChatNotifications.supported) {
+      final lifecycle = AppLifecycleListener(
+        onResume: () => unawaited(importNotificationReplies()),
+      );
+      ref.onDispose(lifecycle.dispose);
+      Future.microtask(importNotificationReplies);
+    }
+
     return const ChatState();
+  }
+
+  bool _importingReplies = false;
+
+  /// Puts replies typed into chat notifications into their chats, and sends
+  /// each over the socket with the id the notification used. The server
+  /// usually stored it already and only confirms it; if the notification
+  /// could not send it, this is the send. Either way the normal ack updates
+  /// the message, and an unsent one is resent on reconnect like any other.
+  Future<void> importNotificationReplies() async {
+    if (_importingReplies) return;
+    _importingReplies = true;
+    try {
+      final me = ref.read(currentAccountIdProvider);
+      if (me == null) return;
+      final queue = ref.read(notificationReplyQueueProvider);
+      final isar = ref.read(isarServiceProvider);
+      for (final reply in await queue.queuedReplies()) {
+        if (!ref.mounted) return;
+        // Typed by an account that has since signed out: not ours to send.
+        if (reply.userId != me) {
+          await queue.forgetReply(reply.clientId);
+          continue;
+        }
+        if (await isar.getMessageById(reply.clientId) == null) {
+          final msg = LocalMessage()
+            ..messageId = reply.clientId
+            ..roomId = reply.isGroup
+                ? groupRoomId(reply.target)
+                : buildRoomId(me, reply.target)
+            ..senderId = me
+            ..recipientId = reply.target
+            ..groupId = reply.isGroup ? reply.target : null
+            ..textContent = reply.text
+            ..type = MessageType.text
+            ..status = MessageStatus.sending
+            ..timestamp = reply.at;
+          await isar.saveMessage(msg);
+          ref
+              .read(webSocketServiceProvider)
+              .sendMessage(await _outgoingPayload(msg));
+        }
+        await queue.forgetReply(reply.clientId);
+      }
+    } catch (error) {
+      _log('could not import notification replies: $error');
+    } finally {
+      _importingReplies = false;
+    }
   }
 
   /// One frame from the server.
@@ -251,6 +313,13 @@ class ChatViewModel extends Notifier<ChatState> {
 
   /// Banner for a friend request, accepted request or new follower.
   void _alertNotification(Map<String, dynamic> data) {
+    // Invited to (or added to) a Circle: the Circles tab shows it at once.
+    final circleKind = NotificationKind.parse(data['kind'] as String?);
+    if (circleKind == NotificationKind.circleInvited ||
+        circleKind == NotificationKind.circleAdded) {
+      ref.invalidate(circleInvitationsProvider);
+      ref.invalidate(myCirclesProvider);
+    }
     final settings = ref.read(settingsProvider);
     if (!settings.inAppAlerts) return;
     final id = data['id'] as String?;

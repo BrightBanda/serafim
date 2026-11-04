@@ -3,15 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/circle.dart';
 import 'package:serafim/src/data/models/post.dart';
+import 'package:serafim/src/presentation/view/circle_settings_page.dart';
 import 'package:serafim/src/presentation/view/composer_page.dart';
 import 'package:serafim/src/presentation/view/post_detail_page.dart';
 import 'package:serafim/src/presentation/view/widgets/load_more_button.dart';
 import 'package:serafim/src/presentation/view/widgets/post_card.dart';
-import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/circle_providers.dart';
 import 'package:serafim/src/providers/post_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
-import 'package:serafim/src/utils/settings_widgets.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -36,6 +35,16 @@ class _CircleDetailPageState extends ConsumerState<CircleDetailPage> {
     );
   }
 
+  Future<void> _openSettings() async {
+    final gone = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => CircleSettingsPage(circleId: widget.circleId),
+      ),
+    );
+    // Left or deleted from its settings: nothing to show here any more.
+    if (gone == true && mounted) _goBack();
+  }
+
   void _goBack() {
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
@@ -48,7 +57,22 @@ class _CircleDetailPageState extends ConsumerState<CircleDetailPage> {
 
     return Scaffold(
       backgroundColor: AppColors.paper,
-      appBar: AppTopBar(title: 'CIRCLE', onBack: _goBack),
+      appBar: AppTopBar(
+        title: 'CIRCLE',
+        onBack: _goBack,
+        trailing: detail.value?.isMember == true
+            ? IconButton(
+                key: const ValueKey('circle-settings'),
+                tooltip: 'Circle settings',
+                icon: Icon(
+                  Icons.settings_outlined,
+                  size: 20,
+                  color: AppColors.text,
+                ),
+                onPressed: _openSettings,
+              )
+            : null,
+      ),
       body: detail.when(
         loading: () =>
             Center(child: CircularProgressIndicator(color: AppColors.primary)),
@@ -154,12 +178,96 @@ class _Header extends ConsumerWidget {
               style: AppTextStyles.smallDim.copyWith(color: AppColors.rustPale),
             ),
           ],
-          if (!circle.isMember && !circle.summary.iAmBanned) ...[
+          if (!circle.isMember &&
+              !circle.summary.iAmBanned &&
+              circle.summary.myInvitePending) ...[
+            const SizedBox(height: 12),
+            _InviteAnswer(circle: circle),
+          ] else if (!circle.isMember && !circle.summary.iAmBanned) ...[
             const SizedBox(height: 12),
             _JoinButton(circle: circle),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// You were invited: join, or say no.
+class _InviteAnswer extends ConsumerStatefulWidget {
+  const _InviteAnswer({required this.circle});
+
+  final CircleDetail circle;
+
+  @override
+  ConsumerState<_InviteAnswer> createState() => _InviteAnswerState();
+}
+
+class _InviteAnswerState extends ConsumerState<_InviteAnswer> {
+  bool _busy = false;
+
+  Future<void> _answer({required bool accept}) async {
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final invites = ref.read(circleInviteProvider);
+    try {
+      if (accept) {
+        await invites.accept(widget.circle.id);
+        messenger.showSnackBar(
+          SnackBar(content: Text('You joined ${widget.circle.name}.')),
+        );
+      } else {
+        await invites.decline(widget.circle.id);
+        // An invite-only Circle can't be seen without the invitation.
+        if (widget.circle.summary.visibility == CircleVisibility.inviteOnly &&
+            navigator.canPop()) {
+          navigator.pop();
+        }
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(humanError(e))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "You've been invited to join this Circle.",
+          style: AppTextStyles.smallDim.copyWith(color: AppColors.primaryPale),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            GestureDetector(
+              key: const ValueKey('circle-invite-accept'),
+              onTap: _busy ? null : () => _answer(accept: true),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  border: Border.all(color: AppColors.line, width: 1.5),
+                ),
+                child: Text('Join', style: AppTextStyles.buttonLabel),
+              ),
+            ),
+            const SizedBox(width: 10),
+            TextButton(
+              key: const ValueKey('circle-invite-decline'),
+              onPressed: _busy ? null : () => _answer(accept: false),
+              child: Text('Not now', style: AppTextStyles.linkText),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -383,28 +491,11 @@ class _AboutTab extends ConsumerWidget {
             child: Text(circle.rules!, style: AppTextStyles.fieldInput),
           ),
         ],
-        if (circle.isMember) ...[
-          const SizedBox(height: 24),
-          Text(
-            'NOTIFICATIONS',
-            style: AppTextStyles.eyebrow.copyWith(fontSize: 9),
-          ),
-          const SizedBox(height: 8),
-          _NotificationSettings(circle: circle),
-        ],
         if (role?.canManage == true && circle.pendingRequests.isNotEmpty) ...[
           const SizedBox(height: 24),
           Text('MANAGE', style: AppTextStyles.eyebrow.copyWith(fontSize: 9)),
           const SizedBox(height: 8),
           _RequestList(circle: circle),
-        ],
-        if (circle.isMember) ...[
-          const SizedBox(height: 24),
-          _LeaveRow(circle: circle),
-        ],
-        if (role?.isOwner == true) ...[
-          const SizedBox(height: 12),
-          _DangerRow(circle: circle),
         ],
       ],
     );
@@ -433,206 +524,6 @@ class _Row extends StatelessWidget {
           ),
           Expanded(child: Text(value, style: AppTextStyles.fieldInput)),
         ],
-      ),
-    );
-  }
-}
-
-/// Your notification switches for this Circle: mute it entirely, or choose
-/// what it tells you about. A switch moves at once; if the server refuses,
-/// it moves back and says why.
-class _NotificationSettings extends ConsumerStatefulWidget {
-  const _NotificationSettings({required this.circle});
-
-  final CircleDetail circle;
-
-  @override
-  ConsumerState<_NotificationSettings> createState() =>
-      _NotificationSettingsState();
-}
-
-class _NotificationSettingsState extends ConsumerState<_NotificationSettings> {
-  late CircleNotificationSettings _shown = _fromServer;
-
-  CircleNotificationSettings get _fromServer =>
-      widget.circle.summary.myNotifications ??
-      const CircleNotificationSettings();
-
-  @override
-  void didUpdateWidget(covariant _NotificationSettings old) {
-    super.didUpdateWidget(old);
-    // The server's answer (after a save, or a refresh) is the truth.
-    _shown = _fromServer;
-  }
-
-  Future<void> _change(
-    CircleNotificationSettings next, {
-    bool? muted,
-    bool? posts,
-    bool? replies,
-    bool? mentions,
-  }) async {
-    final before = _shown;
-    setState(() => _shown = next);
-    final messenger = ScaffoldMessenger.of(context);
-    final error = await ref
-        .read(circleSettingsProvider.notifier)
-        .change(
-          widget.circle.id,
-          muted: muted,
-          posts: posts,
-          replies: replies,
-          mentions: mentions,
-        );
-    if (error == null) return;
-    if (mounted) setState(() => _shown = before);
-    messenger.showSnackBar(SnackBar(content: Text(error)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final s = _shown;
-    // Muted means nothing at all, so the finer switches rest while it is.
-    ValueChanged<bool>? unlessMuted(ValueChanged<bool> change) =>
-        s.muted ? null : change;
-    return Column(
-      children: [
-        SettingsSwitchRow(
-          key: const ValueKey('circle-mute'),
-          title: 'Mute this circle',
-          subtitle: 'No notifications from it at all',
-          value: s.muted,
-          onChanged: (on) => _change(s.copyWith(muted: on), muted: on),
-        ),
-        SettingsSwitchRow(
-          key: const ValueKey('circle-notify-posts'),
-          title: 'New posts',
-          subtitle: 'New posts, and comments on your posts',
-          value: s.posts,
-          onChanged: unlessMuted(
-            (on) => _change(s.copyWith(posts: on), posts: on),
-          ),
-        ),
-        SettingsSwitchRow(
-          key: const ValueKey('circle-notify-replies'),
-          title: 'Replies',
-          subtitle: 'Replies to your comments',
-          value: s.replies,
-          onChanged: unlessMuted(
-            (on) => _change(s.copyWith(replies: on), replies: on),
-          ),
-        ),
-        SettingsSwitchRow(
-          key: const ValueKey('circle-notify-mentions'),
-          title: 'Mentions',
-          subtitle: 'When someone mentions you',
-          value: s.mentions,
-          onChanged: unlessMuted(
-            (on) => _change(s.copyWith(mentions: on), mentions: on),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Leaving the Circle. The warning says what will actually happen: your
-/// posts stay; an owner hands it on (to whom is named); the last member
-/// takes it with them.
-class _LeaveRow extends ConsumerWidget {
-  const _LeaveRow({required this.circle});
-
-  final CircleDetail circle;
-
-  String _warning(String? me) {
-    final private = circle.summary.visibility != CircleVisibility.public;
-    final rejoin = private
-        ? ' To come back you will need to be approved again.'
-        : '';
-    if (circle.myRole?.isOwner != true) {
-      return 'You will stop seeing its posts. Your own posts stay in it.'
-          '$rejoin';
-    }
-    final heir = me == null ? null : circleSuccessor(circle.members, me);
-    if (heir == null) {
-      return "You're the only member, so the circle and every post in it "
-          'will be deleted. Nobody can undo this.';
-    }
-    return "You're the owner. ${heir.user.displayName} "
-        '(${heir.role.label.toLowerCase()}) becomes the owner. Your own '
-        'posts stay in it.$rejoin';
-  }
-
-  Future<void> _leave(BuildContext context, WidgetRef ref) async {
-    final me = ref.read(currentAccountIdProvider);
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (dialog) => AlertDialog(
-        backgroundColor: AppColors.paperAlt,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-        title: Text(
-          'Leave ${circle.name}?',
-          style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
-        ),
-        content: Text(_warning(me), style: AppTextStyles.body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialog).pop(false),
-            child: Text('Stay', style: AppTextStyles.linkText),
-          ),
-          TextButton(
-            key: const ValueKey('circle-leave-confirm'),
-            onPressed: () => Navigator.of(dialog).pop(true),
-            child: Text('Leave', style: AppTextStyles.linkText),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-    try {
-      final result = await ref
-          .read(circleLeaveProvider.notifier)
-          .leave(circle.id);
-      if (navigator.canPop()) navigator.pop();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            result?.circleDeleted == true
-                ? '${circle.name} was deleted.'
-                : 'You left ${circle.name}.',
-          ),
-        ),
-      );
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(humanError(e))));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
-      key: const ValueKey('circle-leave'),
-      onTap: () => _leave(context, ref),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppColors.paperAlt,
-          border: Border.all(color: AppColors.lineSoft, width: 1.5),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.logout, size: 16, color: AppColors.rustPale),
-            const SizedBox(width: 10),
-            Text(
-              'Leave this circle',
-              style: AppTextStyles.fieldInput.copyWith(
-                color: AppColors.rustPale,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -716,107 +607,6 @@ class _SmallButton extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Deleting a Circle, for its Owner. The name has to be typed back.
-class _DangerRow extends ConsumerWidget {
-  const _DangerRow({required this.circle});
-
-  final CircleDetail circle;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return GestureDetector(
-      onTap: () async {
-        final confirmed = await _confirm(context, circle.name);
-        if (confirmed != true || !context.mounted) return;
-        final messenger = ScaffoldMessenger.of(context);
-        final navigator = Navigator.of(context);
-        try {
-          await ref
-              .read(circleServiceProvider)
-              .delete(circle.id, confirmName: circle.name);
-          navigator.pop();
-        } catch (e) {
-          messenger.showSnackBar(SnackBar(content: Text(humanError(e))));
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: AppColors.paperAlt,
-          border: Border.all(color: AppColors.rust, width: 1.5),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.delete_outline, size: 16, color: AppColors.rustPale),
-            const SizedBox(width: 10),
-            Text(
-              'Delete this circle',
-              style: AppTextStyles.fieldInput.copyWith(
-                color: AppColors.rustPale,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Asks for the Circle's name before deleting it, so a stray tap cannot
-/// destroy a community.
-Future<bool?> _confirm(BuildContext context, String name) {
-  final controller = TextEditingController();
-  return showDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      backgroundColor: AppColors.paperAlt,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      title: Text(
-        'Delete this circle?',
-        style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Every post in it goes too, and nobody can undo it. '
-            'Type the name to confirm.',
-            style: AppTextStyles.body,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: controller,
-            autofocus: true,
-            style: AppTextStyles.fieldInput,
-            cursorColor: AppColors.primaryPale,
-            decoration: InputDecoration(
-              isDense: true,
-              border: const OutlineInputBorder(borderRadius: BorderRadius.zero),
-              hintText: name,
-              hintStyle: AppTextStyles.fieldInput.copyWith(
-                color: AppColors.textDim,
-              ),
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text('Cancel', style: AppTextStyles.linkText),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(
-            controller.text.trim().toLowerCase() == name.trim().toLowerCase(),
-          ),
-          child: Text('Delete', style: AppTextStyles.linkText),
-        ),
-      ],
-    ),
-  );
 }
 
 class _MembersTab extends ConsumerWidget {

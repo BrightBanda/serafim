@@ -12,6 +12,7 @@ import 'package:serafim/src/core/platform/app_installer.dart';
 import 'package:serafim/src/data/models/announcement.dart';
 import 'package:serafim/src/data/models/app_update.dart';
 import 'package:serafim/src/data/services/update_service.dart';
+import 'package:serafim/src/providers/backup_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/providers/update_providers.dart';
 import 'package:serafim/src/utils/update/update_card.dart';
@@ -81,6 +82,19 @@ ResponseBody redirect(String to) => ResponseBody.fromString(
     'location': [to],
   },
 );
+
+class FakeBackup extends AutoBackupController {
+  FakeBackup(this.result);
+
+  final Future<String?> Function() result;
+  int calls = 0;
+
+  @override
+  Future<String?> backUpNow() {
+    calls++;
+    return result();
+  }
+}
 
 class FakeInstaller implements AppInstaller {
   bool allowed = true;
@@ -400,6 +414,89 @@ void main() {
         expect(installer.installs, hasLength(2));
       },
     );
+
+    test('a refused install keeps the download for Retry install', () async {
+      installer.outcome = InstallOutcome.failed;
+      await flow().start(release());
+      expect(state().error!.kind, UpdateErrorKind.installFailed);
+      expect(state().apkReady, isTrue);
+      expect(files(), hasLength(1), reason: 'the checked APK stays');
+
+      installer.outcome = InstallOutcome.installed;
+      net.seen.clear();
+      await flow().retryInstall(release());
+      expect(net.seen, isEmpty, reason: 'nothing downloaded again');
+      expect(installer.installs, hasLength(2));
+      expect(state().phase, UpdatePhase.idle);
+    });
+
+    test('Download again throws the kept file away and fetches it', () async {
+      installer.outcome = InstallOutcome.failed;
+      await flow().start(release());
+      net.seen.clear();
+      installer.outcome = InstallOutcome.installed;
+      await flow().redownload(release());
+      expect(net.seen, hasLength(1));
+      expect(installer.installs, hasLength(2));
+    });
+
+    test('a bad download is never offered for Retry install', () async {
+      await flow().start(release(sha: 'f' * 64));
+      expect(state().apkReady, isFalse);
+    });
+
+    test('at launch, a download for a newer version is kept', () async {
+      File('${dir.path}/serafim-2.apk').writeAsBytesSync(apkBytes);
+      File('${dir.path}/serafim-1.apk').writeAsBytesSync([1]);
+      File('${dir.path}/other.apk').writeAsBytesSync([1]);
+      await flow().cleanUpDownloads();
+      expect(files().map((f) => f.uri.pathSegments.last), ['serafim-2.apk']);
+
+      // And the next Update uses it after checking it, without downloading.
+      await flow().start(release());
+      expect(net.seen, isEmpty);
+      expect(installer.installs, hasLength(1));
+    });
+
+    ProviderContainer withBackup(FakeBackup backup) {
+      final prefs = c.read(sharedPreferencesProvider);
+      final other = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          appInstallerProvider.overrideWithValue(installer),
+          apkDownloaderProvider.overrideWithValue(
+            ApkDownloader(dio: Dio()..httpClientAdapter = net, repo: repo),
+          ),
+          autoBackupProvider.overrideWith(() => backup),
+        ],
+      );
+      addTearDown(other.dispose);
+      return other;
+    }
+
+    test('Back up & update backs up, then installs', () async {
+      final backup = FakeBackup(() async => null);
+      final other = withBackup(backup);
+      await other.read(updateFlowProvider.notifier).startWithBackup(release());
+      expect(backup.calls, 1);
+      expect(installer.installs, hasLength(1));
+    });
+
+    test('a failed backup updates nothing until asked', () async {
+      final backup = FakeBackup(() async => 'No connection.');
+      final other = withBackup(backup);
+      final controller = other.read(updateFlowProvider.notifier);
+      await controller.startWithBackup(release());
+      final failed = other.read(updateFlowProvider);
+      expect(failed.error!.kind, UpdateErrorKind.backupFailed);
+      expect(failed.error!.message, contains('No connection.'));
+      expect(net.seen, isEmpty);
+      expect(installer.installs, isEmpty);
+
+      // "Update without backup".
+      await controller.start(release());
+      expect(installer.installs, hasLength(1));
+    });
 
     test('offline is a clear, retryable error', () async {
       final prefs = await SharedPreferences.getInstance();

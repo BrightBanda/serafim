@@ -149,6 +149,7 @@ class CircleSummary {
     this.joinedAt,
     this.myRequestPending = false,
     this.iAmBanned = false,
+    this.myInvitePending = false,
     this.myNotifications,
   });
 
@@ -171,19 +172,25 @@ class CircleSummary {
   /// True when the Circle has banned this person.
   final bool iAmBanned;
 
+  /// True when someone invited this person and they haven't answered.
+  final bool myInvitePending;
+
   /// Your notification switches for it. Null when you are not a member (or
   /// the server is too old to say; then everything is on).
   final CircleNotificationSettings? myNotifications;
 
   bool get isMember => myRole != null;
 
-  /// The label on the button: Join, Request to join, or Open.
-  String get joinLabel => switch (visibility) {
-    CircleVisibility.public => 'Join',
-    CircleVisibility.private =>
-      myRequestPending ? 'Requested' : 'Request to join',
-    CircleVisibility.inviteOnly => 'Invite only',
-  };
+  /// The label on the button: Join, Request to join, or Open. An
+  /// invitation lets you straight in, whatever the visibility.
+  String get joinLabel => myInvitePending
+      ? 'Join'
+      : switch (visibility) {
+          CircleVisibility.public => 'Join',
+          CircleVisibility.private =>
+            myRequestPending ? 'Requested' : 'Request to join',
+          CircleVisibility.inviteOnly => 'Invite only',
+        };
 
   factory CircleSummary.fromJson(Map<String, dynamic> json) => CircleSummary(
     id: json['id'].toString(),
@@ -200,6 +207,7 @@ class CircleSummary {
     joinedAt: _date(json['joined_at']),
     myRequestPending: json['my_request_pending'] as bool? ?? false,
     iAmBanned: json['i_am_banned'] as bool? ?? false,
+    myInvitePending: json['my_invite_pending'] as bool? ?? false,
     myNotifications: json['my_notifications'] is Map<String, dynamic>
         ? CircleNotificationSettings.fromJson(
             json['my_notifications'] as Map<String, dynamic>,
@@ -278,9 +286,18 @@ class CircleDetail {
     this.bannerUrl,
     this.ownerId,
     this.pendingRequests = const [],
+    this.canInvite = false,
+    this.invitedUserIds = const {},
   });
 
   final CircleSummary summary;
+
+  /// Whether you may invite people: members of a public Circle, and the
+  /// Owner and Overseers of any Circle.
+  final bool canInvite;
+
+  /// Who already has an invitation waiting (shown to those who may invite).
+  final Set<String> invitedUserIds;
   final List<CircleMemberInfo> members;
   final List<CircleJoinRequest> pendingRequests;
   final String? rules;
@@ -314,6 +331,11 @@ class CircleDetail {
       for (final r in (json['pending_requests'] as List? ?? const []))
         CircleJoinRequest.fromJson(r as Map<String, dynamic>),
     ],
+    canInvite: json['can_invite'] as bool? ?? false,
+    invitedUserIds: {
+      for (final id in (json['invited_user_ids'] as List? ?? const []))
+        id.toString(),
+    },
   );
 }
 
@@ -350,4 +372,46 @@ class CircleLimits {
   static const nameMax = 50;
   static const descriptionMax = 1000;
   static const rulesMax = 2000;
+}
+
+/// What inviting one person did (backend `InviteResult`).
+enum CircleInviteStatus {
+  added,
+  invited,
+  alreadyMember,
+  alreadyInvited,
+  notFriends,
+  banned,
+  unavailable;
+
+  static CircleInviteStatus parse(String? wire) => switch (wire) {
+    'added' => added,
+    'invited' => invited,
+    'already_member' => alreadyMember,
+    'already_invited' => alreadyInvited,
+    'not_friends' => notFriends,
+    'banned' => banned,
+    _ => unavailable,
+  };
+}
+
+class CircleInviteResult {
+  const CircleInviteResult({
+    required this.userId,
+    required this.status,
+    this.message,
+  });
+
+  final String userId;
+  final CircleInviteStatus status;
+
+  /// The server's words, when the outcome needs explaining.
+  final String? message;
+
+  factory CircleInviteResult.fromJson(Map<String, dynamic> json) =>
+      CircleInviteResult(
+        userId: json['user_id'].toString(),
+        status: CircleInviteStatus.parse(json['status'] as String?),
+        message: json['message'] as String?,
+      );
 }
