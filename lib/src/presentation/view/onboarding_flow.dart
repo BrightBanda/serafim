@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/presentation/view/avatar_crop_page.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/profile_interests_page.dart';
 import 'package:serafim/src/presentation/view/profile_photo_name_page.dart';
 import 'package:serafim/src/presentation/viewmodel/onboarding_view_model.dart';
 import 'package:serafim/src/providers/onboarding_providers.dart';
-import 'package:serafim/src/utils/image_picking.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
 /// Profile setup, shown once the user is signed in but has no profile yet.
@@ -43,7 +43,8 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
   Future<void> _pickPhoto(OnboardingViewModel viewModel) async {
     if (_preparingPhoto) return;
     try {
-      final bytes = await pickShrunkImage(
+      // Picked, then framed in a circle (the shape it is shown in).
+      final bytes = await pickAvatar(
         context,
         maxSide: 512,
         quality: 80,

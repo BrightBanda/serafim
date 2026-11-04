@@ -85,12 +85,13 @@ void main() {
         MessageAction.delete,
       ]);
     });
-    test("someone else's message: copy, reply, forward and delete", () {
+    test("someone else's message: copy, reply, forward, delete and report", () {
       expect(actions(out: false), [
         MessageAction.copy,
         MessageAction.reply,
         MessageAction.forward,
         MessageAction.delete,
+        MessageAction.report,
       ]);
     });
     test('images can be downloaded and deleted but never edited', () {
@@ -107,6 +108,7 @@ void main() {
         MessageAction.reply,
         MessageAction.forward,
         MessageAction.delete,
+        MessageAction.report,
       ]);
     });
     test('an unsent message cannot be edited, replied to or forwarded', () {
@@ -151,6 +153,7 @@ void main() {
         MessageAction.reply,
         MessageAction.forward,
         MessageAction.delete,
+        MessageAction.report,
       ]);
     });
     test('files are never edited, and unsent ones are not saved', () {

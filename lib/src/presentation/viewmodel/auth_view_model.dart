@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/data/models/app_user.dart';
 import 'package:serafim/src/data/models/auth_session.dart';
@@ -271,6 +272,19 @@ class AuthViewModel extends Notifier<AuthState> {
     } finally {
       if (ref.mounted && state.isBusy) state = state.copyWith(isBusy: false);
     }
+  }
+
+  /// Deletes the account on the server, then signs out here, which also
+  /// clears this account's chats from the phone. Returns why it failed, or
+  /// null once it is gone.
+  Future<String?> deleteAccount(String confirmUsername) async {
+    try {
+      await ref.read(profileServiceProvider).deleteAccount(confirmUsername);
+    } catch (error) {
+      return humanError(error, fallback: "Your account couldn't be deleted.");
+    }
+    await signOut();
+    return null;
   }
 
   Future<void> signOut() async {

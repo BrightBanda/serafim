@@ -1,6 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/composer_page.dart';
+import 'package:serafim/src/data/services/report_service.dart';
+import 'package:serafim/src/utils/report_sheet.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/post_providers.dart';
@@ -180,7 +183,9 @@ class PostCard extends ConsumerWidget {
                           const SizedBox(width: 4),
                         ],
                         Text(
-                          _ago(post.createdAt),
+                          post.editedAt != null
+                              ? '${_ago(post.createdAt)} · edited'
+                              : _ago(post.createdAt),
                           style: AppTextStyles.smallDim,
                         ),
                       ],
@@ -188,27 +193,47 @@ class PostCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              if (canDelete)
-                PopupMenuButton<String>(
-                  tooltip: 'Post options',
-                  padding: EdgeInsets.zero,
-                  icon: Icon(
-                    Icons.more_vert,
-                    size: 18,
-                    color: AppColors.textDim,
-                  ),
-                  onSelected: (value) {
-                    if (value == 'delete') {
+              PopupMenuButton<String>(
+                key: ValueKey('post-menu-${post.id}'),
+                tooltip: 'Post options',
+                padding: EdgeInsets.zero,
+                icon: Icon(Icons.more_vert, size: 18, color: AppColors.textDim),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'edit':
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ComposerPage(editing: post),
+                        ),
+                      );
+                    case 'delete':
                       _confirmDelete(context, ref);
-                    }
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem<String>(
+                    case 'report':
+                      showReportSheet(
+                        context,
+                        target: ReportTarget.post,
+                        id: post.id,
+                      );
+                  }
+                },
+                itemBuilder: (_) => [
+                  if (isMine)
+                    const PopupMenuItem<String>(
+                      value: 'edit',
+                      child: Text('Edit'),
+                    ),
+                  if (canDelete)
+                    const PopupMenuItem<String>(
                       value: 'delete',
                       child: Text('Delete'),
                     ),
-                  ],
-                ),
+                  if (!isMine)
+                    const PopupMenuItem<String>(
+                      value: 'report',
+                      child: Text('Report'),
+                    ),
+                ],
+              ),
             ],
           ),
           if (post.title != null && post.title!.isNotEmpty) ...[

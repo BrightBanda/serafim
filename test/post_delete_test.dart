@@ -108,7 +108,12 @@ void main() {
       account: me,
       service: _FakeService(),
     );
-    expect(find.byIcon(Icons.more_vert), findsNothing);
+    // Their menu only offers Report.
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    expect(find.text('Report'), findsOneWidget);
+    expect(find.text('Delete'), findsNothing);
+    expect(find.text('Edit'), findsNothing);
   });
 
   testWidgets('an Overseer sees the delete menu', (tester) async {

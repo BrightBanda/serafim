@@ -46,6 +46,19 @@ class ProfileService {
     return until;
   }
 
+  /// `DELETE /profile/me`: deletes the account for good. [confirmUsername]
+  /// must be the account's username, typed back.
+  Future<void> deleteAccount(String confirmUsername) async {
+    try {
+      await _dio.delete<dynamic>(
+        '/profile/me',
+        queryParameters: {'confirm': confirmUsername},
+      );
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
   /// `DELETE /profile/me/halo`: puts it out.
   Future<void> dimHalo() async {
     await _halo('DELETE');

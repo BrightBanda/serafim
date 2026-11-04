@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/presentation/view/avatar_crop_page.dart';
 import 'package:serafim/src/presentation/view/main_screen.dart';
 import 'package:serafim/src/presentation/view/widgets/profile_posts.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -22,7 +23,6 @@ import 'package:serafim/src/utils/user_card.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/avatar_picker.dart';
-import 'package:serafim/src/utils/image_picking.dart';
 import 'package:serafim/src/utils/notification_bell.dart';
 import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
@@ -456,7 +456,8 @@ class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
   Future<void> _change() async {
     if (_busy) return;
     try {
-      final bytes = await pickShrunkImage(
+      // Picked, then framed in a circle (the shape it is shown in).
+      final bytes = await pickAvatar(
         context,
         maxSide: 512,
         quality: 80,

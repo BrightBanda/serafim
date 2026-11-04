@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/profile.dart';
+import 'package:serafim/src/presentation/view/settings/delete_account_page.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/utils/settings_widgets.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 class PrivacySettingsPage extends ConsumerWidget {
   const PrivacySettingsPage({super.key});
@@ -91,6 +93,20 @@ class PrivacySettingsPage extends ConsumerWidget {
         ),
         const SettingsNote(
           'Your name, photo, bio and interests are always visible.',
+        ),
+        const SettingsSectionLabel('Account'),
+        ListTile(
+          key: const ValueKey('delete-account'),
+          contentPadding: EdgeInsets.zero,
+          title: Text('Delete account', style: AppTextStyles.fieldInput),
+          subtitle: Text(
+            'Remove your account and everything in it',
+            style: AppTextStyles.smallDim,
+          ),
+          trailing: Icon(Icons.chevron_right, color: AppColors.textDim),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const DeleteAccountPage()),
+          ),
         ),
       ],
     );

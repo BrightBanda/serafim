@@ -166,11 +166,11 @@ void main() {
     );
     await t.tap(find.byKey(const ValueKey('echo-audience-strangers')));
     await t.pump();
-    await t.tap(find.text('Music'));
-    await t.pump();
+    // No interest to pick any more.
+    expect(find.text('Music'), findsNothing);
     await t.tap(find.byKey(const ValueKey('echo-post')));
     await t.pumpAndSettle();
-    expect(server.calls, ['send Talk music? strangers tag=Music']);
+    expect(server.calls, ['send Talk music? strangers tag=null']);
     expect(find.text('Your Echo reached 27 people.'), findsOneWidget);
     // The card now shows how it is doing.
     expect(find.textContaining('Reached 27'), findsOneWidget);
@@ -181,15 +181,14 @@ void main() {
     expect(find.text('Up for a chat?'), findsOneWidget);
   });
 
-  testWidgets('friends only has no interest to pick', (t) async {
+  testWidgets('sending to friends only', (t) async {
     final server = _Server();
     await _show(t, server, const EchoSendCard());
     await t.tap(find.byKey(const ValueKey('echo-send')));
     await t.pumpAndSettle();
-    await t.tap(find.text('Music'));
+    expect(find.textContaining('next 30 minutes'), findsOneWidget);
     await t.tap(find.byKey(const ValueKey('echo-audience-friends')));
     await t.pump();
-    expect(find.text('Music'), findsNothing);
     await t.enterText(find.byType(TextField), 'hi');
     await t.pump();
     await t.tap(find.byKey(const ValueKey('echo-post')));

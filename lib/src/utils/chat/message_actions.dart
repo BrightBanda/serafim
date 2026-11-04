@@ -1,4 +1,13 @@
-enum MessageAction { copy, download, edit, delete, reply, forward, save }
+enum MessageAction {
+  copy,
+  download,
+  edit,
+  delete,
+  reply,
+  forward,
+  save,
+  report,
+}
 
 /// Which long-press actions apply to a message. Kept free of widgets so the
 /// ownership and attachment rules can be unit tested.
@@ -38,6 +47,8 @@ List<MessageAction> availableMessageActions({
     if (isConfirmed) ...[MessageAction.reply, MessageAction.forward],
     if ((isSticker || isGif || fileReady) && isConfirmed) MessageAction.save,
     MessageAction.delete,
+    // Someone else's message, once the server has it, can be reported.
+    if (!isOutgoing && isConfirmed) MessageAction.report,
   ];
 }
 

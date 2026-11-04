@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/data/services/report_service.dart';
+import 'package:serafim/src/utils/report_sheet.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter/services.dart';
@@ -854,6 +856,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                     isConfirmed ? 'Delete for everyone' : 'Delete',
                     'delete',
                   ),
+                  MessageAction.report => tile(
+                    Icons.flag_outlined,
+                    'Report',
+                    'report',
+                  ),
                 },
             ],
           ),
@@ -881,6 +888,12 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           message,
           isOutgoing: isOutgoing,
           isConfirmed: isConfirmed,
+        );
+      case 'report':
+        await showReportSheet(
+          context,
+          target: ReportTarget.message,
+          id: message.messageId,
         );
     }
   }

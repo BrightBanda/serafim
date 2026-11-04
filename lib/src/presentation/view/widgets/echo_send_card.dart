@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
-import 'package:serafim/src/data/models/circle.dart' show circleCategories;
 import 'package:serafim/src/data/models/echo.dart';
 import 'package:serafim/src/data/models/profile.dart';
-import 'package:serafim/src/presentation/view/widgets/circle_choices.dart';
 import 'package:serafim/src/providers/echo_providers.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
@@ -113,9 +111,8 @@ class EchoSendCard extends ConsumerWidget {
   }
 }
 
-/// The sheet for sending an Echo: a short message, who it may reach, and
-/// optionally one interest for the new people it reaches. The limits are
-/// explained up front when one applies.
+/// The sheet for sending an Echo: a short message and who it may reach.
+/// The limits are explained up front when one applies.
 Future<void> showEchoComposer(BuildContext context, MyEchoStatus? status) {
   return showModalBottomSheet<void>(
     context: context,
@@ -138,7 +135,6 @@ class _EchoComposer extends ConsumerStatefulWidget {
 class _EchoComposerState extends ConsumerState<_EchoComposer> {
   final _text = TextEditingController();
   EchoAudience _audience = EchoAudience.everyone;
-  String? _tag;
   bool _busy = false;
   String? _error;
 
@@ -174,11 +170,7 @@ class _EchoComposerState extends ConsumerState<_EchoComposer> {
     try {
       final echo = await ref
           .read(echoActionsProvider)
-          .send(
-            text: text,
-            audience: _audience,
-            tag: _audience == EchoAudience.friends ? null : _tag,
-          );
+          .send(text: text, audience: _audience);
       if (!mounted) return;
       Navigator.of(context).pop();
       messenger.showSnackBar(
@@ -217,7 +209,8 @@ class _EchoComposerState extends ConsumerState<_EchoComposer> {
             const SizedBox(height: 4),
             Text(
               'Up to ${Echo.reach} people get it as a notification. Whoever '
-              'is interested can start a chat with you for the next hour.',
+              'is interested can start a chat with you for the next '
+              '${Echo.minutes} minutes.',
               style: AppTextStyles.smallDim,
             ),
             const SizedBox(height: 14),
@@ -239,26 +232,6 @@ class _EchoComposerState extends ConsumerState<_EchoComposer> {
                 selected: _audience == a,
                 onTap: () => setState(() => _audience = a),
               ),
-            if (_audience != EchoAudience.friends) ...[
-              const SizedBox(height: 12),
-              Text(
-                'ONLY PEOPLE INTO (OPTIONAL)',
-                style: AppTextStyles.fieldLabel,
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final c in circleCategories)
-                    CircleChoiceChip(
-                      label: c,
-                      selected: _tag == c,
-                      onTap: () => setState(() => _tag = _tag == c ? null : c),
-                    ),
-                ],
-              ),
-            ],
             if ((_error ?? blocked) != null) ...[
               const SizedBox(height: 12),
               Text(

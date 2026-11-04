@@ -15,24 +15,28 @@ import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
-/// Writes a post.
+/// Writes a post, or edits one.
 ///
 /// With a [circleId] it goes inside that Circle; without one, it goes on
-/// your own profile.
+/// your own profile. With [editing] it changes that post's title and text
+/// (its pictures stay as posted).
 class ComposerPage extends ConsumerStatefulWidget {
-  const ComposerPage({super.key, this.circleId, this.circleName});
+  const ComposerPage({super.key, this.circleId, this.circleName, this.editing});
 
   final String? circleId;
   final String? circleName;
+  final Post? editing;
 
   @override
   ConsumerState<ComposerPage> createState() => _ComposerPageState();
 }
 
 class _ComposerPageState extends ConsumerState<ComposerPage> {
-  /// The heading, like a forum thread.
-  final _title = TextEditingController();
-  final _controller = TextEditingController();
+  /// The title, like a forum thread.
+  late final _title = TextEditingController(text: widget.editing?.title ?? '');
+  late final _controller = TextEditingController(
+    text: widget.editing?.content ?? '',
+  );
   bool _busy = false;
 
   /// What the busy state is for, so the button can say so: adding pictures
@@ -116,7 +120,12 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
     final title = _title.text.trim();
     final text = _controller.text.trim();
     if (title.isEmpty) {
-      setState(() => _error = 'Add a heading.');
+      setState(() => _error = 'Add a title.');
+      return;
+    }
+    final editing = widget.editing;
+    if (editing != null) {
+      await _saveEdit(editing, title, text);
       return;
     }
     setState(() {
@@ -159,8 +168,33 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
     }
   }
 
+  Future<void> _saveEdit(Post post, String title, String text) async {
+    setState(() {
+      _busy = true;
+      _working = 'SAVING…';
+      _error = null;
+    });
+    try {
+      await ref
+          .read(postServiceProvider)
+          .edit(post.id, title: title, content: text);
+      // Everywhere the post is shown picks up the change.
+      ref.invalidate(postProvider(post.id));
+      ref.invalidate(feedProvider);
+      ref.invalidate(authorPostsProvider(post.author.id));
+      final circle = post.circle;
+      if (circle != null) ref.invalidate(circlePostsProvider(circle.id));
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) setState(() => _error = humanError(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final editing = widget.editing != null;
     final circleName =
         widget.circleName ??
         ref.watch(circleDetailProvider(widget.circleId ?? '')).value?.name;
@@ -173,12 +207,15 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
 
     return Scaffold(
       backgroundColor: AppColors.paper,
-      appBar: AppTopBar(title: 'NEW POST', onBack: _back),
+      appBar: AppTopBar(
+        title: editing ? 'EDIT POST' : 'NEW POST',
+        onBack: _back,
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(14, 16, 14, 32),
           children: [
-            if (circleName != null && circleName.isNotEmpty) ...[
+            if (!editing && circleName != null && circleName.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -217,7 +254,7 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
                 border: const OutlineInputBorder(
                   borderRadius: BorderRadius.zero,
                 ),
-                hintText: 'Heading',
+                hintText: 'Title',
                 hintStyle: AppTextStyles.fieldInput.copyWith(
                   color: AppColors.textDim,
                 ),
@@ -243,77 +280,88 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
                 counterStyle: AppTextStyles.smallDim,
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                GestureDetector(
-                  onTap: _busy || outOfPictures || full
-                      ? null
-                      : () => _addImages(remaining),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.image_outlined,
-                        size: 20,
-                        color: outOfPictures
-                            ? AppColors.textDim
-                            : AppColors.primaryPale,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        outOfPictures
-                            ? 'Daily picture limit reached'
-                            : 'Add pictures (${_images.length}/${PostLimits.imagesMax})',
-                        style: AppTextStyles.smallDim.copyWith(
+            if (editing) ...[
+              if (widget.editing!.imageUrls.isNotEmpty)
+                Text(
+                  'Pictures stay as they were posted.',
+                  style: AppTextStyles.smallDim,
+                ),
+            ] else ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: _busy || outOfPictures || full
+                        ? null
+                        : () => _addImages(remaining),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.image_outlined,
+                          size: 20,
                           color: outOfPictures
-                              ? AppColors.rustPale
+                              ? AppColors.textDim
                               : AppColors.primaryPale,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 6),
+                        Text(
+                          outOfPictures
+                              ? 'Daily picture limit reached'
+                              : 'Add pictures (${_images.length}/${PostLimits.imagesMax})',
+                          style: AppTextStyles.smallDim.copyWith(
+                            color: outOfPictures
+                                ? AppColors.rustPale
+                                : AppColors.primaryPale,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text('Pictures today: $used/$limit', style: AppTextStyles.smallDim),
-            if (_images.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 84,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _images.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (_, i) => Stack(
-                    children: [
-                      Image.memory(
-                        _images[i],
-                        width: 84,
-                        height: 84,
-                        fit: BoxFit.cover,
-                      ),
-                      Positioned(
-                        top: 0,
-                        right: 0,
-                        child: GestureDetector(
-                          onTap: _busy
-                              ? null
-                              : () => setState(() => _images.removeAt(i)),
-                          child: Container(
-                            color: Colors.black54,
-                            child: const Icon(
-                              Icons.close,
-                              size: 18,
-                              color: Colors.white,
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Pictures today: $used/$limit',
+                style: AppTextStyles.smallDim,
+              ),
+              if (_images.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 84,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _images.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) => Stack(
+                      children: [
+                        Image.memory(
+                          _images[i],
+                          width: 84,
+                          height: 84,
+                          fit: BoxFit.cover,
+                        ),
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: GestureDetector(
+                            onTap: _busy
+                                ? null
+                                : () => setState(() => _images.removeAt(i)),
+                            child: Container(
+                              color: Colors.black54,
+                              child: const Icon(
+                                Icons.close,
+                                size: 18,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
             if (_error != null) ...[
               const SizedBox(height: 8),
@@ -324,7 +372,7 @@ class _ComposerPageState extends ConsumerState<ComposerPage> {
             ],
             const SizedBox(height: 20),
             SerafimButton(
-              label: _busy ? _working : 'POST',
+              label: _busy ? _working : (editing ? 'SAVE' : 'POST'),
               onPressed: _busy ? null : _post,
             ),
           ],

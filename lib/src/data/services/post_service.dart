@@ -80,6 +80,20 @@ class PostService {
   Future<Post> detail(String id) async =>
       Post.fromJson(await _map(() => _dio.get<dynamic>('/posts/$id')));
 
+  /// The author changes a post's title and text (pictures stay).
+  Future<Post> edit(
+    String id, {
+    required String title,
+    required String content,
+  }) async => Post.fromJson(
+    await _map(
+      () => _dio.put<dynamic>(
+        '/posts/$id',
+        data: {'title': title, 'content': content},
+      ),
+    ),
+  );
+
   Future<void> delete(String id) =>
       _call(() => _dio.delete<dynamic>('/posts/$id'));
 

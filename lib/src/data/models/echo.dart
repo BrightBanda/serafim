@@ -15,7 +15,7 @@ enum EchoAudience {
 
 /// An Echo: a short "I'm up for a chat" message broadcast to up to 30
 /// people, as a notification and a push (backend `app/api/echos.py`, which
-/// holds the rules). It can be answered for an hour.
+/// holds the rules). It can be answered for 30 minutes.
 class Echo {
   const Echo({
     required this.id,
@@ -37,6 +37,9 @@ class Echo {
 
   /// How many people one reaches at most.
   static const reach = 30;
+
+  /// How long one can be answered.
+  static const minutes = 30;
 
   final String id;
   final String text;
