@@ -82,8 +82,11 @@ class FakePosts extends PostService {
   }) async => PostPage(items: posts);
 
   @override
-  Future<PostPage> feed({String? cursor, int limit = 20}) async =>
-      PostPage(items: posts);
+  Future<PostPage> feed({
+    String? cursor,
+    int limit = 20,
+    bool ranked = true,
+  }) async => PostPage(items: posts);
 }
 
 Post post(String id, {String content = 'Hello', CircleBrief? circle}) => Post(

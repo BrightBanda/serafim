@@ -44,8 +44,11 @@ class _FakeService extends PostService {
   }
 
   @override
-  Future<PostPage> feed({String? cursor, int limit = 20}) async =>
-      const PostPage(items: []);
+  Future<PostPage> feed({
+    String? cursor,
+    int limit = 20,
+    bool ranked = true,
+  }) async => const PostPage(items: []);
 
   @override
   Future<PostPage> list({

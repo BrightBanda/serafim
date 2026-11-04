@@ -13,6 +13,24 @@ enum GroupAddPrivacy {
       .firstWhere((v) => v.name == raw, orElse: () => GroupAddPrivacy.everyone);
 }
 
+/// Whose Echos ("I'm up for a chat" broadcasts) can reach you. Off also
+/// stops you sending one.
+enum EchoVisibility {
+  everyone('Everyone', 'Friends, and people who share your interests.'),
+  friends('Friends only', 'Only Echos from your friends.'),
+  off('Off', "You get no Echos and can't send one.");
+
+  const EchoVisibility(this.label, this.description);
+
+  final String label;
+  final String description;
+
+  static EchoVisibility parse(String? raw) => EchoVisibility.values.firstWhere(
+    (v) => v.name == raw,
+    orElse: () => EchoVisibility.everyone,
+  );
+}
+
 /// Mirrors the backend's `ProfileResponse` (app/schemas/profile.py).
 class Profile {
   const Profile({
@@ -27,6 +45,7 @@ class Profile {
     this.bio,
     this.lockProfile = false,
     this.groupAddPrivacy = GroupAddPrivacy.everyone,
+    this.echoVisibility = EchoVisibility.everyone,
     this.haloUntil,
     this.haloAudience = 'friends',
   });
@@ -35,6 +54,9 @@ class Profile {
 
   /// Privacy: who may add this user to groups.
   final GroupAddPrivacy groupAddPrivacy;
+
+  /// Whose Echos you see.
+  final EchoVisibility echoVisibility;
 
   /// Privacy: when false, nobody can send this user a friend request.
   final bool allowFriendRequests;
@@ -68,6 +90,7 @@ class Profile {
     'bio': bio,
     'lock_profile': lockProfile,
     'group_add_privacy': groupAddPrivacy.name,
+    'echo_visibility': echoVisibility.name,
     'halo_until': haloUntil?.toUtc().toIso8601String(),
     'halo_audience': haloAudience,
     'created_at': createdAt.toUtc().toIso8601String(),
@@ -90,6 +113,7 @@ class Profile {
       groupAddPrivacy: GroupAddPrivacy.parse(
         json['group_add_privacy'] as String?,
       ),
+      echoVisibility: EchoVisibility.parse(json['echo_visibility'] as String?),
       haloUntil: json['halo_until'] is String
           ? DateTime.tryParse(json['halo_until'] as String)?.toUtc()
           : null,
@@ -137,9 +161,11 @@ class ProfileUpdateRequest {
     this.bio,
     this.lockProfile,
     this.groupAddPrivacy,
+    this.echoVisibility,
   });
 
   final GroupAddPrivacy? groupAddPrivacy;
+  final EchoVisibility? echoVisibility;
   final String? displayName;
   final String? username;
   final String? profilePic;
@@ -160,6 +186,7 @@ class ProfileUpdateRequest {
     if (bio != null) 'bio': bio,
     if (lockProfile != null) 'lock_profile': lockProfile,
     if (groupAddPrivacy != null) 'group_add_privacy': groupAddPrivacy!.name,
+    if (echoVisibility != null) 'echo_visibility': echoVisibility!.name,
   };
 
   bool get isEmpty => toJson().isEmpty;

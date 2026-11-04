@@ -396,7 +396,9 @@ class PushRegistrar {
     }
     // A Circle or post notification: straight to the post or Circle.
     final kind = NotificationKind.parse(message.data['type'] as String?);
-    if (kind.isCircle || kind.isAboutPost) {
+    if (kind.isCircle ||
+        kind.isAboutPost ||
+        kind == NotificationKind.echoReceived) {
       final navigator = _ref.read(navigatorKeyProvider).currentState;
       if (navigator == null) return;
       openNotificationTarget(

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/presentation/view/widgets/echo_send_card.dart';
+import 'package:serafim/src/providers/echo_providers.dart';
 import 'package:serafim/src/providers/halo_providers.dart';
 import 'package:serafim/src/providers/typing_providers.dart';
 import 'package:serafim/src/providers/wings_providers.dart';
@@ -390,6 +392,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
         backgroundColor: AppColors.paperRaised,
         onRefresh: () async {
           ref.invalidate(friendsProvider);
+          ref.invalidate(myEchoProvider);
           try {
             await ref.read(friendsProvider.future);
           } catch (_) {}
@@ -398,6 +401,10 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(14),
           children: [
+            // Echos: tell people who share your interests you're up for a
+            // chat.
+            if (!_searching && filter.kind == ChatFilterKind.all)
+              const EchoSendCard(),
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(

@@ -74,14 +74,31 @@ final authorPostsProvider =
       AuthorPosts.new,
     );
 
-/// The signed-in person's feed.
+/// How the feed is ordered: "For you" (ranked) or "Latest" (newest first).
+enum FeedMode { forYou, latest }
+
+class FeedModeNotifier extends Notifier<FeedMode> {
+  @override
+  FeedMode build() => FeedMode.forYou;
+
+  void set(FeedMode mode) => state = mode;
+}
+
+final feedModeProvider = NotifierProvider<FeedModeNotifier, FeedMode>(
+  FeedModeNotifier.new,
+);
+
+/// The signed-in person's feed, in the chosen order.
 class FeedPosts extends PagedPosts {
   @override
   Future<PostPage> fetch(String? cursor) async {
     if (ref.watch(currentAccountIdProvider) == null) {
       return const PostPage(items: []);
     }
-    return ref.read(postServiceProvider).feed(cursor: cursor);
+    final mode = ref.watch(feedModeProvider);
+    return ref
+        .read(postServiceProvider)
+        .feed(cursor: cursor, ranked: mode == FeedMode.forYou);
   }
 }
 

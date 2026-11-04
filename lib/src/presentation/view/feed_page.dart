@@ -13,7 +13,8 @@ import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
-/// Posts from the people you follow and the Circles you have joined.
+/// The feed: "For you" puts the people closest to you and the posts with
+/// the most conversation first; "Latest" is newest first.
 class FeedPage extends ConsumerWidget {
   const FeedPage({super.key});
 
@@ -32,6 +33,7 @@ class FeedPage extends ConsumerWidget {
       body: Column(
         children: [
           const _ComposeBar(),
+          const _ModeTabs(),
           Expanded(child: _list(context, ref, feed)),
         ],
       ),
@@ -103,6 +105,50 @@ class FeedPage extends ConsumerWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// For you / Latest.
+class _ModeTabs extends ConsumerWidget {
+  const _ModeTabs();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(feedModeProvider);
+    Widget tab(FeedMode m, String label) {
+      final on = mode == m;
+      return GestureDetector(
+        key: ValueKey('feed-mode-${m.name}'),
+        onTap: () => ref.read(feedModeProvider.notifier).set(m),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: on ? AppColors.paperRaised : Colors.transparent,
+            border: Border.all(
+              color: on ? AppColors.primary : AppColors.lineSoft,
+              width: 1.5,
+            ),
+          ),
+          child: Text(
+            label,
+            style: AppTextStyles.fieldLabel.copyWith(
+              color: on ? AppColors.primaryPale : AppColors.textDim,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+      child: Row(
+        children: [
+          tab(FeedMode.forYou, 'FOR YOU'),
+          const SizedBox(width: 8),
+          tab(FeedMode.latest, 'LATEST'),
+        ],
       ),
     );
   }

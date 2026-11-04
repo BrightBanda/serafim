@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/echo_page.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/app_notification.dart';
@@ -31,7 +32,10 @@ Future<void> openNotificationTarget(
   String? postId,
 }) {
   final Widget page;
-  if (postId != null) {
+  if (kind == NotificationKind.echoReceived && actorId != null) {
+    // The Echo card: Start chat or Not now.
+    page = EchoPage(fromUserId: actorId);
+  } else if (postId != null) {
     page = PostDetailPage(postId: postId);
   } else if (circleId != null && kind != NotificationKind.circleBanned) {
     // Someone banned can no longer see the Circle.
@@ -56,6 +60,8 @@ IconData notificationIcon(NotificationKind kind) => switch (kind) {
   NotificationKind.commentReplied ||
   NotificationKind.circleCommentReplied => Icons.reply_rounded,
   NotificationKind.postSparked || NotificationKind.commentSparked => Icons.bolt,
+  NotificationKind.echoReceived ||
+  NotificationKind.echoResponded => Icons.campaign_rounded,
   NotificationKind.unknown => Icons.notifications_rounded,
   _ => Icons.groups_rounded,
 };
@@ -70,6 +76,8 @@ Color notificationAccent(NotificationKind kind) => switch (kind) {
   NotificationKind.friendPosted ||
   NotificationKind.postCommented ||
   NotificationKind.commentReplied => AppColors.primary,
+  NotificationKind.echoReceived ||
+  NotificationKind.echoResponded ||
   NotificationKind.unknown => AppColors.primary,
   _ => AppColors.teal,
 };

@@ -19,6 +19,10 @@ enum NotificationKind {
   circleInvited,
   circleAdded,
 
+  // An Echo broadcast to you, and someone answering yours.
+  echoReceived,
+  echoResponded,
+
   // About posts outside Circles, and Sparks anywhere.
   friendPosted,
   postCommented,
@@ -44,6 +48,8 @@ enum NotificationKind {
     'circle_new_post' => NotificationKind.circleNewPost,
     'circle_invited' => NotificationKind.circleInvited,
     'circle_added' => NotificationKind.circleAdded,
+    'echo' => NotificationKind.echoReceived,
+    'echo_responded' => NotificationKind.echoResponded,
     'friend_posted' => NotificationKind.friendPosted,
     'post_commented' => NotificationKind.postCommented,
     'comment_replied' => NotificationKind.commentReplied,
@@ -91,6 +97,8 @@ enum NotificationKind {
     NotificationKind.circleNewPost => 'posted in a Circle you are in',
     NotificationKind.circleInvited => 'invited you to join a Circle',
     NotificationKind.circleAdded => 'added you to a Circle',
+    NotificationKind.echoReceived => 'sent an Echo: up for a chat',
+    NotificationKind.echoResponded => 'answered your Echo',
     NotificationKind.friendPosted => 'shared a new post',
     NotificationKind.postCommented => 'commented on your post',
     NotificationKind.commentReplied => 'replied to your comment',
@@ -111,6 +119,7 @@ enum NotificationKind {
     NotificationKind.postCommented ||
     NotificationKind.commentReplied => 'COMMENTS',
     NotificationKind.postSparked || NotificationKind.commentSparked => 'SPARKS',
+    NotificationKind.echoReceived || NotificationKind.echoResponded => 'ECHO',
     NotificationKind.unknown => 'NOTIFICATION',
     _ => 'CIRCLES',
   };

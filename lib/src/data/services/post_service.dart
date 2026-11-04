@@ -30,13 +30,22 @@ class PostService {
     return PostPage.fromJson(data);
   }
 
-  /// The signed-in person's feed: people they follow, Circles they have
-  /// joined, and their own posts.
-  Future<PostPage> feed({String? cursor, int limit = 20}) async {
+  /// The signed-in person's feed. [ranked] orders it by how close the
+  /// author is, how much talk a post has and how new it is; otherwise it is
+  /// newest first.
+  Future<PostPage> feed({
+    String? cursor,
+    int limit = 20,
+    bool ranked = true,
+  }) async {
     final data = await _call(
       () => _dio.get<dynamic>(
         '/feed',
-        queryParameters: {if (cursor != null) 'cursor': cursor, 'limit': limit},
+        queryParameters: {
+          if (cursor != null) 'cursor': cursor,
+          'limit': limit,
+          'mode': ranked ? 'ranked' : 'latest',
+        },
       ),
     );
     if (data is! Map<String, dynamic>) throw _unexpected;
@@ -49,20 +58,19 @@ class PostService {
     required String content,
     String? circleId,
     List<String> imageUrls = const [],
-  }) async =>
-      Post.fromJson(
-        await _map(
-          () => _dio.post<dynamic>(
-            '/posts',
-            data: {
-              'title': title,
-              'content': content,
-              if (circleId != null) 'circle_id': circleId,
-              if (imageUrls.isNotEmpty) 'image_urls': imageUrls,
-            },
-          ),
-        ),
-      );
+  }) async => Post.fromJson(
+    await _map(
+      () => _dio.post<dynamic>(
+        '/posts',
+        data: {
+          'title': title,
+          'content': content,
+          if (circleId != null) 'circle_id': circleId,
+          if (imageUrls.isNotEmpty) 'image_urls': imageUrls,
+        },
+      ),
+    ),
+  );
 
   /// How many pictures the person may still share today.
   Future<ImageQuota> imageQuota() async => ImageQuota.fromJson(

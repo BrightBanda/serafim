@@ -61,6 +61,23 @@ class PrivacySettingsPage extends ConsumerWidget {
                 ? () {}
                 : () => save(ProfileUpdateRequest(groupAddPrivacy: option)),
           ),
+        const SettingsSectionLabel('Echos'),
+        for (final option in EchoVisibility.values)
+          SettingsChoiceRow(
+            key: ValueKey('echo-visibility-${option.name}'),
+            title: option.label,
+            subtitle: option.description,
+            selected:
+                (profile?.echoVisibility ?? EchoVisibility.everyone) == option,
+            onTap: profile == null
+                ? () {}
+                : () => save(ProfileUpdateRequest(echoVisibility: option)),
+          ),
+        const SettingsNote(
+          'An Echo is a short "up for a chat" message someone sends to up to '
+          '30 people who share their interests. You get at most 3 a day, as '
+          'notifications.',
+        ),
         const SettingsSectionLabel('Your profile'),
         SettingsSwitchRow(
           title: 'Lock profile',
