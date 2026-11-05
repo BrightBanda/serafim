@@ -13,7 +13,11 @@ enum SoundEvent {
     'A new message arrives',
     Duration(milliseconds: 700),
   ),
-  sent('Message sent', 'You send a message', Duration(milliseconds: 250)),
+  sent(
+    'Message sent',
+    'The server has your message',
+    Duration(milliseconds: 250),
+  ),
   typing(
     'Typing',
     'Someone starts typing in the chat you have open',
@@ -38,7 +42,7 @@ enum SoundEvent {
 
   SoundChoice get fallback => switch (this) {
     SoundEvent.received => const SoundChoice.builtIn('serafim'),
-    SoundEvent.sent => const SoundChoice.builtIn('swoosh'),
+    SoundEvent.sent => const SoundChoice.builtIn('drop'),
     SoundEvent.typing => const SoundChoice.builtIn('tick'),
     SoundEvent.notification => const SoundChoice.builtIn('chime'),
   };

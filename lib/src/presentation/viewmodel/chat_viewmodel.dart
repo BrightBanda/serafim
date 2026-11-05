@@ -552,6 +552,11 @@ class ChatViewModel extends Notifier<ChatState> {
             'raw_ts=$rawTimestamp parsed_ts=$serverTimestamp',
           );
 
+          // Sent: the server has it (not when it was only tapped send).
+          if (type == 'message_ack' && realId != null) {
+            ref.read(soundBoardProvider).play(SoundEvent.sent, key: realId);
+          }
+
           bool updated = false;
           if (tempId != null) {
             updated = await isar.updateMessageStatus(
@@ -1135,7 +1140,6 @@ class ChatViewModel extends Notifier<ChatState> {
       ..status = MessageStatus.sending
       ..timestamp = DateTime.now().toUtc();
     await ref.read(isarServiceProvider).saveMessage(msg);
-    ref.read(soundBoardProvider).play(SoundEvent.sent);
     if (mediaRemoteId == null) {
       await _deliverVoice(tempId, onError: onError);
     } else {
@@ -1382,7 +1386,6 @@ class ChatViewModel extends Notifier<ChatState> {
       ..status = MessageStatus.sending
       ..timestamp = DateTime.now().toUtc();
     await ref.read(isarServiceProvider).saveMessage(msg);
-    ref.read(soundBoardProvider).play(SoundEvent.sent);
     unawaited(_deliverFile(tempId, onError: onError));
   }
 
@@ -1726,7 +1729,6 @@ class ChatViewModel extends Notifier<ChatState> {
     // Awaited: guarantees the local row exists before we send over the
     // socket, so a fast-returning ack can never race ahead of this write.
     await isar.saveMessage(localMsg);
-    ref.read(soundBoardProvider).play(SoundEvent.sent);
 
     ref
         .read(webSocketServiceProvider)

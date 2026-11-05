@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/echo_icon.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/echo.dart';
 import 'package:serafim/src/data/models/profile.dart';
@@ -10,9 +11,9 @@ import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/ui_text_field.dart';
 
-/// At the top of Chats: send an Echo, or see how your latest one is doing
-/// (how many it reached, how many answered, End). Hidden when Echos are off
-/// in Settings.
+/// Your Echo: send one, or see how the live one is doing (how many it
+/// reached, how many answered, End). Shown from the profile menu's Echo
+/// item. Hidden when Echos are off in Settings.
 class EchoSendCard extends ConsumerWidget {
   const EchoSendCard({super.key});
 
@@ -44,7 +45,7 @@ class EchoSendCard extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.campaign_outlined, color: AppColors.primaryPale),
+              EchoIcon(size: 24, color: AppColors.primaryPale),
               const SizedBox(width: 10),
               Expanded(
                 child: showLive
@@ -109,6 +110,21 @@ class EchoSendCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Your live Echo in a sheet: how it is doing, and End.
+Future<void> showMyEchoSheet(BuildContext context) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: AppColors.paper,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+    builder: (_) => const SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+        child: EchoSendCard(),
+      ),
+    ),
+  );
 }
 
 /// The sheet for sending an Echo: a short message and who it may reach.

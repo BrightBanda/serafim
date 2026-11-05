@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/profile_page.dart';
 import 'package:serafim/src/presentation/view/settings_page.dart';
+import 'package:serafim/src/data/models/profile.dart';
+import 'package:serafim/src/presentation/view/widgets/echo_send_card.dart';
+import 'package:serafim/src/providers/echo_providers.dart';
 import 'package:serafim/src/providers/halo_providers.dart';
+import 'package:serafim/src/utils/echo_icon.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
 import 'package:serafim/src/utils/halo_sheet.dart';
 import 'package:serafim/src/utils/halo_style.dart';
@@ -12,7 +16,7 @@ import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 /// Your photo in the top bar of every main tab. It opens a short menu:
-/// your profile, your Halo, and settings.
+/// your profile, your Halo, an Echo, and settings.
 ///
 /// On your own profile page [showProfile] is false: you are already there,
 /// so the menu offers only Halo and Settings.
@@ -25,6 +29,13 @@ class ProfileMenuButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pic = ref.watch(profileViewModelProvider).value?.profilePic;
     final haloLit = ref.watch(myHaloLitProvider);
+    final echoesOn =
+        ref.watch(profileViewModelProvider).value?.echoVisibility !=
+        EchoVisibility.off;
+    final myEcho = ref.watch(myEchoProvider).value;
+    final live = myEcho?.echo;
+    final echoLive =
+        live != null && live.minutesLeft(DateTime.now().toUtc()) > 0;
     final avatar = pic != null && pic.isNotEmpty
         ? CachedNetworkImageProvider(pic)
         : null;
@@ -45,6 +56,13 @@ class ProfileMenuButton extends ConsumerWidget {
           showHaloSheet(context, ref);
           return;
         }
+        if (value == 'echo') {
+          // A live one shows how it is doing (and End); otherwise write one.
+          echoLive
+              ? showMyEchoSheet(context)
+              : showEchoComposer(context, myEcho);
+          return;
+        }
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) =>
@@ -62,6 +80,18 @@ class ProfileMenuButton extends ConsumerWidget {
           color: haloLit ? haloColor : null,
           trailing: haloLit ? 'ON' : null,
         ),
+        if (echoesOn)
+          _item(
+            'echo',
+            null,
+            'Echo',
+            leading: EchoIcon(
+              size: 20,
+              color: echoLive ? haloColor : AppColors.primaryPale,
+            ),
+            color: echoLive ? haloColor : null,
+            trailing: echoLive ? 'LIVE' : null,
+          ),
         _item('settings', Icons.settings_outlined, 'Settings'),
       ],
       child: Padding(
@@ -84,17 +114,19 @@ class ProfileMenuButton extends ConsumerWidget {
 
   PopupMenuItem<String> _item(
     String value,
-    IconData icon,
+    IconData? icon,
     String label, {
     Color? color,
     String? trailing,
+    Widget? leading,
   }) {
     return PopupMenuItem<String>(
       value: value,
       height: 46,
       child: Row(
         children: [
-          Icon(icon, size: 20, color: color ?? AppColors.primaryPale),
+          leading ??
+              Icon(icon, size: 20, color: color ?? AppColors.primaryPale),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
