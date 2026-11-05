@@ -387,6 +387,18 @@ class ChatImageGrid extends StatelessWidget {
   }
 }
 
+/// Colours for the receipts on your own (purple) bubble, the same in both
+/// themes: soft white until read, then a gentle mint.
+const receiptPending = Color(0xFFE3E9FB);
+const receiptRead = Color(0xFF9FE8CF);
+const receiptFailed = Color(0xFFFFA4A4);
+
+Color receiptColor(ChatMessageStatus s) => switch (s) {
+  ChatMessageStatus.read => receiptRead,
+  ChatMessageStatus.failed => receiptFailed,
+  _ => receiptPending,
+};
+
 class _StatusRow extends StatelessWidget {
   const _StatusRow({required this.status});
 
@@ -401,10 +413,13 @@ class _StatusRow extends StatelessWidget {
         const SizedBox(width: 3),
         Text(
           _label(status),
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'JetBrains Mono',
-            fontSize: 8,
-            color: Color(0xFFDBE4FB),
+            fontSize: 9,
+            fontWeight: status == ChatMessageStatus.read
+                ? FontWeight.w700
+                : FontWeight.w500,
+            color: receiptColor(status),
           ),
         ),
       ],
@@ -434,28 +449,29 @@ class _StatusIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 10.0;
+    const size = 13.0;
+    final color = receiptColor(status);
+    final key = ValueKey('receipt-${status.name}');
     switch (status) {
       case ChatMessageStatus.sending:
-        return const SizedBox(
-          width: size,
-          height: size,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: Color(0xFFDBE4FB),
-          ),
+        return SizedBox(
+          key: key,
+          width: 11,
+          height: 11,
+          child: CircularProgressIndicator(strokeWidth: 1.6, color: color),
         );
       case ChatMessageStatus.sent:
-        return const Icon(Icons.check, size: size, color: Color(0xFFDBE4FB));
+        return Icon(Icons.check_rounded, key: key, size: size, color: color);
       case ChatMessageStatus.delivered:
-        return const Icon(Icons.done_all, size: size, color: Color(0xFFDBE4FB));
+        return Icon(Icons.done_all_rounded, key: key, size: size, color: color);
       case ChatMessageStatus.read:
-        return Icon(Icons.done_all, size: size, color: AppColors.tealPale);
+        return Icon(Icons.done_all_rounded, key: key, size: size, color: color);
       case ChatMessageStatus.failed:
         return Icon(
-          Icons.error_outline,
+          Icons.error_outline_rounded,
+          key: key,
           size: size,
-          color: Colors.red.shade300,
+          color: color,
         );
     }
   }

@@ -116,11 +116,11 @@ void main() {
       expect(out.played, ['received@0.5', 'received@0.5']);
     });
 
-    test('typing waits a few seconds between ticks', () {
+    test('typing ticks are at least a second apart', () {
       board.play(SoundEvent.typing);
-      now = now.add(const Duration(seconds: 2));
+      now = now.add(const Duration(milliseconds: 500));
       board.play(SoundEvent.typing);
-      now = now.add(const Duration(seconds: 3));
+      now = now.add(const Duration(milliseconds: 1000));
       board.play(SoundEvent.typing);
       expect(out.played, hasLength(2));
     });

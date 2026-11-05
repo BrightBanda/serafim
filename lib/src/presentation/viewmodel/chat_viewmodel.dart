@@ -12,6 +12,7 @@ import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:serafim/src/core/platform/sound_board.dart';
 import 'package:serafim/src/providers/sound_providers.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
+import 'package:serafim/src/providers/chat_features_providers.dart';
 import 'package:serafim/src/utils/chat/reactions.dart';
 import 'package:serafim/src/core/platform/chat_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,6 +86,7 @@ class ChatViewModel extends Notifier<ChatState> {
     // frames (a Draw Together answer, "typing…") until the page on top closed.
     final events = ref.read(webSocketEventsProvider).listen(_onSocketEvent);
     ref.onDispose(events.cancel);
+    ref.onDispose(() => _typingTicker?.cancel());
 
     // Retention: clear old local messages at startup and whenever the choice
     // changes.
@@ -156,7 +158,14 @@ class ChatViewModel extends Notifier<ChatState> {
     }
   }
 
-  /// A soft sound when someone starts typing in the chat you have open.
+  Timer? _typingTicker;
+
+  /// How often the soft typing tick repeats while someone is typing.
+  static const typingTickEvery = Duration(milliseconds: 1400);
+
+  /// Soft ticks while someone types in the chat you have open: one at once,
+  /// then every [typingTickEvery] until they stop, the "typing…" expires,
+  /// or you leave the chat.
   void _typingSound(Map<String, dynamic> data) {
     if (data['state'] == false) return;
     final me = ref.read(currentAccountIdProvider);
@@ -164,9 +173,19 @@ class ChatViewModel extends Notifier<ChatState> {
     if (me == null || sender == null || sender == me) return;
     final gid = data['group_id'] as String?;
     final room = gid != null ? groupRoomId(gid) : buildRoomId(me, sender);
-    if (ref.read(activeRoomProvider) == room) {
-      ref.read(soundBoardProvider).play(SoundEvent.typing);
-    }
+    if (ref.read(activeRoomProvider) != room) return;
+    final board = ref.read(soundBoardProvider);
+    board.play(SoundEvent.typing);
+    if (_typingTicker?.isActive ?? false) return;
+    _typingTicker = Timer.periodic(typingTickEvery, (t) {
+      if (!ref.mounted ||
+          ref.read(activeRoomProvider) != room ||
+          ref.read(typingInRoomProvider(room)).isEmpty) {
+        t.cancel();
+        return;
+      }
+      board.play(SoundEvent.typing);
+    });
   }
 
   /// One frame from the server.
@@ -633,6 +652,11 @@ class ChatViewModel extends Notifier<ChatState> {
           ref.invalidate(nicknamesProvider);
           break;
 
+        case 'chat_settings':
+          // Someone in a chat changed its features (or you did, elsewhere).
+          ref.read(chatFeaturesControllerProvider.notifier).heard(data);
+          break;
+
         case 'message_deleted':
           final id = data['message_id'] as String?;
           if (id != null) await isar.applyDelete(id);
@@ -715,6 +739,10 @@ class ChatViewModel extends Notifier<ChatState> {
             await _syncMessageStates();
             // Group messages are not queued per person: catch up from history.
             unawaited(_syncGroups());
+            // Chat features changed while you were away.
+            unawaited(
+              ref.read(chatFeaturesControllerProvider.notifier).refresh(),
+            );
           }
           break;
       }

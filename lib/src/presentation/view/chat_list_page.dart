@@ -36,6 +36,7 @@ import 'package:serafim/src/utils/serafim_chip.dart';
 import 'package:serafim/src/utils/serafim_button.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/utils/text_edit_dialog.dart';
+import 'package:serafim/src/providers/chat_features_providers.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/user_card.dart';
@@ -730,14 +731,16 @@ class _ChatListItem extends ConsumerWidget {
 
     var line = 'Tap to start conversation';
     var time = '';
+    // The chat hides deleted messages: no "Message deleted" here either.
+    final hideDeleted = ref.watch(chatFeaturesProvider(roomId)).hideDeleted;
     if (preview != null) {
       final text = preview.text ?? '';
       final body = preview.isDeleted
-          ? 'Message deleted'
+          ? (hideDeleted ? '' : 'Message deleted')
           : preview.isImage
           ? (text.isEmpty ? '📷 Photo' : '📷 $text')
           : text;
-      line = preview.senderId == myId ? 'You: $body' : body;
+      line = body.isEmpty || preview.senderId != myId ? body : 'You: $body';
       time = formatChatListTime(context, preview.timestamp);
     }
 
@@ -928,12 +931,17 @@ class _GroupChatItem extends ConsumerWidget {
     final typing = ref.watch(typingInRoomProvider(group.roomId)).isNotEmpty;
     var line = '${group.memberCount} members · say hi';
     var time = '';
+    final hideDeleted = ref
+        .watch(chatFeaturesProvider(group.roomId))
+        .hideDeleted;
     if (preview != null) {
-      final text = preview.isDeleted ? 'Message deleted' : preview.text ?? '';
+      final text = preview.isDeleted
+          ? (hideDeleted ? '' : 'Message deleted')
+          : preview.text ?? '';
       final who = preview.senderId == myId
           ? 'You'
           : ref.watch(knownPersonProvider(preview.senderId))?.displayName;
-      line = who == null ? text : '$who: $text';
+      line = who == null || text.isEmpty ? text : '$who: $text';
       time = formatChatListTime(context, preview.timestamp);
     }
     return ChatRow(

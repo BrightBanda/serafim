@@ -448,9 +448,14 @@ final pushLifecycleProvider = Provider<void>((ref) {
     if (room != null) unawaited(ChatNotifications.instance.clear(room));
   });
 
-  if (enabled) {
-    unawaited(registrar.start(showPreview: preview));
-  } else {
-    unawaited(registrar.unregisterThisDevice());
-  }
+  // After this provider has built: both report progress to
+  // pushStatusProvider, sometimes straight away (no push on desktop), and a
+  // provider may not change another while it is building.
+  unawaited(
+    Future.microtask(
+      () => enabled
+          ? registrar.start(showPreview: preview)
+          : registrar.unregisterThisDevice(),
+    ),
+  );
 });

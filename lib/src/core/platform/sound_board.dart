@@ -20,8 +20,8 @@ enum SoundEvent {
   ),
   typing(
     'Typing',
-    'Someone starts typing in the chat you have open',
-    Duration(seconds: 4),
+    'Someone is typing in the chat you have open',
+    Duration(milliseconds: 1000),
   ),
   notification(
     'Notifications',

@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:serafim/src/presentation/view/nicknames_page.dart';
+import 'package:serafim/src/presentation/view/chat_features_page.dart';
+import 'package:serafim/src/data/services/chat_features_service.dart';
+import 'package:serafim/src/providers/chat_features_providers.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
 import 'package:serafim/src/utils/chat/reactions.dart';
 import 'package:serafim/src/data/services/report_service.dart';
@@ -687,16 +689,25 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     );
   }
 
-  bool _isFriend() => (ref.watch(friendsProvider).value ?? const []).any(
-    (f) => f.id == widget.recipientId,
-  );
-
-  void _openNicknames() {
+  void _openFeatures() {
+    final gid = widget.groupId;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => NicknamesPage(
-          friendId: widget.recipientId,
-          friendName: widget.contactName,
+        builder: (_) => ChatFeaturesPage(
+          chat: gid != null
+              ? ChatRef.group(gid)
+              : ChatRef.direct(widget.recipientId),
+          name: gid != null
+              ? (ref.read(myGroupProvider(gid))?.name ?? widget.contactName)
+              : widget.contactName,
+          // Nicknames are between friends, in a 1:1 chat.
+          nicknameFriendId:
+              gid == null &&
+                  (ref.read(friendsProvider).value ?? const []).any(
+                    (f) => f.id == widget.recipientId,
+                  )
+              ? widget.recipientId
+              : null,
         ),
       ),
     );
@@ -1573,6 +1584,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     );
 
     final messagesAsync = ref.watch(messagesProvider);
+    final hideDeleted = ref.watch(chatFeaturesProvider(roomId)).hideDeleted;
 
     // Attachments are friends-only. The button explains why it is off; the
     // server refuses them regardless.
@@ -1623,7 +1635,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             onMedia: _openMedia,
             onSearch: _openSearch,
             // Nicknames are between friends, in a 1:1 chat.
-            onNicknames: gid == null && _isFriend() ? _openNicknames : null,
+            onFeatures: _openFeatures,
           ),
           // Tapping the photo opens it full screen; the name opens the profile.
           titleWidget: GestureDetector(
@@ -1716,7 +1728,14 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                       );
                     },
 
-                    data: (messages) {
+                    data: (all) {
+                      // The chat may hide deleted messages altogether.
+                      final messages = hideDeleted
+                          ? [
+                              for (final m in all)
+                                if (!m.isDeleted) m,
+                            ]
+                          : all;
                       if (messages.isEmpty) {
                         return const _EmptyChat();
                       }
@@ -2126,13 +2145,15 @@ class ChatMenuButton extends StatelessWidget {
     required this.roomId,
     this.onMedia,
     this.onSearch,
-    this.onNicknames,
+    this.onFeatures,
   });
 
   final String roomId;
   final VoidCallback? onMedia;
   final VoidCallback? onSearch;
-  final VoidCallback? onNicknames;
+
+  /// Opens this chat's shared features (deleted messages, …).
+  final VoidCallback? onFeatures;
 
   @override
   Widget build(BuildContext context) {
@@ -2159,15 +2180,15 @@ class ChatMenuButton extends StatelessWidget {
       onSelected: (value) => switch (value) {
         'search' => onSearch?.call(),
         'media' => onMedia?.call(),
-        'nicknames' => onNicknames?.call(),
+        'features' => onFeatures?.call(),
         _ => openChatBackgroundPage(context, roomId: roomId),
       },
       itemBuilder: (_) => [
         if (onSearch != null) item('search', Icons.search, 'Search'),
         if (onMedia != null)
           item('media', Icons.perm_media_outlined, 'Media & links'),
-        if (onNicknames != null)
-          item('nicknames', Icons.badge_outlined, 'Nicknames'),
+        if (onFeatures != null)
+          item('features', Icons.tune_rounded, 'Chat features'),
         item('background', Icons.wallpaper_outlined, 'Chat background'),
       ],
     );
