@@ -9,10 +9,11 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show Icon, Icons;
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
+import 'package:serafim/src/core/platform/sound_board.dart';
+import 'package:serafim/src/providers/sound_providers.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
 import 'package:serafim/src/utils/chat/reactions.dart';
 import 'package:serafim/src/core/platform/chat_notifications.dart';
-import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
 import 'package:serafim/src/data/models/announcement.dart';
@@ -155,6 +156,19 @@ class ChatViewModel extends Notifier<ChatState> {
     }
   }
 
+  /// A soft sound when someone starts typing in the chat you have open.
+  void _typingSound(Map<String, dynamic> data) {
+    if (data['state'] == false) return;
+    final me = ref.read(currentAccountIdProvider);
+    final sender = data['sender_id'] as String?;
+    if (me == null || sender == null || sender == me) return;
+    final gid = data['group_id'] as String?;
+    final room = gid != null ? groupRoomId(gid) : buildRoomId(me, sender);
+    if (ref.read(activeRoomProvider) == room) {
+      ref.read(soundBoardProvider).play(SoundEvent.typing);
+    }
+  }
+
   /// One frame from the server.
   void _onSocketEvent(Map<String, dynamic> data) {
     // "Typing…" is live-only: straight to its own small tracker, ahead of
@@ -162,6 +176,7 @@ class ChatViewModel extends Notifier<ChatState> {
     final kind = data['type'];
     if (kind == 'typing') {
       ref.read(typingProvider.notifier).heard(data);
+      _typingSound(data);
       return;
     }
     // Draw Together: a friend's strokes, or an invitation to draw.
@@ -256,6 +271,8 @@ class ChatViewModel extends Notifier<ChatState> {
     required String? text,
     required bool isImage,
   }) async {
+    // The sound plays whether or not a banner shows (the chat may be open).
+    ref.read(soundBoardProvider).play(SoundEvent.received, key: messageId);
     final settings = ref.read(settingsProvider);
     // One of your Wings gets through even when banners are off.
     final isWing = ref.read(wingIdsProvider).contains(senderId);
@@ -307,10 +324,6 @@ class ChatViewModel extends Notifier<ChatState> {
             );
           },
         );
-    // A banner that got through despite being switched off stays quiet.
-    if (settings.alertSound && settings.inAppAlerts) {
-      SystemSound.play(SystemSoundType.alert);
-    }
   }
 
   /// Banner for a friend request, accepted request or new follower.
@@ -322,6 +335,9 @@ class ChatViewModel extends Notifier<ChatState> {
       ref.invalidate(circleInvitationsProvider);
       ref.invalidate(myCirclesProvider);
     }
+    ref
+        .read(soundBoardProvider)
+        .play(SoundEvent.notification, key: 'n:${data['id']}:${data['kind']}');
     final settings = ref.read(settingsProvider);
     if (!settings.inAppAlerts) return;
     final id = data['id'] as String?;
@@ -362,11 +378,13 @@ class ChatViewModel extends Notifier<ChatState> {
             }
           },
         );
-    if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
   }
 
   /// Banner for a new official announcement, unless that chat is open.
   void _alertAnnouncement(Announcement announcement) {
+    ref
+        .read(soundBoardProvider)
+        .play(SoundEvent.notification, key: 'a:${announcement.id}');
     final settings = ref.read(settingsProvider);
     if (!settings.inAppAlerts) return;
     if (ref.read(activeRoomProvider) == officialRoomId) return;
@@ -387,7 +405,6 @@ class ChatViewModel extends Notifier<ChatState> {
             if (navigator != null) openOfficialChatWithNavigator(navigator);
           },
         );
-    if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
   }
 
   /// Who sent it: from the friends list if possible, otherwise looked up by id
@@ -809,6 +826,7 @@ class ChatViewModel extends Notifier<ChatState> {
     required String senderId,
     required String? text,
   }) {
+    ref.read(soundBoardProvider).play(SoundEvent.received, key: messageId);
     final settings = ref.read(settingsProvider);
     if (!settings.inAppAlerts) return;
     if (ref.read(activeRoomProvider) == groupRoomId(groupId)) return;
@@ -837,7 +855,6 @@ class ChatViewModel extends Notifier<ChatState> {
             }
           },
         );
-    if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
   }
 
   static Map<String, String> _reactionMap(Map raw) => {
@@ -1118,6 +1135,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ..status = MessageStatus.sending
       ..timestamp = DateTime.now().toUtc();
     await ref.read(isarServiceProvider).saveMessage(msg);
+    ref.read(soundBoardProvider).play(SoundEvent.sent);
     if (mediaRemoteId == null) {
       await _deliverVoice(tempId, onError: onError);
     } else {
@@ -1364,6 +1382,7 @@ class ChatViewModel extends Notifier<ChatState> {
       ..status = MessageStatus.sending
       ..timestamp = DateTime.now().toUtc();
     await ref.read(isarServiceProvider).saveMessage(msg);
+    ref.read(soundBoardProvider).play(SoundEvent.sent);
     unawaited(_deliverFile(tempId, onError: onError));
   }
 
@@ -1707,6 +1726,7 @@ class ChatViewModel extends Notifier<ChatState> {
     // Awaited: guarantees the local row exists before we send over the
     // socket, so a fast-returning ack can never race ahead of this write.
     await isar.saveMessage(localMsg);
+    ref.read(soundBoardProvider).play(SoundEvent.sent);
 
     ref
         .read(webSocketServiceProvider)

@@ -4,8 +4,9 @@ import 'dart:io' show Platform;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
-import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/platform/sound_board.dart';
+import 'package:serafim/src/providers/sound_providers.dart';
 import 'package:serafim/firebase_options.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/core/platform/chat_notifications.dart';
@@ -264,9 +265,7 @@ class PushRegistrar {
           body: notification?.body ?? data['body'] as String? ?? '',
           onTap: () => _openChatFrom(message),
         );
-    if (_ref.read(settingsProvider).alertSound) {
-      SystemSound.play(SystemSoundType.alert);
-    }
+    _ref.read(soundBoardProvider).play(SoundEvent.received, key: messageId);
   }
 
   /// A Draw Together invitation. The socket normally brings it first, and
@@ -317,9 +316,9 @@ class PushRegistrar {
           leading: const SerafimMark(size: 42),
           onTap: () => _openChatFrom(message),
         );
-    if (_ref.read(settingsProvider).alertSound) {
-      SystemSound.play(SystemSoundType.alert);
-    }
+    _ref
+        .read(soundBoardProvider)
+        .play(SoundEvent.notification, key: message.messageId);
   }
 
   /// Usually the socket's `notification` event got here first and already
@@ -341,9 +340,9 @@ class PushRegistrar {
           body: message.notification?.body ?? '',
           onTap: () => _openChatFrom(message),
         );
-    if (_ref.read(settingsProvider).alertSound) {
-      SystemSound.play(SystemSoundType.alert);
-    }
+    _ref
+        .read(soundBoardProvider)
+        .play(SoundEvent.notification, key: message.messageId);
   }
 
   /// One of the app's own chat notifications was tapped.

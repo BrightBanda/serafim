@@ -114,17 +114,6 @@ class _ChatBackgroundPageState extends ConsumerState<ChatBackgroundPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
           children: [
-            _Preview(wallpaper: _selected),
-            const SizedBox(height: 14),
-            _OpacitySlider(
-              value: _opacity,
-              enabled: _selected.supportsOpacity,
-              onChanged: (v) => setState(() {
-                _opacity = v;
-                _selected = _selected.copyWithOpacity(v);
-              }),
-            ),
-            const SizedBox(height: 14),
             const SettingsSectionLabel('Patterns'),
             _TileWrap(
               children: [
@@ -192,6 +181,19 @@ class _ChatBackgroundPageState extends ConsumerState<ChatBackgroundPage> {
               'Backgrounds are saved on this device. Photos are dimmed a '
               'little so messages stay easy to read.',
             ),
+            // What it will look like, with its strength under it, right
+            // above the button that sets it.
+            _Preview(wallpaper: _selected),
+            const SizedBox(height: 14),
+            _OpacitySlider(
+              value: _opacity,
+              enabled: _selected.supportsOpacity,
+              onChanged: (v) => setState(() {
+                _opacity = v;
+                _selected = _selected.copyWithOpacity(v);
+              }),
+            ),
+            const SizedBox(height: 14),
             SerafimButton(
               label: _saving ? 'Saving…' : 'Set background',
               onPressed: _saving || _picking ? null : _save,

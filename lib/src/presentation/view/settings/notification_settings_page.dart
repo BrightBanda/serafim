@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/settings/sound_settings_page.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:serafim/src/utils/settings_widgets.dart';
 
 class NotificationSettingsPage extends ConsumerWidget {
@@ -43,11 +46,18 @@ class NotificationSettingsPage extends ConsumerWidget {
           value: settings.inAppAlerts,
           onChanged: notifier.setInAppAlerts,
         ),
-        SettingsSwitchRow(
-          title: 'Sound',
-          subtitle: 'Play a sound with each banner.',
-          value: settings.alertSound,
-          onChanged: settings.inAppAlerts ? notifier.setAlertSound : null,
+        ListTile(
+          key: const ValueKey('open-sounds'),
+          contentPadding: EdgeInsets.zero,
+          title: Text('Sounds', style: AppTextStyles.fieldInput),
+          subtitle: Text(
+            'Message received and sent, typing, notifications. Pick your own.',
+            style: AppTextStyles.smallDim,
+          ),
+          trailing: Icon(Icons.chevron_right, color: AppColors.textDim),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(builder: (_) => const SoundSettingsPage()),
+          ),
         ),
         SettingsSwitchRow(
           title: 'Wings always get through',
