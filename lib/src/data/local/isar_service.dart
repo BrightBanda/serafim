@@ -425,10 +425,34 @@ class IsarService {
       msg.localMediaPath = null;
       msg.thumbnailPath = null;
       msg.type = MessageType.text;
+      msg.reactions = null;
       await isar.localMessages.put(msg);
       await _syncRoom(isar, msg.roomId);
     });
     await _deleteFiles(files);
+  }
+
+  /// Replaces a message's reactions with [reactions] (user id → reaction),
+  /// as the server last said them.
+  Future<void> applyReactions(
+    String messageId,
+    Map<String, String> reactions,
+  ) async {
+    final isar = await db;
+    await isar.writeTxn(() async {
+      final msg = await isar.localMessages
+          .filter()
+          .messageIdEqualTo(messageId)
+          .findFirst();
+      if (msg == null || msg.isDeleted || msg.isHiddenForMe) return;
+      final encoded = [
+        for (final e in reactions.entries) '${e.key}:${e.value}',
+      ]..sort();
+      final before = [...?msg.reactions]..sort();
+      if (before.join(',') == encoded.join(',')) return;
+      msg.reactions = encoded.isEmpty ? null : encoded;
+      await isar.localMessages.put(msg);
+    });
   }
 
   /// "Delete for me": clear the message from this device (text and image file)

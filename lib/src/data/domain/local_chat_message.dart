@@ -84,6 +84,10 @@ class LocalMessage {
   /// message.
   bool forwarded = false;
 
+  /// Reactions, one per person, as "userId:reaction" (see
+  /// utils/chat/reactions.dart). Null or empty when nobody has reacted.
+  List<String>? reactions;
+
   @Index()
   late DateTime timestamp;
 }

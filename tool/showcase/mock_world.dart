@@ -21,6 +21,9 @@ import 'package:serafim/src/data/services/websocket_service.dart';
 import 'package:serafim/src/data/models/app_notification.dart';
 import 'package:serafim/src/data/models/app_user.dart';
 import 'package:serafim/src/data/models/circle.dart';
+import 'package:serafim/src/data/models/echo.dart';
+import 'package:serafim/src/presentation/view/echo_page.dart';
+import 'package:serafim/src/providers/echo_providers.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/data/models/post.dart';
 import 'package:serafim/src/data/models/profile.dart';
@@ -595,6 +598,9 @@ List mockOverrides(
     (ref, id) async => feedPosts.firstWhere((p) => p.id == id),
   ),
   postCommentsProvider.overrideWith((ref, id) async => postComments),
+  // Echos
+  myEchoProvider.overrideWith((ref) async => myEchoStatus),
+  echoFromProvider.overrideWith((ref, id) async => weziEcho()),
 ];
 
 Widget mainScreen() => const MainScreen();
@@ -997,4 +1003,115 @@ void showDrawInviteBanner(ProviderContainer c) {
         body: 'wants to draw together',
         avatar: avatarImage(tamara.profilePic),
       );
+}
+
+// ------------------------------------------------------------- echos ---
+
+/// Someone who isn't a friend yet but shares your interests: whose Echo
+/// reaches you.
+final wezi = suggestions[1];
+
+Echo weziEcho() => Echo(
+  id: 'e-wezi',
+  text: 'Anyone up for music talk? Need opinions on my new Afrobeats playlist!',
+  createdAt: _ago(minutes: 2),
+  expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 28)),
+  user: wezi,
+  sharedInterests: const ['Entertainment', 'Music'],
+);
+
+/// Your own Echo, once it has gone out.
+Echo myLiveEcho() => Echo(
+  id: 'e-me',
+  text: 'Bored on a Friday night. Who wants to talk football?',
+  createdAt: _ago(minutes: 1),
+  expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 29)),
+  user: meAsFriend,
+  reachedCount: 30,
+  responseCount: 4,
+);
+
+/// What the Echo card on Chats shows: nothing sent yet, unless a shot says.
+MyEchoStatus myEchoStatus = const MyEchoStatus();
+
+final weziRoom = ChatViewModel.buildRoomId(me, wezi.id);
+
+LocalMessage _weziMsg(String id, String from, DateTime at, String text) =>
+    LocalMessage()
+      ..messageId = id
+      ..roomId = weziRoom
+      ..senderId = from
+      ..recipientId = from == me ? wezi.id : me
+      ..textContent = text
+      ..type = MessageType.text
+      ..status = MessageStatus.read
+      ..timestamp = at;
+
+/// The chat an Echo started, newest first.
+List<LocalMessage> echoConversation() => [
+  _weziMsg(
+    'w5',
+    wezi.id,
+    _ago(minutes: 0),
+    'Deal. Sending you the playlist now',
+  ),
+  _weziMsg(
+    'w4',
+    me,
+    _ago(minutes: 1),
+    'Tems, always. And I need more Malawian artists in my life',
+  ),
+  _weziMsg(
+    'w3',
+    wezi.id,
+    _ago(minutes: 2),
+    'Finally someone answered! Burna or Tems?',
+  ),
+  _weziMsg(
+    'w2',
+    me,
+    _ago(minutes: 3),
+    'Saw your Echo! I have been looping Afrobeats all week',
+  ),
+];
+
+Widget echoPage() => EchoPage(fromUserId: wezi.id);
+
+Widget weziChatPage() => ChatThreadPage(
+  contactName: wezi.displayName,
+  recipientId: wezi.id,
+  username: wezi.username,
+  profilePic: wezi.profilePic,
+);
+
+/// The banner an Echo brings in while you are in the app.
+void showEchoBanner(ProviderContainer c) {
+  const kind = NotificationKind.echoReceived;
+  c
+      .read(inAppBannerProvider)
+      .show(
+        label: kind.bannerLabel,
+        icon: notificationIcon(kind),
+        accent: notificationAccent(kind),
+        title: wezi.displayName,
+        body: 'Anyone up for music talk? Need opinions on my new playlist!',
+        avatar: avatarImage(wezi.profilePic),
+      );
+}
+
+// --------------------------------------------------------- reactions ---
+
+/// The conversation with Tamara, with a few reactions on it.
+List<LocalMessage> conversationWithReactions() {
+  final all = conversation();
+  for (final m in all) {
+    m.reactions = switch (m.messageId) {
+      'm9' => ['me:celebrate'],
+      'm8' => ['tamara:happy'],
+      'm7' => ['me:wow'],
+      'm3' => ['tamara:okay'],
+      _ => null,
+    };
+  }
+  return all;
 }

@@ -19,6 +19,8 @@ import 'package:google_fonts/src/google_fonts_base.dart' as google_fonts;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:serafim/src/providers/draw_together_providers.dart';
+import 'package:serafim/src/data/models/echo.dart';
+import 'package:serafim/src/presentation/view/settings/privacy_settings_page.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -451,6 +453,78 @@ void main() {
     messagesInChat = () => conversationWithDrawing(path);
     final (key, _) = await open(tester, conversationPage());
     await _shoot(tester, key, 'dt_07_sent');
+    messagesInChat = conversation;
+  });
+
+  // ------------------------------------------------------ Echos, the story ---
+
+  testWidgets('echo: the card at the top of Chats', (tester) async {
+    myEchoStatus = const MyEchoStatus();
+    final (key, _) = await open(tester, mainScreen());
+    await _shoot(tester, key, 'e_01_chats');
+  });
+
+  testWidgets('echo: writing one', (tester) async {
+    myEchoStatus = const MyEchoStatus();
+    final (key, _) = await open(tester, mainScreen());
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('echo-send')));
+    await _settle(tester);
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey('echo-text')),
+        matching: find.byType(TextField),
+      ),
+      'Bored on a Friday night. Who wants to talk football?',
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _shoot(tester, key, 'e_02_compose');
+  });
+
+  testWidgets('echo: sent, and how it is doing', (tester) async {
+    myEchoStatus = MyEchoStatus(echo: myLiveEcho(), sentToday: 1);
+    final (key, _) = await open(tester, mainScreen());
+    await _shoot(tester, key, 'e_03_sent');
+    myEchoStatus = const MyEchoStatus();
+  });
+
+  testWidgets('echo: one arrives as a banner', (tester) async {
+    final (key, c) = await open(tester, mainScreen(), tab: MockTab.feed);
+    // The same screen just before, for the banner to slide in over.
+    await _shoot(tester, key, 'e_04_feed');
+    showEchoBanner(c);
+    await _shoot(tester, key, 'e_04_banner');
+    c.read(inAppBannerProvider).dismiss(animated: false);
+    await tester.pump();
+  });
+
+  testWidgets('echo: the card it opens', (tester) async {
+    final (key, _) = await open(tester, echoPage());
+    await _shoot(tester, key, 'e_05_card');
+  });
+
+  testWidgets('echo: the chat it starts', (tester) async {
+    messagesInChat = echoConversation;
+    final (key, _) = await open(tester, weziChatPage());
+    await _shoot(tester, key, 'e_06_chat');
+    messagesInChat = conversation;
+  });
+
+  testWidgets('echo: who can reach you, in Settings', (tester) async {
+    final (key, _) = await open(tester, const PrivacySettingsPage());
+    await _settle(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('echo-visibility-everyone')),
+    );
+    await _shoot(tester, key, 'e_07_settings');
+  });
+
+  testWidgets('reactions: on messages, and the picker', (tester) async {
+    messagesInChat = conversationWithReactions;
+    final (key, _) = await open(tester, conversationPage());
+    await _shoot(tester, key, 'r_01_reactions');
+    await tester.longPress(find.text('Perfect. I will bring cups'));
+    await _shoot(tester, key, 'r_02_picker');
     messagesInChat = conversation;
   });
 }

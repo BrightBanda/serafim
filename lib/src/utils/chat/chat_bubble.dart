@@ -53,7 +53,11 @@ class ChatBubble extends StatelessWidget {
     this.quote,
     this.footer,
     this.forwarded = false,
+    this.reactions,
   });
+
+  /// Reactions, shown on the bubble's bottom-right corner (null: none).
+  final Widget? reactions;
 
   /// Shown under the text (e.g. a link preview card).
   final Widget? footer;
@@ -120,138 +124,156 @@ class ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isOut = side == ChatBubbleSide.outgoing;
+    final box = _box(context, isOut);
+    final badge = reactions;
     return Align(
       alignment: isOut ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPress: onLongPress,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.78,
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
-          decoration: BoxDecoration(
-            gradient: isOut
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.primary, AppColors.primaryDeep],
-                  )
-                : null,
-            color: isOut ? null : AppColors.paperRaised,
-            border: Border.all(
-              color: isOut ? AppColors.line : AppColors.lineSoft,
-              width: 1.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.line,
-                offset: Offset(2, 2),
-                blurRadius: 0,
+      child: badge == null
+          ? box
+          : Padding(
+              // Room for the badge hanging off the bottom edge.
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  box,
+                  Positioned(right: 6, bottom: -18, child: badge),
+                ],
               ),
-            ],
+            ),
+    );
+  }
+
+  Widget _box(BuildContext context, bool isOut) {
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.78,
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+        decoration: BoxDecoration(
+          gradient: isOut
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.primary, AppColors.primaryDeep],
+                )
+              : null,
+          color: isOut ? null : AppColors.paperRaised,
+          border: Border.all(
+            color: isOut ? AppColors.line : AppColors.lineSoft,
+            width: 1.5,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.line,
+              offset: Offset(2, 2),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              who,
+              style: AppTextStyles.fieldLabel.copyWith(
+                fontSize: 8,
+                color: isOut ? const Color(0xFFDBE4FB) : AppColors.tealPale,
+              ),
+            ),
+            const SizedBox(height: 3),
+            if (quote != null && !deleted) ...[
+              _ReplyQuote(data: quote!, outgoing: isOut),
+              const SizedBox(height: 6),
+            ],
+            if (forwarded && !deleted) ...[
               Text(
-                who,
-                style: AppTextStyles.fieldLabel.copyWith(
-                  fontSize: 8,
-                  color: isOut ? const Color(0xFFDBE4FB) : AppColors.tealPale,
+                '↪ Forwarded',
+                style: AppTextStyles.smallDim.copyWith(
+                  color: isOut ? const Color(0xFFDBE4FB) : AppColors.textDim,
                 ),
               ),
               const SizedBox(height: 3),
-              if (quote != null && !deleted) ...[
-                _ReplyQuote(data: quote!, outgoing: isOut),
-                const SizedBox(height: 6),
-              ],
-              if (forwarded && !deleted) ...[
-                Text(
-                  '↪ Forwarded',
-                  style: AppTextStyles.smallDim.copyWith(
-                    color: isOut ? const Color(0xFFDBE4FB) : AppColors.textDim,
-                  ),
+            ],
+            if (deleted)
+              Text(
+                'This message was deleted',
+                style: AppTextStyles.body.copyWith(
+                  fontStyle: FontStyle.italic,
+                  fontSize: 11,
+                  color: isOut ? const Color(0xFFDBE4FB) : AppColors.textDim,
                 ),
-                const SizedBox(height: 3),
+              )
+            else ...[
+              if (imageAttachments.length > 1) ...[
+                ChatImageGrid(images: imageAttachments),
+                if (message.isNotEmpty) const SizedBox(height: 6),
               ],
-              if (deleted)
-                Text(
-                  'This message was deleted',
-                  style: AppTextStyles.body.copyWith(
-                    fontStyle: FontStyle.italic,
-                    fontSize: 11,
-                    color: isOut ? const Color(0xFFDBE4FB) : AppColors.textDim,
-                  ),
-                )
-              else ...[
-                if (imageAttachments.length > 1) ...[
-                  ChatImageGrid(images: imageAttachments),
-                  if (message.isNotEmpty) const SizedBox(height: 6),
-                ],
-                if (imagePath != null) ...[
-                  GestureDetector(
-                    onTap:
-                        onTapImage ??
-                        () => openChatImageGallery(context, [
-                          (
+              if (imagePath != null) ...[
+                GestureDetector(
+                  onTap:
+                      onTapImage ??
+                      () => openChatImageGallery(context, [
+                        (
+                          path: imagePath!,
+                          onSave: onSaveImage,
+                          onDelete: onDeleteImage,
+                        ),
+                      ]),
+                  child: ConstrainedBox(
+                    // Photos are big; GIFs and stickers are a small
+                    // thing you glance at, so they are kept small. A
+                    // scribble is shown whole, in a square.
+                    constraints: isScribble(imagePath!)
+                        ? const BoxConstraints(maxHeight: 220, maxWidth: 220)
+                        : isSmallMedia(imagePath!)
+                        ? const BoxConstraints(maxHeight: 130, maxWidth: 170)
+                        : const BoxConstraints(maxHeight: 260),
+                    child: isGifPath(imagePath!)
+                        ? LimitedGif(
                             path: imagePath!,
-                            onSave: onSaveImage,
-                            onDelete: onDeleteImage,
-                          ),
-                        ]),
-                    child: ConstrainedBox(
-                      // Photos are big; GIFs and stickers are a small
-                      // thing you glance at, so they are kept small. A
-                      // scribble is shown whole, in a square.
-                      constraints: isScribble(imagePath!)
-                          ? const BoxConstraints(maxHeight: 220, maxWidth: 220)
-                          : isSmallMedia(imagePath!)
-                          ? const BoxConstraints(maxHeight: 130, maxWidth: 170)
-                          : const BoxConstraints(maxHeight: 260),
-                      child: isGifPath(imagePath!)
-                          ? LimitedGif(
-                              path: imagePath!,
-                              cacheWidth: 340,
-                              errorBuilder: (_) => const Padding(
-                                padding: EdgeInsets.all(8),
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  size: 28,
-                                ),
-                              ),
-                            )
-                          : Image.file(
-                              File(imagePath!),
-                              fit:
-                                  isSmallMedia(imagePath!) ||
-                                      isScribble(imagePath!)
-                                  ? BoxFit.contain
-                                  : BoxFit.cover,
-                              cacheWidth: isScribble(imagePath!)
-                                  ? 520
-                                  : (isSmallMedia(imagePath!) ? 340 : 800),
-                              errorBuilder: (_, __, ___) => const Padding(
-                                padding: EdgeInsets.all(8),
-                                child: Icon(
-                                  Icons.broken_image_outlined,
-                                  size: 28,
-                                ),
+                            cacheWidth: 340,
+                            errorBuilder: (_) => const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                size: 28,
                               ),
                             ),
-                    ),
+                          )
+                        : Image.file(
+                            File(imagePath!),
+                            fit:
+                                isSmallMedia(imagePath!) ||
+                                    isScribble(imagePath!)
+                                ? BoxFit.contain
+                                : BoxFit.cover,
+                            cacheWidth: isScribble(imagePath!)
+                                ? 520
+                                : (isSmallMedia(imagePath!) ? 340 : 800),
+                            errorBuilder: (_, __, ___) => const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                size: 28,
+                              ),
+                            ),
+                          ),
                   ),
-                  if (message.isNotEmpty) const SizedBox(height: 6),
-                ],
-                if (message.isNotEmpty) _text(isOut),
-                if (footer != null) footer!,
+                ),
+                if (message.isNotEmpty) const SizedBox(height: 6),
               ],
-              if (isOut && status != null && !deleted) ...[
-                const SizedBox(height: 4),
-                _StatusRow(status: status!),
-              ],
+              if (message.isNotEmpty) _text(isOut),
+              if (footer != null) footer!,
             ],
-          ),
+            if (isOut && status != null && !deleted) ...[
+              const SizedBox(height: 4),
+              _StatusRow(status: status!),
+            ],
+          ],
         ),
       ),
     );

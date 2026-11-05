@@ -64,56 +64,61 @@ const LocalMessageSchema = CollectionSchema(
       name: r'messageId',
       type: IsarType.string,
     ),
-    r'readAckPending': PropertySchema(
+    r'reactions': PropertySchema(
       id: 11,
+      name: r'reactions',
+      type: IsarType.stringList,
+    ),
+    r'readAckPending': PropertySchema(
+      id: 12,
       name: r'readAckPending',
       type: IsarType.bool,
     ),
     r'recipientId': PropertySchema(
-      id: 12,
+      id: 13,
       name: r'recipientId',
       type: IsarType.string,
     ),
     r'replyToId': PropertySchema(
-      id: 13,
+      id: 14,
       name: r'replyToId',
       type: IsarType.string,
     ),
-    r'roomId': PropertySchema(id: 14, name: r'roomId', type: IsarType.string),
+    r'roomId': PropertySchema(id: 15, name: r'roomId', type: IsarType.string),
     r'senderId': PropertySchema(
-      id: 15,
+      id: 16,
       name: r'senderId',
       type: IsarType.string,
     ),
     r'status': PropertySchema(
-      id: 16,
+      id: 17,
       name: r'status',
       type: IsarType.byte,
       enumMap: _LocalMessagestatusEnumValueMap,
     ),
     r'textContent': PropertySchema(
-      id: 17,
+      id: 18,
       name: r'textContent',
       type: IsarType.string,
     ),
     r'thumbnailPath': PropertySchema(
-      id: 18,
+      id: 19,
       name: r'thumbnailPath',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 19,
+      id: 20,
       name: r'timestamp',
       type: IsarType.dateTime,
     ),
     r'type': PropertySchema(
-      id: 20,
+      id: 21,
       name: r'type',
       type: IsarType.byte,
       enumMap: _LocalMessagetypeEnumValueMap,
     ),
     r'waveform': PropertySchema(
-      id: 21,
+      id: 22,
       name: r'waveform',
       type: IsarType.longList,
     ),
@@ -218,6 +223,18 @@ int _localMessageEstimateSize(
     }
   }
   bytesCount += 3 + object.messageId.length * 3;
+  {
+    final list = object.reactions;
+    if (list != null) {
+      bytesCount += 3 + list.length * 3;
+      {
+        for (var i = 0; i < list.length; i++) {
+          final value = list[i];
+          bytesCount += value.length * 3;
+        }
+      }
+    }
+  }
   bytesCount += 3 + object.recipientId.length * 3;
   {
     final value = object.replyToId;
@@ -265,17 +282,18 @@ void _localMessageSerialize(
   writer.writeString(offsets[8], object.localMediaPath);
   writer.writeString(offsets[9], object.mediaRemoteId);
   writer.writeString(offsets[10], object.messageId);
-  writer.writeBool(offsets[11], object.readAckPending);
-  writer.writeString(offsets[12], object.recipientId);
-  writer.writeString(offsets[13], object.replyToId);
-  writer.writeString(offsets[14], object.roomId);
-  writer.writeString(offsets[15], object.senderId);
-  writer.writeByte(offsets[16], object.status.index);
-  writer.writeString(offsets[17], object.textContent);
-  writer.writeString(offsets[18], object.thumbnailPath);
-  writer.writeDateTime(offsets[19], object.timestamp);
-  writer.writeByte(offsets[20], object.type.index);
-  writer.writeLongList(offsets[21], object.waveform);
+  writer.writeStringList(offsets[11], object.reactions);
+  writer.writeBool(offsets[12], object.readAckPending);
+  writer.writeString(offsets[13], object.recipientId);
+  writer.writeString(offsets[14], object.replyToId);
+  writer.writeString(offsets[15], object.roomId);
+  writer.writeString(offsets[16], object.senderId);
+  writer.writeByte(offsets[17], object.status.index);
+  writer.writeString(offsets[18], object.textContent);
+  writer.writeString(offsets[19], object.thumbnailPath);
+  writer.writeDateTime(offsets[20], object.timestamp);
+  writer.writeByte(offsets[21], object.type.index);
+  writer.writeLongList(offsets[22], object.waveform);
 }
 
 LocalMessage _localMessageDeserialize(
@@ -297,21 +315,22 @@ LocalMessage _localMessageDeserialize(
   object.localMediaPath = reader.readStringOrNull(offsets[8]);
   object.mediaRemoteId = reader.readStringOrNull(offsets[9]);
   object.messageId = reader.readString(offsets[10]);
-  object.readAckPending = reader.readBool(offsets[11]);
-  object.recipientId = reader.readString(offsets[12]);
-  object.replyToId = reader.readStringOrNull(offsets[13]);
-  object.roomId = reader.readString(offsets[14]);
-  object.senderId = reader.readString(offsets[15]);
+  object.reactions = reader.readStringList(offsets[11]);
+  object.readAckPending = reader.readBool(offsets[12]);
+  object.recipientId = reader.readString(offsets[13]);
+  object.replyToId = reader.readStringOrNull(offsets[14]);
+  object.roomId = reader.readString(offsets[15]);
+  object.senderId = reader.readString(offsets[16]);
   object.status =
-      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[16])] ??
+      _LocalMessagestatusValueEnumMap[reader.readByteOrNull(offsets[17])] ??
       MessageStatus.sending;
-  object.textContent = reader.readStringOrNull(offsets[17]);
-  object.thumbnailPath = reader.readStringOrNull(offsets[18]);
-  object.timestamp = reader.readDateTime(offsets[19]);
+  object.textContent = reader.readStringOrNull(offsets[18]);
+  object.thumbnailPath = reader.readStringOrNull(offsets[19]);
+  object.timestamp = reader.readDateTime(offsets[20]);
   object.type =
-      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[20])] ??
+      _LocalMessagetypeValueEnumMap[reader.readByteOrNull(offsets[21])] ??
       MessageType.text;
-  object.waveform = reader.readLongList(offsets[21]);
+  object.waveform = reader.readLongList(offsets[22]);
   return object;
 }
 
@@ -345,30 +364,32 @@ P _localMessageDeserializeProp<P>(
     case 10:
       return (reader.readString(offset)) as P;
     case 11:
-      return (reader.readBool(offset)) as P;
+      return (reader.readStringList(offset)) as P;
     case 12:
-      return (reader.readString(offset)) as P;
+      return (reader.readBool(offset)) as P;
     case 13:
-      return (reader.readStringOrNull(offset)) as P;
-    case 14:
       return (reader.readString(offset)) as P;
+    case 14:
+      return (reader.readStringOrNull(offset)) as P;
     case 15:
       return (reader.readString(offset)) as P;
     case 16:
+      return (reader.readString(offset)) as P;
+    case 17:
       return (_LocalMessagestatusValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageStatus.sending)
           as P;
-    case 17:
-      return (reader.readStringOrNull(offset)) as P;
     case 18:
       return (reader.readStringOrNull(offset)) as P;
     case 19:
-      return (reader.readDateTime(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 20:
+      return (reader.readDateTime(offset)) as P;
+    case 21:
       return (_LocalMessagetypeValueEnumMap[reader.readByteOrNull(offset)] ??
               MessageType.text)
           as P;
-    case 21:
+    case 22:
       return (reader.readLongList(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -1936,6 +1957,218 @@ extension LocalMessageQueryFilter
     return QueryBuilder.apply(this, (query) {
       return query.addFilterCondition(
         FilterCondition.greaterThan(property: r'messageId', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNull(property: r'reactions'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        const FilterCondition.isNotNull(property: r'reactions'),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementEqualTo(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(
+          property: r'reactions',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementGreaterThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(
+          include: include,
+          property: r'reactions',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementLessThan(
+    String value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.lessThan(
+          include: include,
+          property: r'reactions',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementBetween(
+    String lower,
+    String upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.between(
+          property: r'reactions',
+          lower: lower,
+          includeLower: includeLower,
+          upper: upper,
+          includeUpper: includeUpper,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementStartsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.startsWith(
+          property: r'reactions',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementEndsWith(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.endsWith(
+          property: r'reactions',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.contains(
+          property: r'reactions',
+          value: value,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.matches(
+          property: r'reactions',
+          wildcard: pattern,
+          caseSensitive: caseSensitive,
+        ),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.equalTo(property: r'reactions', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsElementIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(
+        FilterCondition.greaterThan(property: r'reactions', value: ''),
+      );
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsLengthEqualTo(int length) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'reactions', length, true, length, true);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'reactions', 0, true, 0, true);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'reactions', 0, false, 999999, true);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsLengthLessThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'reactions', 0, true, length, include);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsLengthGreaterThan(int length, {bool include = false}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(r'reactions', length, include, 999999, true);
+    });
+  }
+
+  QueryBuilder<LocalMessage, LocalMessage, QAfterFilterCondition>
+  reactionsLengthBetween(
+    int lower,
+    int upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.listLength(
+        r'reactions',
+        lower,
+        includeLower,
+        upper,
+        includeUpper,
       );
     });
   }
@@ -3779,6 +4012,12 @@ extension LocalMessageQueryWhereDistinct
     });
   }
 
+  QueryBuilder<LocalMessage, LocalMessage, QDistinct> distinctByReactions() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'reactions');
+    });
+  }
+
   QueryBuilder<LocalMessage, LocalMessage, QDistinct>
   distinctByReadAckPending() {
     return QueryBuilder.apply(this, (query) {
@@ -3935,6 +4174,13 @@ extension LocalMessageQueryProperty
   QueryBuilder<LocalMessage, String, QQueryOperations> messageIdProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'messageId');
+    });
+  }
+
+  QueryBuilder<LocalMessage, List<String>?, QQueryOperations>
+  reactionsProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'reactions');
     });
   }
 

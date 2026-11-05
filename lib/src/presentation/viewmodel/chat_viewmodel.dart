@@ -9,6 +9,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show Icon, Icons;
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
+import 'package:serafim/src/providers/nickname_providers.dart';
+import 'package:serafim/src/utils/chat/reactions.dart';
 import 'package:serafim/src/core/platform/chat_notifications.dart';
 import 'package:flutter/services.dart' show SystemSound, SystemSoundType;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -549,8 +551,15 @@ class ChatViewModel extends Notifier<ChatState> {
             );
           }
 
-          // Reconnect sync can also carry edits and deletions we missed.
+          // Reconnect sync can also carry edits, deletions and reactions we
+          // missed.
           final syncedId = realId ?? tempId;
+          if (syncedId != null && data['reactions'] is Map) {
+            await isar.applyReactions(
+              syncedId,
+              _reactionMap(data['reactions'] as Map),
+            );
+          }
           if (syncedId != null) {
             if (data['deleted'] == true) {
               await isar.applyDelete(syncedId);
@@ -585,6 +594,21 @@ class ChatViewModel extends Notifier<ChatState> {
               _parseServerTimestamp(data['edited_at'] as String?),
             );
           }
+          break;
+
+        case 'message_reactions':
+          final id = data['message_id'] as String?;
+          if (id != null && data['reactions'] is Map) {
+            await isar.applyReactions(
+              id,
+              _reactionMap(data['reactions'] as Map),
+            );
+          }
+          break;
+
+        case 'nickname_update':
+          // A friend gave you (or changed) a nickname.
+          ref.invalidate(nicknamesProvider);
           break;
 
         case 'message_deleted':
@@ -814,6 +838,38 @@ class ChatViewModel extends Notifier<ChatState> {
           },
         );
     if (settings.alertSound) SystemSound.play(SystemSoundType.alert);
+  }
+
+  static Map<String, String> _reactionMap(Map raw) => {
+    for (final e in raw.entries)
+      if (e.value is String) e.key.toString(): e.value as String,
+  };
+
+  /// Reacts to [message] with [reaction], or takes your reaction away when
+  /// it is the one you already chose (or null). Shown at once; the server
+  /// then tells everyone in the chat. Only messages the server has.
+  Future<void> react(LocalMessage message, Reaction? reaction) async {
+    final me = ref.read(currentAccountIdProvider);
+    if (me == null || message.isDeleted) return;
+    if (message.status == MessageStatus.sending ||
+        message.status == MessageStatus.failed) {
+      return;
+    }
+    final now = reactionsFrom(message.reactions);
+    final next = reaction == null || now[me] == reaction ? null : reaction;
+    if (next == null) {
+      now.remove(me);
+    } else {
+      now[me] = next;
+    }
+    await ref.read(isarServiceProvider).applyReactions(message.messageId, {
+      for (final e in now.entries) e.key: e.value.name,
+    });
+    ref.read(webSocketServiceProvider).sendMessage({
+      'type': 'react',
+      'message_id': message.messageId,
+      'reaction': next?.name,
+    });
   }
 
   /// Builds a deterministic, order-independent room id for a 1:1 conversation

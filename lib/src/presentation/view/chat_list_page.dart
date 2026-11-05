@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/providers/nickname_providers.dart';
 import 'package:serafim/src/presentation/view/widgets/echo_send_card.dart';
 import 'package:serafim/src/providers/echo_providers.dart';
 import 'package:serafim/src/providers/halo_providers.dart';
@@ -746,7 +747,8 @@ class _ChatListItem extends ConsumerWidget {
     }
 
     return ChatRow(
-      name: user.displayName,
+      // What you call them, if you gave them a nickname.
+      name: ref.watch(nicknameForProvider(user.id)) ?? user.displayName,
       preview: line,
       typing: typing,
       halo: halo,

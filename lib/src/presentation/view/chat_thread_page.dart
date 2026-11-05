@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/presentation/view/nicknames_page.dart';
+import 'package:serafim/src/providers/nickname_providers.dart';
+import 'package:serafim/src/utils/chat/reactions.dart';
 import 'package:serafim/src/data/services/report_service.dart';
 import 'package:serafim/src/utils/report_sheet.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
@@ -644,9 +647,67 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     return friend != null && ref.watch(haloLitProvider(haloKey(friend)));
   }
 
+  /// The reactions badge for [message], or null when nobody reacted.
+  Widget? _reactionBadge(LocalMessage message) {
+    final reactions = reactionsFrom(message.reactions);
+    if (reactions.isEmpty || message.isDeleted) return null;
+    return GestureDetector(
+      key: ValueKey('reactions-${message.messageId}'),
+      onTap: () => _showReactions(reactions),
+      child: ReactionBadge(
+        reactions: reactions,
+        myId: ref.read(currentAccountIdProvider),
+      ),
+    );
+  }
+
+  /// Who reacted with what.
+  Future<void> _showReactions(Map<String, Reaction> reactions) {
+    final me = ref.read(currentAccountIdProvider);
+    return showSettledSheet<void>(
+      context: context,
+      backgroundColor: AppColors.paperAlt,
+      shape: const RoundedRectangleBorder(),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final e in reactions.entries)
+              ListTile(
+                leading: ReactionDoodle(e.value, size: 32),
+                title: Text(
+                  e.key == me ? 'You' : _nameOf(e.key),
+                  style: AppTextStyles.body.copyWith(color: AppColors.text),
+                ),
+                trailing: Text(e.value.label, style: AppTextStyles.smallDim),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _isFriend() => (ref.watch(friendsProvider).value ?? const []).any(
+    (f) => f.id == widget.recipientId,
+  );
+
+  void _openNicknames() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NicknamesPage(
+          friendId: widget.recipientId,
+          friendName: widget.contactName,
+        ),
+      ),
+    );
+  }
+
   String _nameOf(String senderId) {
     final gid = widget.groupId;
-    if (gid == null) return widget.contactName;
+    if (gid == null) {
+      return ref.read(nicknameForProvider(widget.recipientId)) ??
+          widget.contactName;
+    }
     return ref.read(groupMemberNamesProvider(gid))[senderId] ??
         ref.read(knownPersonProvider(senderId))?.displayName ??
         'Member';
@@ -804,6 +865,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       isConfirmed: isConfirmed,
     );
     if (actions.isEmpty) return;
+    final me = ref.read(currentAccountIdProvider);
+    final canReact = isConfirmed && !message.isDeleted;
+    final myReaction = me == null ? null : reactionsFrom(message.reactions)[me];
 
     final action = await showSettledSheet<String>(
       context: context,
@@ -823,6 +887,13 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (canReact) ...[
+                ReactionPicker(
+                  current: myReaction,
+                  onPick: (r) => Navigator.pop(ctx, 'react:${r.name}'),
+                ),
+                Divider(height: 1, color: AppColors.lineSoft),
+              ],
               for (final a in actions)
                 switch (a) {
                   MessageAction.copy => tile(Icons.copy, 'Copy text', 'copy'),
@@ -868,6 +939,12 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       },
     );
     if (action == null || !mounted) return;
+    if (action.startsWith('react:')) {
+      await ref
+          .read(chatViewModelProvider.notifier)
+          .react(message, Reaction.parse(action.substring(6)));
+      return;
+    }
 
     switch (action) {
       case 'copy':
@@ -1545,6 +1622,8 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             roomId: roomId,
             onMedia: _openMedia,
             onSearch: _openSearch,
+            // Nicknames are between friends, in a 1:1 chat.
+            onNicknames: gid == null && _isFriend() ? _openNicknames : null,
           ),
           // Tapping the photo opens it full screen; the name opens the profile.
           titleWidget: GestureDetector(
@@ -1570,7 +1649,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                     gid != null
                         ? '${group?.name ?? widget.contactName}'
                               '${group != null ? ' · ${group.memberCount} members' : ''}'
-                        : widget.username ?? widget.contactName,
+                        : ref.watch(nicknameForProvider(widget.recipientId)) ??
+                              widget.username ??
+                              widget.contactName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.body.copyWith(
@@ -1804,6 +1885,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                       : null,
                                   deleted: message.isDeleted,
                                   forwarded: message.forwarded,
+                                  reactions: _reactionBadge(message),
                                   footer:
                                       message.type == MessageType.audio &&
                                           !message.isDeleted
@@ -1901,7 +1983,27 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                               child: SwipeToReply(
                                 enabled: !message.isDeleted,
                                 onReply: () => _startReply(message),
-                                child: bubble,
+                                child:
+                                    message.type == MessageType.sticker &&
+                                        _reactionBadge(message) != null
+                                    // A sticker has no bubble: the badge
+                                    // sits under its right edge.
+                                    ? Align(
+                                        alignment: isOutgoing
+                                            ? Alignment.centerRight
+                                            : Alignment.centerLeft,
+                                        child: IntrinsicWidth(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              bubble,
+                                              _reactionBadge(message)!,
+                                            ],
+                                          ),
+                                        ),
+                                      )
+                                    : bubble,
                               ),
                             ),
                           );
@@ -2024,11 +2126,13 @@ class ChatMenuButton extends StatelessWidget {
     required this.roomId,
     this.onMedia,
     this.onSearch,
+    this.onNicknames,
   });
 
   final String roomId;
   final VoidCallback? onMedia;
   final VoidCallback? onSearch;
+  final VoidCallback? onNicknames;
 
   @override
   Widget build(BuildContext context) {
@@ -2055,12 +2159,15 @@ class ChatMenuButton extends StatelessWidget {
       onSelected: (value) => switch (value) {
         'search' => onSearch?.call(),
         'media' => onMedia?.call(),
+        'nicknames' => onNicknames?.call(),
         _ => openChatBackgroundPage(context, roomId: roomId),
       },
       itemBuilder: (_) => [
         if (onSearch != null) item('search', Icons.search, 'Search'),
         if (onMedia != null)
           item('media', Icons.perm_media_outlined, 'Media & links'),
+        if (onNicknames != null)
+          item('nicknames', Icons.badge_outlined, 'Nicknames'),
         item('background', Icons.wallpaper_outlined, 'Chat background'),
       ],
     );
