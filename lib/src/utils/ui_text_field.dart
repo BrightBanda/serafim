@@ -11,6 +11,8 @@ import 'package:serafim/src/utils/themes/app_text_styles.dart';
 ///
 /// UI only — takes a [controller] and display options, no validation
 /// or submit logic lives in this widget.
+final Color _errorColor = Colors.red.shade400;
+
 class UiTextField extends StatelessWidget {
   const UiTextField({
     super.key,
@@ -27,7 +29,11 @@ class UiTextField extends StatelessWidget {
     this.minLines,
     this.textCapitalization = TextCapitalization.none,
     this.onChanged,
+    this.errorText,
   });
+
+  /// Turns the box's border red and says what is wrong below it.
+  final String? errorText;
 
   final String label;
   final TextEditingController? controller;
@@ -53,7 +59,10 @@ class UiTextField extends StatelessWidget {
         Container(
           decoration: BoxDecoration(
             color: AppColors.paperAlt,
-            border: Border.all(color: AppColors.lineSoft, width: 1.5),
+            border: Border.all(
+              color: errorText != null ? _errorColor : AppColors.lineSoft,
+              width: 1.5,
+            ),
             borderRadius: BorderRadius.zero,
           ),
           child: TextField(
@@ -76,7 +85,10 @@ class UiTextField extends StatelessWidget {
               ),
               border: InputBorder.none,
               focusedBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+                borderSide: BorderSide(
+                  color: errorText != null ? _errorColor : AppColors.primary,
+                  width: 1.5,
+                ),
                 borderRadius: BorderRadius.zero,
               ),
               contentPadding: const EdgeInsets.symmetric(
@@ -89,6 +101,14 @@ class UiTextField extends StatelessWidget {
             ),
           ),
         ),
+        if (errorText != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            errorText!,
+            key: const ValueKey('field-error'),
+            style: AppTextStyles.smallDim.copyWith(color: _errorColor),
+          ),
+        ],
         if (footer != null || (maxLength != null && controller != null)) ...[
           const SizedBox(height: 4),
           Align(

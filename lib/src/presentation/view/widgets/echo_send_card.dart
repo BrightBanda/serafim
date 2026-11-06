@@ -154,6 +154,9 @@ class _EchoComposerState extends ConsumerState<_EchoComposer> {
   bool _busy = false;
   String? _error;
 
+  /// Send was tapped with nothing written.
+  bool _missingText = false;
+
   @override
   void dispose() {
     _text.dispose();
@@ -177,7 +180,11 @@ class _EchoComposerState extends ConsumerState<_EchoComposer> {
 
   Future<void> _send() async {
     final text = _text.text.trim();
-    if (text.isEmpty || _busy) return;
+    if (_busy) return;
+    if (text.isEmpty) {
+      setState(() => _missingText = true);
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -237,7 +244,10 @@ class _EchoComposerState extends ConsumerState<_EchoComposer> {
               hintText: 'Bored, anyone want to talk football?',
               maxLength: Echo.textMax,
               maxLines: 2,
-              onChanged: (_) => setState(() {}),
+              errorText: _missingText ? 'Write a short message first.' : null,
+              onChanged: (_) {
+                if (_missingText) setState(() => _missingText = false);
+              },
             ),
             const SizedBox(height: 12),
             Text('WHO CAN GET IT', style: AppTextStyles.fieldLabel),
@@ -259,9 +269,7 @@ class _EchoComposerState extends ConsumerState<_EchoComposer> {
             SerafimButton(
               key: const ValueKey('echo-post'),
               label: _busy ? 'SENDING…' : 'SEND ECHO',
-              onPressed: _busy || blocked != null || _text.text.trim().isEmpty
-                  ? null
-                  : _send,
+              onPressed: _busy || blocked != null ? null : _send,
             ),
           ],
         ),

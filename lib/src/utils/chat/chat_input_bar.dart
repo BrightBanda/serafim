@@ -12,9 +12,8 @@ class ChatInputBar extends StatelessWidget {
     this.hintText = 'Speak into the void…',
     this.onSend,
     this.onAttach,
-    this.onScribble,
     this.attachDisabledReason,
-    this.scribbleDisabledReason,
+    this.notice,
     this.attachBusy = false,
     this.replyPreview,
     this.onStickers,
@@ -58,18 +57,13 @@ class ChatInputBar extends StatelessWidget {
   /// Shows an attach (image) button when non-null.
   final VoidCallback? onAttach;
 
-  /// Shows a scribble (hand-drawn note) button when non-null. It is sent as a
-  /// picture, so it is held back for the same reason as [onAttach].
-  final VoidCallback? onScribble;
-
   /// When non-null the attach button is dimmed and tapping it explains this
   /// reason instead of picking a file. (The server enforces the rule too.)
   final String? attachDisabledReason;
 
-  /// Holds back just the scribble button (a scribble is a picture, which
-  /// some chats can't take even when videos and audio can). Defaults to
-  /// [attachDisabledReason].
-  final String? scribbleDisabledReason;
+  /// Above the bar, when there is something to say about this chat (e.g. its
+  /// scheduled messages).
+  final Widget? notice;
 
   /// A photo is being prepared or sent: the attach button shows a spinner and
   /// ignores taps.
@@ -77,7 +71,6 @@ class ChatInputBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scribbleReason = scribbleDisabledReason ?? attachDisabledReason;
     final bar = Container(
       // The extra bottom padding lifts the bar clear of the screen edge.
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 20),
@@ -98,6 +91,7 @@ class ChatInputBar extends StatelessWidget {
             // rebuild the mic button, ending the hold gesture.
             if (onAttach != null) ...[
               GestureDetector(
+                key: const ValueKey('attach-button'),
                 onTap: attachBusy
                     ? null
                     : attachDisabledReason == null
@@ -132,34 +126,6 @@ class ChatInputBar extends StatelessWidget {
                               ? AppColors.textDim
                               : AppColors.lineSoft,
                         ),
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
-            if (onScribble != null) ...[
-              GestureDetector(
-                key: const ValueKey('scribble-button'),
-                onTap: attachBusy
-                    ? null
-                    : scribbleReason == null
-                    ? onScribble
-                    : () => ScaffoldMessenger.of(context)
-                        ..clearSnackBars()
-                        ..showSnackBar(SnackBar(content: Text(scribbleReason))),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: AppColors.paperAlt,
-                    border: Border.all(color: AppColors.lineSoft, width: 1.5),
-                  ),
-                  child: Icon(
-                    Icons.draw_outlined,
-                    size: 18,
-                    color: scribbleReason == null
-                        ? AppColors.textDim
-                        : AppColors.lineSoft,
-                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -274,6 +240,8 @@ class ChatInputBar extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (notice != null)
+          KeyedSubtree(key: const ValueKey('input-notice'), child: notice!),
         if (reply != null)
           KeyedSubtree(
             key: const ValueKey('reply-preview'),

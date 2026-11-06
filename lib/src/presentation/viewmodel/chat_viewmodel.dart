@@ -13,6 +13,7 @@ import 'package:serafim/src/core/platform/sound_board.dart';
 import 'package:serafim/src/providers/sound_providers.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
 import 'package:serafim/src/providers/chat_features_providers.dart';
+import 'package:serafim/src/providers/scheduled_message_providers.dart';
 import 'package:serafim/src/utils/chat/reactions.dart';
 import 'package:serafim/src/core/platform/chat_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -654,6 +655,11 @@ class ChatViewModel extends Notifier<ChatState> {
           ref.invalidate(nicknamesProvider);
           break;
 
+        case 'scheduled_update':
+          // One of your scheduled messages went out, or could not.
+          await ref.read(scheduledMessagesProvider.notifier).heard(data);
+          break;
+
         case 'chat_settings':
           // Someone in a chat changed its features (or you did, elsewhere).
           ref.read(chatFeaturesControllerProvider.notifier).heard(data);
@@ -741,6 +747,8 @@ class ChatViewModel extends Notifier<ChatState> {
             await _syncMessageStates();
             // Group messages are not queued per person: catch up from history.
             unawaited(_syncGroups());
+            // Scheduled messages that went out while you were away.
+            unawaited(ref.read(scheduledMessagesProvider.notifier).refresh());
             // Chat features changed while you were away.
             unawaited(
               ref.read(chatFeaturesControllerProvider.notifier).refresh(),

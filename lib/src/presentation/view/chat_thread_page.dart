@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:serafim/src/presentation/view/chat_features_page.dart';
+import 'package:serafim/src/presentation/view/widgets/scheduled_message_sheets.dart';
+import 'package:serafim/src/utils/chat/attachment_sheet.dart';
 import 'package:serafim/src/data/services/chat_features_service.dart';
 import 'package:serafim/src/providers/chat_features_providers.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
@@ -187,14 +189,16 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
 
   /// Tells the other side "typing…", sparingly (see [TypingBroadcaster]).
   late final TypingBroadcaster _typing = TypingBroadcaster(
-    send: (typing) => ref
-        .read(chatViewModelProvider.notifier)
-        .sendTyping(
-          recipientId: widget.recipientId,
-          groupId: widget.groupId,
-          typing: typing,
-        ),
+    send: (typing) => _chat.sendTyping(
+      recipientId: widget.recipientId,
+      groupId: widget.groupId,
+      typing: typing,
+    ),
   );
+
+  /// Kept from the start: the last "stopped typing" goes out as the page
+  /// closes, when `ref` can no longer be used.
+  late final ChatViewModel _chat;
   final ScrollController _scrollController = ScrollController();
 
   /// A photo is being prepared and sent.
@@ -244,6 +248,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   @override
   void initState() {
     super.initState();
+    _chat = ref.read(chatViewModelProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_loadOlderNearTop);
     _messageController.addListener(
@@ -291,79 +296,176 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   /// The paperclip: a photo, a video or an audio file. Photos can't go to
   /// groups yet (the server relays them to one person only); videos and
   /// audio go through storage, so they can.
+  /// The paperclip: everything that can be added to this chat. Choices the
+  /// chat can't take stay visible, and say why when tapped; a scheduled message
+  /// is plain text, so it is always there.
   Future<void> _handleAttach() async {
     if (ref.read(currentUserProvider) == null || _attaching) return;
-    final photosBlocked = widget.groupId != null;
+    final isGroup = widget.groupId != null;
+    final isFriend = ref.read(friendIdsProvider).contains(widget.recipientId);
+    final friendsOnly = isGroup || isFriend
+        ? null
+        : 'Add ${widget.contactName} as a friend to share photos, videos '
+              'and audio.';
+    final noPhotos = isGroup
+        ? "Photos and GIFs can't be shared in groups yet."
+        : friendsOnly;
     final quota = _loadQuota();
 
-    Widget option(
-      BuildContext ctx,
-      IconData icon,
-      String title,
-      String subtitle,
-      String value, {
-      bool enabled = true,
-    }) => ListTile(
-      enabled: enabled,
-      leading: Icon(icon, color: enabled ? AppColors.text : AppColors.lineSoft),
-      title: Text(title, style: AppTextStyles.body),
-      subtitle: Text(subtitle, style: AppTextStyles.smallDim),
-      onTap: () => Navigator.pop(ctx, value),
-    );
-
-    final choice = await showSettledSheet<String>(
-      context: context,
-      backgroundColor: AppColors.paperAlt,
-      shape: const RoundedRectangleBorder(),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            option(
-              ctx,
-              Icons.photo_library_outlined,
-              'Photo',
-              photosBlocked
-                  ? "Photos can't be shared in groups yet"
-                  : 'From your gallery or camera',
-              'photo',
-              enabled: !photosBlocked,
-            ),
-            FutureBuilder<ChatFileQuota?>(
+    final options = [
+      AttachOption(
+        value: 'gallery',
+        icon: Icons.perm_media_outlined,
+        label: 'Gallery',
+        color: const Color(0xFF5B8DEF),
+        disabledReason: friendsOnly,
+      ),
+      AttachOption(
+        value: 'camera',
+        icon: Icons.photo_camera_outlined,
+        label: 'Camera',
+        color: const Color(0xFFE5587F),
+        disabledReason: noPhotos,
+      ),
+      AttachOption(
+        value: 'audio',
+        icon: Icons.audiotrack_outlined,
+        label: 'Audio',
+        color: const Color(0xFFF2994A),
+        disabledReason: friendsOnly,
+      ),
+      AttachOption(
+        value: 'scribble',
+        icon: Icons.draw_outlined,
+        label: 'Scribble',
+        color: const Color(0xFF27AE9E),
+        disabledReason: noPhotos,
+      ),
+      AttachOption(
+        value: 'together',
+        icon: Icons.people_alt_outlined,
+        label: 'Draw together',
+        color: const Color(0xFF9B6DF2),
+        disabledReason: isGroup
+            ? 'Draw Together is for two friends, not groups.'
+            : friendsOnly,
+      ),
+      const AttachOption(
+        value: 'schedule',
+        icon: Icons.schedule_send_outlined,
+        label: 'Scheduled',
+        color: Color(0xFFE2B93B),
+      ),
+    ];
+    final choice = await showAttachmentSheet(
+      context,
+      options: options,
+      footer: friendsOnly != null
+          ? null
+          : FutureBuilder<ChatFileQuota?>(
               future: quota,
-              builder: (_, snap) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  option(
-                    ctx,
-                    Icons.movie_outlined,
-                    'Video',
-                    _sizeLimitText(snap.data),
-                    'video',
-                  ),
-                  option(
-                    ctx,
-                    Icons.audiotrack_outlined,
-                    'Audio file',
-                    'MP3, M4A, WAV… ${_sizeLimitText(snap.data).toLowerCase()}',
-                    'audio',
-                  ),
-                ],
+              builder: (_, snap) => Text(
+                'Videos and audio: ${_sizeLimitText(snap.data).toLowerCase()}',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.smallDim,
               ),
             ),
-          ],
-        ),
-      ),
     );
-    if (!mounted) return;
+    if (!mounted || choice == null) return;
+    final reason = options.firstWhere((o) => o.value == choice).disabledReason;
+    if (reason != null) {
+      _toast(reason);
+      return;
+    }
     switch (choice) {
-      case 'photo':
-        await _attachPhotos();
-      case 'video':
-        await _attachFile(ChatFileKind.video);
+      case 'gallery':
+        await _attachFromGallery(photos: !isGroup);
+      case 'camera':
+        await _attachFromCamera();
       case 'audio':
         await _attachFile(ChatFileKind.audio);
+      case 'scribble':
+        await _handleScribble();
+      case 'together':
+        await _startDrawTogether();
+      case 'schedule':
+        await showScheduleComposer(
+          context,
+          recipientId: isGroup ? null : widget.recipientId,
+          groupId: widget.groupId,
+          // Already typed it? Then it is what gets scheduled.
+          initialText: _messageController.text,
+          onScheduled: _messageController.clear,
+        );
     }
+  }
+
+  /// Photos and videos from the gallery: photos get the preview they always
+  /// had, then each video goes out as a file.
+  Future<void> _attachFromGallery({required bool photos}) async {
+    final quality = ref.read(settingsProvider).imageQuality;
+    final GalleryPick? picked;
+    try {
+      picked = await pickFromGallery(
+        photos: photos,
+        maxSide: quality.maxSide,
+        quality: quality.jpegQuality,
+        onPicked: () {
+          if (mounted) setState(() => _attaching = true);
+        },
+      );
+    } catch (error) {
+      _toast(
+        humanError(error, fallback: "Couldn't open your gallery."),
+        error: true,
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+    if (picked == null || !mounted) return;
+    if (picked.photos.isNotEmpty) await _sendPhotos(picked.photos);
+    for (final video in picked.videos) {
+      if (!mounted) return;
+      try {
+        final file = checkChatFile(
+          PickedChatFile(
+            path: video.path,
+            name: video.name,
+            size: await video.length(),
+            kind: ChatFileKind.video,
+          ),
+        );
+        await _sendFile(file);
+      } on ChatFilePickException catch (e) {
+        _toast(e.message, error: true);
+      } catch (error) {
+        _mediaSendFailed(error);
+      }
+    }
+  }
+
+  Future<void> _attachFromCamera() async {
+    final quality = ref.read(settingsProvider).imageQuality;
+    final Uint8List? photo;
+    try {
+      photo = await takeShrunkPhoto(
+        maxSide: quality.maxSide,
+        quality: quality.jpegQuality,
+        onPicked: () {
+          if (mounted) setState(() => _attaching = true);
+        },
+      );
+    } catch (error) {
+      _toast(
+        humanError(error, fallback: "Couldn't open the camera."),
+        error: true,
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+    if (photo != null && mounted) await _sendPhotos([photo]);
   }
 
   Future<void> _attachFile(ChatFileKind kind) async {
@@ -444,22 +546,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     }
   }
 
-  Future<void> _attachPhotos() async {
+  /// Shows the preview for [photos], then sends what is kept.
+  Future<void> _sendPhotos(List<Uint8List> photos) async {
     if (ref.read(currentUserProvider) == null || _attaching) return;
     final quality = ref.read(settingsProvider).imageQuality;
     try {
-      final photos = await pickShrunkImages(
-        context,
-        maxSide: quality.maxSide,
-        quality: quality.jpegQuality,
-        // From here until the message is saved, show a spinner.
-        onPicked: () {
-          if (mounted) setState(() => _attaching = true);
-        },
-      );
-      if (photos == null || !mounted) return;
-
-      setState(() => _attaching = false);
       final toSend = photos.length > 1
           ? await previewImages(context, photos)
           : [
@@ -495,49 +586,6 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       );
     } finally {
       if (mounted) setState(() => _attaching = false);
-    }
-  }
-
-  /// The pencil: a scribble to send, or a canvas to draw on together.
-  Future<void> _handlePencil() async {
-    if (ref.read(currentUserProvider) == null || _attaching) return;
-    final choice = await showSettledSheet<String>(
-      context: context,
-      backgroundColor: AppColors.paperAlt,
-      shape: const RoundedRectangleBorder(),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              key: const ValueKey('pencil-scribble'),
-              leading: const Icon(Icons.draw_outlined),
-              title: Text('Scribble', style: AppTextStyles.body),
-              subtitle: Text(
-                'Draw a quick note and send it',
-                style: AppTextStyles.smallDim,
-              ),
-              onTap: () => Navigator.pop(ctx, 'scribble'),
-            ),
-            ListTile(
-              key: const ValueKey('pencil-together'),
-              leading: const Icon(Icons.people_alt_outlined),
-              title: Text('Draw together', style: AppTextStyles.body),
-              subtitle: Text(
-                'Draw on the same canvas, live',
-                style: AppTextStyles.smallDim,
-              ),
-              onTap: () => Navigator.pop(ctx, 'together'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (choice == 'together') {
-      await _startDrawTogether();
-    } else if (choice == 'scribble') {
-      await _handleScribble();
     }
   }
 
@@ -2068,9 +2116,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                       focusNode: _inputFocus,
                       onSend: _handleSend,
                       onAttach: _handleAttach,
-                      onScribble: _handlePencil,
-                      attachDisabledReason: notFriendsReason,
-                      scribbleDisabledReason: photoDisabledReason,
+                      notice: ScheduledMessagesBar(roomId: roomId),
                       attachBusy: _attaching,
                       onStickers: _toggleStickers,
                       stickersOpen: _stickersOpen,

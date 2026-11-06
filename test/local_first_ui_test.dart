@@ -316,6 +316,90 @@ void main() {
     );
   });
 
+  group('the paperclip in a chat', () {
+    Widget thread() => const ChatThreadPage(
+      contactName: 'Sam Ndlovu',
+      username: 'sam_n',
+      recipientId: 'sam',
+    );
+
+    Future<void> openSheet(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('attach-button')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('offers everything, in one place, to a friend', (tester) async {
+      await pump(tester, thread(), savedFriends: [sam]);
+      expect(find.byIcon(Icons.draw_outlined), findsNothing, reason: 'moved');
+      await openSheet(tester);
+      for (final label in [
+        'Gallery',
+        'Camera',
+        'Audio',
+        'Scribble',
+        'Draw together',
+        'Scheduled',
+      ]) {
+        expect(find.text(label), findsOneWidget, reason: label);
+      }
+      expect(find.textContaining('Videos and audio:'), findsOneWidget);
+    });
+
+    testWidgets('Scribble opens the pad', (tester) async {
+      await pump(tester, thread(), savedFriends: [sam]);
+      await openSheet(tester);
+      await tester.tap(find.byKey(const ValueKey('attach-scribble')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('scribble-pad')), findsOneWidget);
+    });
+
+    testWidgets('leaving with something typed is safe, and says you stopped', (
+      tester,
+    ) async {
+      await pump(tester, thread(), savedFriends: [sam]);
+      await tester.enterText(find.byType(TextField).last, 'half a thou');
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Scheduled opens the composer, with what you typed', (
+      tester,
+    ) async {
+      await pump(tester, thread(), savedFriends: [sam]);
+      await tester.enterText(find.byType(TextField).last, 'see you at nine');
+      await tester.pump();
+      await openSheet(tester);
+      await tester.tap(find.byKey(const ValueKey('attach-schedule')));
+      await tester.pumpAndSettle();
+      expect(find.text('SCHEDULE A MESSAGE'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('schedule-text')),
+          matching: find.text('see you at nine'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('for a non-friend the sheet still opens: scheduling is text, '
+        'and the rest say why they are held back', (tester) async {
+      await pump(tester, thread());
+      await openSheet(tester);
+      await tester.tap(find.byKey(const ValueKey('attach-gallery')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('as a friend to share'), findsOneWidget);
+      expect(find.text('Gallery'), findsNothing, reason: 'the sheet closed');
+      await tester.pump(const Duration(seconds: 5)); // the message goes away
+      await tester.pumpAndSettle();
+
+      await openSheet(tester);
+      await tester.tap(find.byKey(const ValueKey('attach-schedule')));
+      await tester.pumpAndSettle();
+      expect(find.text('SCHEDULE A MESSAGE'), findsOneWidget);
+    });
+  });
+
   group('the conversation header', () {
     Widget thread() => const ChatThreadPage(
       contactName: 'Sam Ndlovu',

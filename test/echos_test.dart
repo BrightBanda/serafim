@@ -196,6 +196,50 @@ void main() {
     expect(server.calls, ['send hi friends tag=null']);
   });
 
+  testWidgets('sending with nothing written says so, in red', (t) async {
+    final server = _Server();
+    await _show(t, server, const EchoSendCard());
+    await t.tap(find.byKey(const ValueKey('echo-send')));
+    await t.pumpAndSettle();
+    Border border() {
+      final box = t.widget<Container>(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('echo-text')),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      return (box.decoration as BoxDecoration).border as Border;
+    }
+
+    final calm = border().top.color;
+    expect(find.byKey(const ValueKey('field-error')), findsNothing);
+
+    await t.tap(find.byKey(const ValueKey('echo-post')));
+    await t.pump();
+    expect(server.calls, isEmpty);
+    expect(find.text('Write a short message first.'), findsOneWidget);
+    expect(border().top.color, Colors.red.shade400);
+
+    // Spaces are still nothing.
+    await t.enterText(find.byType(TextField), '   ');
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('echo-post')));
+    await t.pump();
+    expect(find.text('Write a short message first.'), findsOneWidget);
+    expect(server.calls, isEmpty);
+
+    // Typing clears it, and it can go.
+    await t.enterText(find.byType(TextField), 'hi');
+    await t.pump();
+    expect(find.text('Write a short message first.'), findsNothing);
+    expect(border().top.color, calm);
+    await t.tap(find.byKey(const ValueKey('echo-post')));
+    await t.pumpAndSettle();
+    expect(server.calls, isNotEmpty);
+  });
+
   testWidgets('limits are explained and stop sending', (t) async {
     final server = _Server(status: const MyEchoStatus(sentToday: 3, perDay: 3));
     await _show(t, server, const EchoSendCard());

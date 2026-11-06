@@ -136,3 +136,80 @@ Future<List<Uint8List>?> pickShrunkImages(
     ),
   );
 }
+
+/// What came back from the gallery: photos already shrunk, videos untouched.
+typedef GalleryPick = ({List<Uint8List> photos, List<XFile> videos});
+
+/// Whether a picked file is a video, from its type or else its name.
+bool isPickedVideo(String name, String? mimeType) {
+  if (mimeType != null) return mimeType.startsWith('video/');
+  final dot = name.lastIndexOf('.');
+  if (dot < 0) return false;
+  return const {
+    'mp4',
+    'm4v',
+    'mov',
+    'webm',
+    'mkv',
+    '3gp',
+    'avi',
+  }.contains(name.substring(dot + 1).toLowerCase());
+}
+
+/// Lets the person choose from their gallery, photos and videos together (up
+/// to four). With [photos] false (a chat that can't take pictures), one video.
+/// Null if they backed out.
+Future<GalleryPick?> pickFromGallery({
+  bool photos = true,
+  int maxSide = 1280,
+  int quality = 75,
+  VoidCallback? onPicked,
+}) async {
+  final picker = ImagePicker();
+  if (!photos) {
+    final video = await picker.pickVideo(source: ImageSource.gallery);
+    if (video == null) return null;
+    return (photos: const <Uint8List>[], videos: [video]);
+  }
+  final files = await picker.pickMultipleMedia(
+    limit: 4,
+    maxWidth: maxSide.toDouble(),
+    maxHeight: maxSide.toDouble(),
+    imageQuality: quality,
+  );
+  if (files.isEmpty) return null;
+  onPicked?.call();
+  final videos = [
+    for (final f in files)
+      if (isPickedVideo(f.name, f.mimeType)) f,
+  ];
+  final shrunk = await Future.wait([
+    for (final f in files)
+      if (!isPickedVideo(f.name, f.mimeType))
+        f.readAsBytes().then(
+          (bytes) => shrinkImage(bytes, maxSide: maxSide, quality: quality),
+        ),
+  ]);
+  return (photos: shrunk, videos: videos);
+}
+
+/// Takes a photo with the camera, shrunk. Null if they backed out.
+Future<Uint8List?> takeShrunkPhoto({
+  int maxSide = 1280,
+  int quality = 75,
+  VoidCallback? onPicked,
+}) async {
+  final file = await ImagePicker().pickImage(
+    source: ImageSource.camera,
+    maxWidth: maxSide.toDouble(),
+    maxHeight: maxSide.toDouble(),
+    imageQuality: quality,
+  );
+  if (file == null) return null;
+  onPicked?.call();
+  return shrinkImage(
+    await file.readAsBytes(),
+    maxSide: maxSide,
+    quality: quality,
+  );
+}
