@@ -160,12 +160,14 @@ class ChatViewModel extends Notifier<ChatState> {
 
   Timer? _typingTicker;
 
-  /// How often the soft typing tick repeats while someone is typing.
-  static const typingTickEvery = Duration(milliseconds: 1400);
+  /// How often the typing sound (eight fading key taps) starts again while
+  /// someone is typing: just after the last pattern has faded.
+  static const typingTickEvery = Duration(milliseconds: 2100);
 
-  /// Soft ticks while someone types in the chat you have open: one at once,
-  /// then every [typingTickEvery] until they stop, the "typing…" expires,
-  /// or you leave the chat.
+  /// The typing sound while someone types in the chat you have open: once at
+  /// once, then every [typingTickEvery] until they stop, the "typing…"
+  /// expires, or you leave the chat. "Still typing" frames only keep it going;
+  /// restarting on them would cut the pattern off midway.
   void _typingSound(Map<String, dynamic> data) {
     if (data['state'] == false) return;
     final me = ref.read(currentAccountIdProvider);
@@ -174,9 +176,9 @@ class ChatViewModel extends Notifier<ChatState> {
     final gid = data['group_id'] as String?;
     final room = gid != null ? groupRoomId(gid) : buildRoomId(me, sender);
     if (ref.read(activeRoomProvider) != room) return;
+    if (_typingTicker?.isActive ?? false) return;
     final board = ref.read(soundBoardProvider);
     board.play(SoundEvent.typing);
-    if (_typingTicker?.isActive ?? false) return;
     _typingTicker = Timer.periodic(typingTickEvery, (t) {
       if (!ref.mounted ||
           ref.read(activeRoomProvider) != room ||

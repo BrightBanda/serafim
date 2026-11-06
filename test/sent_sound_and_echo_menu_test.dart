@@ -134,6 +134,69 @@ void main() {
     skip: haveLib ? false : 'Isar native library not found',
   );
 
+  test(
+    'the typing sound repeats while they type, and is never cut off midway',
+    () async {
+      await Isar.initializeIsarCore(libraries: {Abi.current(): libPath});
+      final dir = Directory.systemTemp.createTempSync('typing');
+      final isar = await Isar.open(
+        [LocalMessageSchema, LocalChatRoomSchema],
+        directory: dir.path,
+        name: 't${DateTime.now().microsecondsSinceEpoch}',
+      );
+      addTearDown(() async {
+        await isar.close(deleteFromDisk: true);
+        dir.deleteSync(recursive: true);
+      });
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final events = StreamController<Map<String, dynamic>>.broadcast();
+      final out = _Out();
+      final c = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          isarServiceProvider.overrideWithValue(
+            IsarService.withDb(Future.value(isar))..accountId = 'me',
+          ),
+          currentUserProvider.overrideWithValue(
+            AppUser(id: 'me', isActive: true, createdAt: DateTime.utc(2026)),
+          ),
+          currentAccountIdProvider.overrideWithValue('me'),
+          webSocketEventsProvider.overrideWith((ref) => events.stream),
+          webSocketServiceProvider.overrideWithValue(_Socket()),
+          soundOutputProvider.overrideWithValue(out),
+        ],
+      );
+      addTearDown(c.dispose);
+      c.read(chatViewModelProvider.notifier);
+      c.read(soundBoardProvider);
+      c.read(activeRoomProvider.notifier).set('ann_me');
+      await Future<void>.delayed(Duration.zero);
+
+      Future<void> typing(bool state) async {
+        events.add({'type': 'typing', 'sender_id': 'ann', 'state': state});
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+
+      await typing(true);
+      expect(out.played, ['typing'], reason: 'starts at once');
+
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await typing(true);
+      expect(out.played, ['typing'], reason: 'a frame must not restart it');
+
+      await Future<void>.delayed(ChatViewModel.typingTickEvery);
+      expect(out.played, ['typing', 'typing'], reason: 'it repeats');
+
+      await typing(false);
+      await Future<void>.delayed(
+        ChatViewModel.typingTickEvery + const Duration(milliseconds: 200),
+      );
+      expect(out.played, hasLength(2), reason: 'stops when they stop');
+    },
+    skip: haveLib ? false : 'Isar native library not found',
+  );
+
   testWidgets('Echo sits in the profile menu, with its icon', (t) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();

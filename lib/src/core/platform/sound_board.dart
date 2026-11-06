@@ -11,7 +11,7 @@ enum SoundEvent {
   received(
     'Message received',
     'A new message arrives',
-    Duration(milliseconds: 700),
+    Duration(milliseconds: 1200),
   ),
   sent(
     'Message sent',
@@ -21,7 +21,7 @@ enum SoundEvent {
   typing(
     'Typing',
     'Someone is typing in the chat you have open',
-    Duration(milliseconds: 1000),
+    Duration(milliseconds: 2000),
   ),
   notification(
     'Notifications',

@@ -116,11 +116,11 @@ void main() {
       expect(out.played, ['received@0.5', 'received@0.5']);
     });
 
-    test('typing ticks are at least a second apart', () {
+    test('the typing pattern is never restarted while it plays', () {
       board.play(SoundEvent.typing);
       now = now.add(const Duration(milliseconds: 500));
       board.play(SoundEvent.typing);
-      now = now.add(const Duration(milliseconds: 1000));
+      now = now.add(const Duration(milliseconds: 1500));
       board.play(SoundEvent.typing);
       expect(out.played, hasLength(2));
     });

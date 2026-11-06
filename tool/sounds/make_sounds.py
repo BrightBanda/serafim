@@ -1,11 +1,14 @@
 """Makes the app's in-app sounds (assets/sounds/*.wav): calm and ambient.
 
     python3 tool/sounds/make_sounds.py "path/to/Default 2.wav"
+    python3 tool/sounds/make_sounds.py "path/to/Default 2.wav" serafim,tick
+
+(The optional second argument writes only the sounds it names.)
 
 Every sound starts softly (no click), stays in a warm register, decays from
-the first moment, and fades into a short reverb tail, at a low level. The
-Serafim sound is the owner's own recording, softened the same way; the rest
-are synthesised here, so they carry no licence.
+the first moment, and fades into a reverb tail, at a low level. The Serafim
+sound is the owner's own recording, softened the same way; the rest are
+synthesised here, so they carry no licence.
 """
 import sys
 import wave
@@ -16,6 +19,7 @@ import numpy as np
 SR = 22050
 OUT = Path(__file__).resolve().parents[2] / "assets" / "sounds"
 RNG = np.random.default_rng(7)
+ONLY = None  # names to write; None writes them all
 
 
 def t_of(n):
@@ -74,12 +78,15 @@ def mix(*parts):
 
 
 def save(name, x, peak):
+    if ONLY is not None and name not in ONLY:
+        return
     x = x / np.max(np.abs(x)) * peak
-    fade = int(SR * 0.05)
-    x[-fade:] *= np.linspace(1, 0, fade)
-    # Trim the silent end of the tail.
-    keep = np.where(np.abs(x) > peak * 0.004)[0]
+    # Trim the silent end of the tail, then ease what is left down to nothing,
+    # so the sound never stops: it just gets too quiet to hear.
+    keep = np.where(np.abs(x) > peak * 0.002)[0]
     x = x[: keep[-1] + 1 if len(keep) else len(x)]
+    fade = max(int(SR * 0.05), len(x) // 3)
+    x[-fade:] *= np.cos(np.linspace(0, np.pi / 2, fade)) ** 2
     with wave.open(str(OUT / f"{name}.wav"), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
@@ -99,15 +106,39 @@ def serafim(source):
     # Resample to SR.
     idx = np.arange(0, len(raw), rate / SR)
     x = np.interp(idx, np.arange(len(raw)), raw)
-    x = lowpass(x, 1600)
-    x *= envelope(len(x), attack=0.04, decay=0.22)
-    return reverb(x, seconds=1.2, wet=0.4, tone=1800)
+    # The recording ends abruptly while still audible: bring it down to
+    # silence well before that, so only the room is left at the end.
+    x = lowpass(x, 1300)
+    x *= envelope(len(x), attack=0.06, decay=0.3)
+    x *= np.cos(np.linspace(0, np.pi / 2, len(x))) ** 2
+    return reverb(x, seconds=2.4, wet=0.55, tone=1400)
+
+
+def key_taps():
+    """Eight soft key presses, the first the strongest, each quieter than the
+    last, slightly uneven like real typing. Each is a muffled thump with a
+    little felted click on top, and a fainter one as the key comes back up."""
+    at = (0.0, 0.16, 0.3, 0.47, 0.62, 0.79, 0.93, 1.1)
+    level = (1.0, 0.8, 0.65, 0.52, 0.42, 0.33, 0.26, 0.2)
+    parts = []
+    for start, gain in zip(at, level):
+        pitch = RNG.uniform(190, 250)
+        thump = tone(pitch, 0.09, 0.003, 0.018, ((1, 1.0), (2.3, 0.2)))
+        n = int(SR * 0.05)
+        noise = lowpass(RNG.normal(0, 1, n), 2400)
+        click = noise / np.max(np.abs(noise)) * envelope(n, 0.002, 0.007)
+        parts.append((start, gain * (thump + 0.3 * np.pad(click, (0, len(thump) - n)))))
+        parts.append((start + 0.055, gain * 0.1 * click))
+    return mix(*parts)
 
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    global ONLY
+    if len(sys.argv) > 2:
+        ONLY = set(sys.argv[2].split(","))
     if len(sys.argv) > 1:
-        save("serafim", serafim(sys.argv[1]), peak=0.32)
+        save("serafim", serafim(sys.argv[1]), peak=0.2)
 
     soft = ((1, 1.0), (2, 0.08))
 
@@ -122,9 +153,11 @@ def main():
                 (0.0, tone(523.25, 1.0, 0.015, 0.35, soft)),
                 (0.14, tone(783.99, 1.1, 0.02, 0.4, soft)),
             ),
-            wet=0.4,
+            seconds=2.0,
+            wet=0.5,
+            tone=1800,
         ),
-        peak=0.28,
+        peak=0.2,
     )
 
     # A single glassy note, gently struck.
@@ -153,9 +186,8 @@ def main():
     air *= np.sin(np.pi * t_of(n) / (n / SR)) ** 2
     save("swoosh", reverb(air, seconds=0.6, wet=0.25), peak=0.2)
 
-    # A soft wooden tap for typing.
-    tap = tone(700, 0.12, 0.003, 0.025, ((1, 1.0), (2.4, 0.15)))
-    save("tick", reverb(tap, seconds=0.4, wet=0.25), peak=0.14)
+    # Someone typing: played over and over while they do.
+    save("tick", reverb(key_taps(), seconds=0.5, wet=0.3, tone=1800), peak=0.17)
 
 
 if __name__ == "__main__":
