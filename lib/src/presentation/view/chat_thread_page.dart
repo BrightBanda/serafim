@@ -6,6 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:serafim/src/presentation/view/chat_features_page.dart';
 import 'package:serafim/src/presentation/view/widgets/scheduled_message_sheets.dart';
 import 'package:serafim/src/utils/chat/attachment_sheet.dart';
+import 'package:camera/camera.dart' show XFile;
+import 'package:serafim/src/data/services/media_library.dart';
+import 'package:serafim/src/presentation/view/audio_library_page.dart';
+import 'package:serafim/src/presentation/view/in_app_camera_page.dart';
+import 'package:serafim/src/presentation/view/media_gallery_page.dart';
+import 'package:serafim/src/providers/media_library_providers.dart';
+import 'package:serafim/src/utils/image_shrink.dart';
+import 'package:serafim/src/utils/media_picker/recent_media_strip.dart';
 import 'package:serafim/src/data/services/chat_features_service.dart';
 import 'package:serafim/src/providers/chat_features_providers.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
@@ -49,7 +57,6 @@ import 'package:serafim/src/utils/chat/swipe_to_reply.dart';
 import 'package:serafim/src/utils/chat/chat_input_bar.dart';
 import 'package:serafim/src/utils/chat/link_preview_card.dart';
 import 'package:serafim/src/providers/sticker_providers.dart';
-import 'package:serafim/src/utils/image_shrink.dart';
 import 'package:serafim/src/utils/stickers/sticker_message.dart';
 import 'package:serafim/src/utils/stickers/sticker_packs.dart';
 import 'package:serafim/src/utils/stickers/sticker_picker.dart';
@@ -82,7 +89,11 @@ class ChatThreadPage extends ConsumerStatefulWidget {
     this.isGroup = false,
     this.onBack,
     this.groupId,
+    this.recoveredPick,
   });
+
+  /// What was picked here before Android closed the app: offered on opening.
+  final List<XFile>? recoveredPick;
 
   /// Set for a group chat ([recipientId] is then the group id too).
   final String? groupId;
@@ -249,6 +260,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   void initState() {
     super.initState();
     _chat = ref.read(chatViewModelProvider.notifier);
+    if (widget.recoveredPick case final files?) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _resumeLostPick(files);
+      });
+    }
     WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_loadOlderNearTop);
     _messageController.addListener(
@@ -360,6 +376,14 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     final choice = await showAttachmentSheet(
       context,
       options: options,
+      // Only where files can be sent at all.
+      recent: friendsOnly != null
+          ? null
+          : (close) => RecentMediaStrip(
+              filter: isGroup ? MediaFilter.videos : MediaFilter.visual,
+              onSend: close,
+              onSeeAll: () => close('gallery'),
+            ),
       footer: friendsOnly != null
           ? null
           : FutureBuilder<ChatFileQuota?>(
@@ -372,6 +396,10 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             ),
     );
     if (!mounted || choice == null) return;
+    if (choice is List<DeviceMedia>) {
+      await _sendDeviceMedia(choice);
+      return;
+    }
     final reason = options.firstWhere((o) => o.value == choice).disabledReason;
     if (reason != null) {
       _toast(reason);
@@ -383,7 +411,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       case 'camera':
         await _attachFromCamera();
       case 'audio':
-        await _attachFile(ChatFileKind.audio);
+        await _attachAudio();
       case 'scribble':
         await _handleScribble();
       case 'together':
@@ -400,19 +428,189 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     }
   }
 
-  /// Photos and videos from the gallery: photos get the preview they always
-  /// had, then each video goes out as a file.
+  /// Whether Serafim may read [filter] from the phone, asking if it hasn't
+  /// been told yet.
+  Future<bool> _mayReadMedia(MediaFilter filter) async {
+    final library = ref.read(mediaLibraryProvider);
+    try {
+      var access = await library.access(filter);
+      if (access == MediaAccess.denied) access = await library.request(filter);
+      return access.canRead;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Photos and videos, chosen inside Serafim. Without permission, the system's
+  /// Photo Picker.
   Future<void> _attachFromGallery({required bool photos}) async {
+    final filter = photos ? MediaFilter.visual : MediaFilter.videos;
+    if (!await _mayReadMedia(filter)) {
+      if (mounted) await _attachFromSystemGallery(photos: photos);
+      return;
+    }
+    if (!mounted) return;
+    final result = await Navigator.of(context).push<Object>(
+      MaterialPageRoute(builder: (_) => MediaGalleryPage(filter: filter)),
+    );
+    if (!mounted) return;
+    if (result is List<DeviceMedia>) {
+      await _sendDeviceMedia(result);
+    } else if (result == browseFiles) {
+      await _browseMedia(photos: photos);
+    }
+  }
+
+  /// Audio, chosen inside Serafim. Without permission, the system's browser.
+  Future<void> _attachAudio() async {
+    if (!await _mayReadMedia(MediaFilter.audio)) {
+      if (mounted) await _attachFile(ChatFileKind.audio);
+      return;
+    }
+    if (!mounted) return;
+    final result = await Navigator.of(
+      context,
+    ).push<Object>(MaterialPageRoute(builder: (_) => const AudioLibraryPage()));
+    if (!mounted) return;
+    if (result is DeviceMedia) {
+      await _sendDeviceMedia([result]);
+    } else if (result == browseFiles) {
+      await _attachFile(ChatFileKind.audio);
+    }
+  }
+
+  /// A photo taken inside Serafim, or with the phone's camera app if preferred.
+  Future<void> _attachFromCamera() async {
+    final result = await Navigator.of(context).push<Object>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const InAppCameraPage(),
+      ),
+    );
+    if (!mounted) return;
+    if (result == usePhoneCamera) {
+      await _attachFromSystemCamera();
+      return;
+    }
+    if (result is! XFile) return;
+    final quality = ref.read(settingsProvider).imageQuality;
+    final Uint8List photo;
+    setState(() => _attaching = true);
+    try {
+      photo = await shrinkImage(
+        await result.readAsBytes(),
+        maxSide: quality.maxSide,
+        quality: quality.jpegQuality,
+      );
+    } catch (error) {
+      _toast(
+        humanError(error, fallback: "Couldn't use that photo."),
+        error: true,
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+      // It was only ever a working copy.
+      File(result.path).delete().ignore();
+    }
+    if (mounted) await _sendPhotos([photo]);
+  }
+
+  /// Sends what was chosen in the in-app gallery, audio list or recent strip:
+  /// photos get their preview, then the rest go out as files.
+  Future<void> _sendDeviceMedia(List<DeviceMedia> chosen) async {
+    final quality = ref.read(settingsProvider).imageQuality;
+    final photos = <Uint8List>[];
+    final files = <PickedChatFile>[];
+    setState(() => _attaching = true);
+    try {
+      // One at a time, so a low-memory phone holds as little as possible.
+      for (final m in chosen) {
+        if (m.isVideo || m.isAudio) {
+          final file = await m.file();
+          if (file == null) {
+            _toast("That file isn't on your phone any more.", error: true);
+            continue;
+          }
+          try {
+            files.add(
+              checkChatFile(
+                PickedChatFile(
+                  path: file.path,
+                  name: await m.name(),
+                  size: await file.length(),
+                  kind: m.isAudio ? ChatFileKind.audio : ChatFileKind.video,
+                ),
+              ),
+            );
+          } on ChatFilePickException catch (e) {
+            _toast(e.message, error: true);
+          }
+        } else {
+          final bytes = await m.photoForSending(
+            maxSide: quality.maxSide,
+            quality: quality.jpegQuality,
+          );
+          if (bytes != null) photos.add(bytes);
+        }
+      }
+    } catch (error) {
+      _mediaSendFailed(error);
+      return;
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+    if (!mounted) return;
+    if (photos.isNotEmpty) await _sendPhotos(photos);
+    for (final file in files) {
+      if (!mounted) return;
+      await _sendFile(file);
+    }
+  }
+
+  /// Where a system picker's result belongs, if Android closes the app while
+  /// it is open.
+  PickTarget? get _pickTarget {
+    final me = ref.read(currentAccountIdProvider);
+    if (me == null) return null;
+    return PickTarget(
+      account: me,
+      recipientId: widget.recipientId,
+      contactName: widget.contactName,
+      groupId: widget.groupId,
+      username: widget.username,
+      profilePic: widget.profilePic,
+      isGroup: widget.isGroup,
+    );
+  }
+
+  /// Runs a system picker, noting this chat for as long as it is open. If
+  /// Android closes the app meanwhile the note survives, and the pick comes
+  /// back here on the next start.
+  Future<T?> _whileLeaving<T>(Future<T?> Function() pick) async {
+    final store = ref.read(pickTargetStoreProvider);
+    if (_pickTarget case final target?) store.remember(target);
+    try {
+      return await pick();
+    } finally {
+      store.forget();
+    }
+  }
+
+  /// The system's Photo Picker: photos and videos together.
+  Future<void> _attachFromSystemGallery({required bool photos}) async {
     final quality = ref.read(settingsProvider).imageQuality;
     final GalleryPick? picked;
     try {
-      picked = await pickFromGallery(
-        photos: photos,
-        maxSide: quality.maxSide,
-        quality: quality.jpegQuality,
-        onPicked: () {
-          if (mounted) setState(() => _attaching = true);
-        },
+      picked = await _whileLeaving(
+        () => pickFromGallery(
+          photos: photos,
+          maxSide: quality.maxSide,
+          quality: quality.jpegQuality,
+          onPicked: () {
+            if (mounted) setState(() => _attaching = true);
+          },
+        ),
       );
     } catch (error) {
       _toast(
@@ -423,7 +621,62 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     } finally {
       if (mounted) setState(() => _attaching = false);
     }
-    if (picked == null || !mounted) return;
+    if (picked != null && mounted) await _sendGalleryPick(picked);
+  }
+
+  /// The system's file browser, for what isn't in the media library.
+  Future<void> _browseMedia({required bool photos}) async {
+    final quality = ref.read(settingsProvider).imageQuality;
+    final GalleryPick? picked;
+    try {
+      picked = await browseMediaFiles(
+        photos: photos,
+        maxSide: quality.maxSide,
+        quality: quality.jpegQuality,
+        onPicked: () {
+          if (mounted) setState(() => _attaching = true);
+        },
+      );
+    } catch (error) {
+      _toast(
+        humanError(error, fallback: "Couldn't open that file."),
+        error: true,
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+    if (picked != null && mounted) await _sendGalleryPick(picked);
+  }
+
+  /// The phone's own camera app.
+  Future<void> _attachFromSystemCamera() async {
+    final quality = ref.read(settingsProvider).imageQuality;
+    final Uint8List? photo;
+    try {
+      photo = await _whileLeaving(
+        () => takeShrunkPhoto(
+          maxSide: quality.maxSide,
+          quality: quality.jpegQuality,
+          onPicked: () {
+            if (mounted) setState(() => _attaching = true);
+          },
+        ),
+      );
+    } catch (error) {
+      _toast(
+        humanError(error, fallback: "Couldn't open the camera."),
+        error: true,
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+    if (photo != null && mounted) await _sendPhotos([photo]);
+  }
+
+  /// Photos get the preview they always had, then each video goes out.
+  Future<void> _sendGalleryPick(GalleryPick picked) async {
     if (picked.photos.isNotEmpty) await _sendPhotos(picked.photos);
     for (final video in picked.videos) {
       if (!mounted) return;
@@ -445,27 +698,66 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     }
   }
 
-  Future<void> _attachFromCamera() async {
+  /// Android closed the app while a system picker was open, and has now handed
+  /// back what was chosen. Nothing goes out without being confirmed: photos get
+  /// their preview, videos a question.
+  Future<void> _resumeLostPick(List<XFile> files) async {
     final quality = ref.read(settingsProvider).imageQuality;
-    final Uint8List? photo;
+    _toast("Android closed Serafim while you were choosing. Here's your pick.");
+    final videos = <XFile>[];
+    final photos = <Uint8List>[];
+    setState(() => _attaching = true);
     try {
-      photo = await takeShrunkPhoto(
-        maxSide: quality.maxSide,
-        quality: quality.jpegQuality,
-        onPicked: () {
-          if (mounted) setState(() => _attaching = true);
-        },
-      );
+      for (final f in files) {
+        if (isPickedVideo(f.name, f.mimeType)) {
+          videos.add(f);
+        } else {
+          photos.add(
+            await shrinkImage(
+              await f.readAsBytes(),
+              maxSide: quality.maxSide,
+              quality: quality.jpegQuality,
+            ),
+          );
+        }
+      }
     } catch (error) {
-      _toast(
-        humanError(error, fallback: "Couldn't open the camera."),
-        error: true,
-      );
+      _mediaSendFailed(error);
       return;
     } finally {
       if (mounted) setState(() => _attaching = false);
     }
-    if (photo != null && mounted) await _sendPhotos([photo]);
+    if (!mounted) return;
+    var keepVideos = videos.isEmpty;
+    if (!keepVideos) {
+      keepVideos =
+          await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: AppColors.paperAlt,
+              title: Text(
+                'Send ${videos.length == 1 ? 'the video' : '${videos.length} videos'} you chose?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Not now'),
+                ),
+                TextButton(
+                  key: const ValueKey('lost-pick-send'),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Send'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+    }
+    if (!mounted) return;
+    await _sendGalleryPick((
+      photos: photos,
+      videos: keepVideos ? videos : const [],
+    ));
   }
 
   Future<void> _attachFile(ChatFileKind kind) async {

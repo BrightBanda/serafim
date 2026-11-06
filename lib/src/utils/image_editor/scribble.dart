@@ -30,8 +30,8 @@ bool hasScribbleMarker(Uint8List png) {
   return head.contains('tEXt$scribbleMarkerKey\u0000$scribbleMarkerValue');
 }
 
-/// Draws [strokes] on a square sheet of [paper], [pixels] across, and returns
-/// a labelled PNG. [displayedWidth] is how wide the pad was on screen, so the
+/// Draws [strokes] on a sheet of [paper], [pixels] across and [aspect] times
+/// that tall, and returns a labelled PNG. [displayedWidth] is how wide the pad was on screen, so the
 /// lines come out the same thickness relative to the sheet. [drawing] is an
 /// earlier drawing this one is an edited copy of.
 Future<Uint8List> renderScribble({
@@ -40,10 +40,12 @@ Future<Uint8List> renderScribble({
   required Color paper,
   int pixels = 1000,
   ui.Image? drawing,
+  double aspect = 1,
 }) async {
+  final tall = (pixels * aspect).round();
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
-  final size = Size(pixels.toDouble(), pixels.toDouble());
+  final size = Size(pixels.toDouble(), tall.toDouble());
   canvas.drawRect(Offset.zero & size, Paint()..color = paper);
   StrokePainter(
     strokes: strokes,
@@ -51,7 +53,7 @@ Future<Uint8List> renderScribble({
     scale: strokeScale(displayedWidth: displayedWidth, imageWidth: pixels),
   ).paint(canvas, size);
   final picture = recorder.endRecording();
-  final image = await picture.toImage(pixels, pixels);
+  final image = await picture.toImage(pixels, tall);
   final data = await image.toByteData(format: ui.ImageByteFormat.png);
   image.dispose();
   picture.dispose();

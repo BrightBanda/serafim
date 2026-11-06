@@ -22,18 +22,21 @@ class AttachOption {
   final String? disabledReason;
 }
 
-/// The sheet behind the paperclip: a grid of what can be added to the chat.
-/// Returns the [AttachOption.value] tapped, or null.
-Future<String?> showAttachmentSheet(
+/// The sheet behind the paperclip: a grid of what can be added to the chat,
+/// and [recent] below it. Returns the [AttachOption.value] tapped, whatever
+/// [recent] closed it with, or null.
+Future<Object?> showAttachmentSheet(
   BuildContext context, {
   required List<AttachOption> options,
   Widget? footer,
-}) => showSettledSheet<String>(
+  Widget Function(void Function(Object? result) close)? recent,
+}) => showSettledSheet<Object>(
   context: context,
   backgroundColor: AppColors.paperAlt,
   shape: const RoundedRectangleBorder(),
+  isScrollControlled: true,
   builder: (ctx) => SafeArea(
-    child: Padding(
+    child: SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -59,6 +62,10 @@ Future<String?> showAttachmentSheet(
               );
             },
           ),
+          if (recent != null) ...[
+            const SizedBox(height: 14),
+            recent((result) => Navigator.pop(ctx, result)),
+          ],
           if (footer != null) ...[const SizedBox(height: 14), footer],
         ],
       ),

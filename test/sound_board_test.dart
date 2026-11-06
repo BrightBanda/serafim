@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart' show PlayerInterruptedException;
 import 'package:serafim/src/core/platform/sound_board.dart';
 import 'package:serafim/src/presentation/view/settings/sound_settings_page.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
@@ -29,6 +34,24 @@ class FakeOutput implements SoundOutput {
 
   @override
   Future<void> dispose() async {}
+}
+
+/// Loading takes as long as [gate]; records what happens.
+class _SlowOutput extends FakeOutput {
+  _SlowOutput(this.gate, this.log);
+  final Completer<void> gate;
+  final List<String> log;
+  @override
+  Future<void> load(SoundEvent event, SoundChoice choice) => gate.future;
+  @override
+  Future<void> play(SoundEvent event, double volume) async =>
+      log.add('play ${event.name}');
+}
+
+class _BrokenOutput extends FakeOutput {
+  @override
+  Future<void> preview(SoundChoice choice, double volume) async =>
+      throw StateError('no audio');
 }
 
 void main() {
@@ -123,6 +146,111 @@ void main() {
       now = now.add(const Duration(milliseconds: 1500));
       board.play(SoundEvent.typing);
       expect(out.played, hasLength(2));
+    });
+  });
+
+  group('playing safely', () {
+    test(
+      'a sound asked for while loading still plays, after its load',
+      () async {
+        final loading = Completer<void>();
+        final log = <String>[];
+        final out = _SlowOutput(loading, log);
+        final board = SoundBoard(
+          out,
+          clock: () => DateTime(2026),
+          foreground: () => true,
+        );
+        final configured = board.configure(
+          enabled: true,
+          volume: 0.5,
+          choices: const {},
+        );
+        // Every event is known already, not just the one loading first.
+        board.play(SoundEvent.typing);
+        expect(log, contains('play typing'));
+        loading.complete();
+        await configured;
+      },
+    );
+
+    test('a preview that fails does not throw', () async {
+      final board = SoundBoard(_BrokenOutput(), foreground: () => true);
+      await board.preview(const SoundChoice.builtIn('chime'));
+    });
+
+    test('steps never overlap, and go in order', () async {
+      final steps = SoundSteps();
+      final log = <String>[];
+      final gate = Completer<void>();
+      final a = steps.run(() async {
+        log.add('a starts');
+        await gate.future;
+        log.add('a ends');
+      });
+      final b = steps.run(() async => log.add('b'));
+      await Future<void>.delayed(Duration.zero);
+      expect(log, ['a starts'], reason: 'b waits');
+      gate.complete();
+      await Future.wait([a, b]);
+      expect(log, ['a starts', 'a ends', 'b']);
+    });
+
+    test('an interrupted step is not an error; a failed one does not block '
+        'the next', () async {
+      final steps = SoundSteps();
+      await steps.run(() async => throw PlayerInterruptedException('gone'));
+      await expectLater(
+        steps.run(() async => throw StateError('broken')),
+        throwsStateError,
+      );
+      var ran = false;
+      await steps.run(() async => ran = true);
+      expect(ran, isTrue);
+    });
+  });
+
+  group('built-in sound files', () {
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('sounds'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    test('a changed sound is never played from an old copy', () async {
+      final v1 = await builtInSoundFile(
+        dir,
+        'tick',
+        Uint8List.fromList([1, 2]),
+      );
+      expect(v1.readAsBytesSync(), [1, 2]);
+      final v2 = await builtInSoundFile(
+        dir,
+        'tick',
+        Uint8List.fromList([3, 4]),
+      );
+      expect(v2.path, isNot(v1.path));
+      expect(v2.readAsBytesSync(), [3, 4]);
+      expect(v1.existsSync(), isFalse, reason: 'the old copy is removed');
+    });
+
+    test('the same sound is reused, and others are left alone', () async {
+      final other = await builtInSoundFile(
+        dir,
+        'drop',
+        Uint8List.fromList([9]),
+      );
+      final a = await builtInSoundFile(dir, 'tick', Uint8List.fromList([1]));
+      final modified = a.lastModifiedSync();
+      final b = await builtInSoundFile(dir, 'tick', Uint8List.fromList([1]));
+      expect(b.path, a.path);
+      expect(b.lastModifiedSync(), modified);
+      expect(other.existsSync(), isTrue);
+    });
+
+    test('a damaged copy is replaced', () async {
+      final a = await builtInSoundFile(dir, 'tick', Uint8List.fromList([1, 2]));
+      a.writeAsBytesSync([1]);
+      final b = await builtInSoundFile(dir, 'tick', Uint8List.fromList([1, 2]));
+      expect(b.readAsBytesSync(), [1, 2]);
     });
   });
 

@@ -45,7 +45,7 @@ Future<Color> paperOf(ui.Image image) async {
   return corners.reduce((a, b) => count[b]! > count[a]! ? b : a);
 }
 
-/// A blank square to draw a quick note on and send: a hand-drawn whisper. Or,
+/// A blank sheet to draw a quick note on and send: a hand-drawn whisper. Or,
 /// with [editing], a copy of someone's drawing to change and send back.
 class ScribblePage extends StatefulWidget {
   const ScribblePage({super.key, this.editing});
@@ -76,6 +76,12 @@ class _ScribblePageState extends State<ScribblePage> {
 
   bool get _editing => widget.editing != null;
   Color get _sheet => _editedPaper ?? scribblePapers[_paper];
+
+  /// An edited drawing keeps its own shape (older ones are square).
+  double get _aspect => switch (_drawing) {
+    final d? => d.height / d.width,
+    null => drawSheetAspect,
+  };
 
   @override
   void initState() {
@@ -126,6 +132,7 @@ class _ScribblePageState extends State<ScribblePage> {
         strokes: _strokes,
         // The strokes are fractions of the sheet, so "1 wide" scales them.
         displayedWidth: 1,
+        aspect: _aspect,
         paper: _sheet,
         drawing: _drawing,
       );
@@ -230,20 +237,15 @@ class _ScribblePageState extends State<ScribblePage> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, box) {
-                    // The biggest square that fits, inset from the edges so
-                    // a phone's back-swipe gesture is not under the pen.
-                    final side =
-                        (box.maxWidth < box.maxHeight
-                            ? box.maxWidth
-                            : box.maxHeight) -
-                        32;
+                    final sheet = fitDrawSheet(box.biggest, _aspect);
                     if (loading) {
                       return const Center(child: CircularProgressIndicator());
                     }
                     return Center(
                       child: DrawPad(
                         padKey: const ValueKey('scribble-pad'),
-                        side: side,
+                        side: sheet.width,
+                        aspect: _aspect,
                         paper: _sheet,
                         drawing: _drawing,
                         smoothing: _smoothing,

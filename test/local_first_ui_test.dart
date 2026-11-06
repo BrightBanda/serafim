@@ -1,3 +1,9 @@
+import 'package:camera/camera.dart' show XFile;
+import 'package:serafim/src/data/services/media_library.dart';
+import 'package:serafim/src/presentation/view/audio_library_page.dart';
+import 'package:serafim/src/presentation/view/media_gallery_page.dart';
+import 'package:serafim/src/providers/media_library_providers.dart';
+import 'support/fake_media_library.dart';
 import 'package:serafim/src/data/domain/local_chat_room.dart';
 import 'dart:async';
 
@@ -53,6 +59,7 @@ Future<void> pump(
   List<PublicUser> savedPeople = const [],
   List<String> peers = const [],
   bool serverAnswers = false,
+  MediaLibrary? media,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -67,6 +74,7 @@ Future<void> pump(
       retry: noAutoRetry,
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
+        if (media != null) mediaLibraryProvider.overrideWithValue(media),
         localCacheProvider.overrideWithValue(cache),
         currentUserProvider.overrideWithValue(
           AppUser(id: me, isActive: true, createdAt: DateTime.utc(2026)),
@@ -343,6 +351,54 @@ void main() {
         expect(find.text(label), findsOneWidget, reason: label);
       }
       expect(find.textContaining('Videos and audio:'), findsOneWidget);
+    });
+
+    testWidgets(
+      'recent photos sit in the sheet; Gallery opens inside the app',
+      (tester) async {
+        final library = FakeLibrary(items: fakeItems(3));
+        await pump(tester, thread(), savedFriends: [sam], media: library);
+        await openSheet(tester);
+        expect(find.byKey(const ValueKey('recent-strip')), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('attach-gallery')));
+        await tester.pumpAndSettle();
+        expect(find.byType(MediaGalleryPage), findsOneWidget);
+      },
+    );
+
+    testWidgets('a non-friend gets no recent strip', (tester) async {
+      final library = FakeLibrary(items: fakeItems(3));
+      await pump(tester, thread(), media: library);
+      await openSheet(tester);
+      expect(find.byKey(const ValueKey('recent-strip')), findsNothing);
+    });
+
+    testWidgets('audio opens the in-app list', (tester) async {
+      final library = FakeLibrary(items: fakeItems(2, audio: true));
+      await pump(tester, thread(), savedFriends: [sam], media: library);
+      await openSheet(tester);
+      await tester.tap(find.byKey(const ValueKey('attach-audio')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AudioLibraryPage), findsOneWidget);
+    });
+
+    testWidgets('a pick recovered after Android closed the app asks first', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        ChatThreadPage(
+          contactName: 'Sam Ndlovu',
+          recipientId: 'sam',
+          recoveredPick: [XFile('/nowhere/clip.mp4', name: 'clip.mp4')],
+        ),
+        savedFriends: [sam],
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Send the video you chose?'), findsOneWidget);
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+      expect(find.text('Send the video you chose?'), findsNothing);
     });
 
     testWidgets('Scribble opens the pad', (tester) async {

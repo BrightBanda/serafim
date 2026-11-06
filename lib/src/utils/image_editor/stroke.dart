@@ -98,6 +98,20 @@ class Stroke {
 /// 8 is `8 / referencePadWidth` of the sheet, whatever the screen.
 const double referencePadWidth = 360;
 
+/// How tall a drawing sheet is, per unit of width. Fixed, not fitted to the
+/// screen, so two phones drawing together agree. Points on a sheet are measured
+/// in sheet widths: x runs 0..1 and y runs 0..[drawSheetAspect].
+const double drawSheetAspect = 1.4;
+
+/// The biggest sheet of [aspect] that fits in [available], leaving [margin] on
+/// each side.
+Size fitDrawSheet(Size available, double aspect, {double margin = 8}) {
+  final width = available.width - margin * 2;
+  final height = available.height - margin * 2;
+  final across = width * aspect <= height ? width : height / aspect;
+  return Size(across, across * aspect);
+}
+
 /// The seven colours to draw with.
 const List<Color> drawColors = [
   Color(0xFFFFFFFF), // white

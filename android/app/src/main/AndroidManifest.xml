@@ -9,6 +9,17 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Voice messages. Asked for the first time someone holds the mic. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- The in-app gallery and audio list, so choosing a file never leaves the
+         app (Android may close it on low-memory phones). Asked for when first
+         needed. Android 12 and older use READ_EXTERNAL_STORAGE, which the
+         photo_manager plugin declares. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <!-- The in-app camera. Asked for the first time it is opened. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- In-app updates for sideloaded installs: lets Serafim open the system
          installer for an update it downloaded. Android still asks the user to
          confirm every install, and to allow "Install unknown apps" once. -->

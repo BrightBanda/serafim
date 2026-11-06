@@ -177,6 +177,101 @@ void main() {
     });
   });
 
+  group('the sheet', () {
+    test('uses far more of a phone than a square could', () {
+      // A 360 x 800 phone, less the app bar and tools.
+      final sheet = fitDrawSheet(const Size(360, 510), drawSheetAspect);
+      expect(sheet.width, 344);
+      expect(sheet.height, closeTo(344 * drawSheetAspect, 0.01));
+      final square = 328.0 * 328.0; // what it used to be
+      expect(sheet.width * sheet.height, greaterThan(square * 1.5));
+    });
+
+    test('never overflows a short screen, and keeps its shape', () {
+      final sheet = fitDrawSheet(const Size(320, 300), drawSheetAspect);
+      expect(sheet.height, lessThanOrEqualTo(284.01));
+      expect(sheet.width, lessThanOrEqualTo(304));
+      expect(sheet.height / sheet.width, closeTo(drawSheetAspect, 0.001));
+    });
+
+    testWidgets('the whole of a tall sheet can be drawn on', (t) async {
+      final begun = <Offset>[];
+      await t.pumpWidget(
+        MaterialApp(
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: DrawPad(
+              padKey: const ValueKey('pad'),
+              side: 200,
+              aspect: 1.4,
+              paper: Colors.white,
+              strokes: const [],
+              onBegin: begun.add,
+              onExtend: (_) {},
+              onEnd: () {},
+              onCancel: () {},
+            ),
+          ),
+        ),
+      );
+      expect(
+        t.getSize(find.byKey(const ValueKey('pad'))),
+        const Size(200, 280),
+      );
+      // In sheet widths: the bottom corner is at 1.4, not 1.
+      await t.tapAt(const Offset(199, 279));
+      expect(begun.single.dy, closeTo(1.395, 0.001));
+      expect(begun.single.dx, closeTo(0.995, 0.001));
+    });
+
+    testWidgets('a tall drawing renders to its own shape, to the bottom', (
+      t,
+    ) async {
+      late Uint8List png;
+      await t.runAsync(() async {
+        png = await renderScribble(
+          strokes: [
+            Stroke(
+              color: const Color(0xFF000000),
+              width: 0.1,
+              points: const [Offset(0.5, 1.3)],
+            ),
+          ],
+          displayedWidth: 1,
+          paper: const Color(0xFFFFFFFF),
+          pixels: 100,
+          aspect: 1.4,
+        );
+      });
+      final out = img.decodePng(png)!;
+      expect((out.width, out.height), (100, 140));
+      expect(out.getPixel(50, 130).r, lessThan(20), reason: 'ink low down');
+      expect(hasScribbleMarker(png), isTrue);
+    });
+
+    testWidgets('a friend on a shared sheet agrees on where things are', (
+      t,
+    ) async {
+      final peer = live();
+      peer.n.heard({
+        'op': 'stroke',
+        'session': 'S',
+        'id': 'x',
+        'c': 0xFF000000,
+        'w': 0.02,
+        'p': [0.5, 1.3],
+      });
+      final point = peer.c
+          .read(drawTogetherProvider)!
+          .strokes
+          .single
+          .stroke
+          .points
+          .single;
+      expect(point, const Offset(0.5, 1.3), reason: 'not squashed into 0..1');
+    });
+  });
+
   group('touch on the pad', () {
     testWidgets('a tap is a dot', (t) async {
       final pad = _Pad();
@@ -467,6 +562,9 @@ void main() {
       await t.pump(const Duration(milliseconds: 400));
       expect(find.text('Edit a copy'), findsOneWidget);
       expect(find.byKey(const ValueKey('scribble-copy-note')), findsOneWidget);
+      // An older, square drawing stays square.
+      final padSize = t.getSize(find.byKey(const ValueKey('scribble-pad')));
+      expect(padSize.width, padSize.height);
       // It keeps its paper: there is nothing to pick.
       expect(find.byKey(const ValueKey('scribble-paper-0')), findsNothing);
 

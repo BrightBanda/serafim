@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker_android/image_picker_android.dart';
 import 'package:isar_community/isar.dart';
 import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/data/domain/local_chat_message.dart';
@@ -77,7 +78,7 @@ const room = 'ann_me';
 void main() {
   group('the attachment sheet', () {
     testWidgets('shows every option, and returns the one tapped', (t) async {
-      String? chosen;
+      Object? chosen;
       await t.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -129,6 +130,13 @@ void main() {
       expect(find.byIcon(Icons.draw_outlined), findsNothing);
       await t.tap(find.byKey(const ValueKey('attach-button')));
       expect(attaches, 1);
+    });
+
+    test('Gallery uses the Photo Picker, not the file browser', () {
+      final android = ImagePickerAndroid();
+      expect(android.useAndroidPhotoPicker, isFalse, reason: 'the default');
+      usePhotoPicker(android);
+      expect(android.useAndroidPhotoPicker, isTrue);
     });
 
     test('tells videos from photos, with or without a type', () {

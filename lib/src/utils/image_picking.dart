@@ -1,14 +1,26 @@
 import 'dart:io' show Platform;
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart'
+    show ImagePickerPlatform;
 import 'package:serafim/src/utils/image_shrink.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
 bool get _hasCamera => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+/// Uses Android's Photo Picker for photos and videos. Without this the plugin
+/// opens the general file browser, which reopens the last folder used by any
+/// picker: choosing an audio file sent the next Gallery to the audio folder.
+void usePhotoPicker([ImagePickerPlatform? platform]) {
+  final picker = platform ?? ImagePickerPlatform.instance;
+  if (picker is ImagePickerAndroid) picker.useAndroidPhotoPicker = true;
+}
 
 /// Lets the user pick a photo (gallery, plus camera on phones) and returns it
 /// already shrunk to JPEG, or null if they cancelled.
@@ -65,75 +77,6 @@ Future<Uint8List?> pickShrunkImage(
     await file.readAsBytes(),
     maxSide: maxSide,
     quality: quality,
-  );
-}
-
-/// Lets the user choose up to four gallery photos at once. Camera capture
-/// remains available on phones and returns a one-photo selection.
-Future<List<Uint8List>?> pickShrunkImages(
-  BuildContext context, {
-  int maxSide = 1280,
-  int quality = 75,
-  VoidCallback? onPicked,
-}) async {
-  final picker = ImagePicker();
-  var source = ImageSource.gallery;
-
-  if (_hasCamera) {
-    final chosen = await showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: AppColors.paperAlt,
-      shape: const RoundedRectangleBorder(),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: Text('Choose photos', style: AppTextStyles.body),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: Text('Take a photo', style: AppTextStyles.body),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (chosen == null) return null;
-    source = chosen;
-  }
-
-  final files = source == ImageSource.camera
-      ? [
-          if (await picker.pickImage(
-                source: source,
-                maxWidth: maxSide.toDouble(),
-                maxHeight: maxSide.toDouble(),
-                imageQuality: quality,
-              )
-              case final file?)
-            file,
-        ]
-      : await picker.pickMultiImage(
-          limit: 4,
-          maxWidth: maxSide.toDouble(),
-          maxHeight: maxSide.toDouble(),
-          imageQuality: quality,
-        );
-  if (files.isEmpty) return null;
-  onPicked?.call();
-
-  return Future.wait(
-    files.map(
-      (file) async => shrinkImage(
-        await file.readAsBytes(),
-        maxSide: maxSide,
-        quality: quality,
-      ),
-    ),
   );
 }
 
@@ -212,4 +155,39 @@ Future<Uint8List?> takeShrunkPhoto({
     maxSide: maxSide,
     quality: quality,
   );
+}
+
+/// The system's file browser, for what isn't in the phone's media library
+/// (Google Drive, say). Android may close the app while it is open, and unlike
+/// the Photo Picker nothing brings the choice back.
+Future<GalleryPick?> browseMediaFiles({
+  bool photos = true,
+  int maxSide = 1280,
+  int quality = 75,
+  VoidCallback? onPicked,
+}) async {
+  final result = await FilePicker.pickFiles(
+    type: photos ? FileType.media : FileType.video,
+    allowMultiple: photos,
+    dialogTitle: 'Choose a file',
+  );
+  final chosen = result?.files.where((f) => f.path != null).toList();
+  if (chosen == null || chosen.isEmpty) return null;
+  onPicked?.call();
+  final images = <Uint8List>[];
+  final videos = <XFile>[];
+  for (final f in chosen.take(4)) {
+    if (isPickedVideo(f.name, null)) {
+      videos.add(XFile(f.path!, name: f.name));
+    } else {
+      images.add(
+        await shrinkImage(
+          await XFile(f.path!).readAsBytes(),
+          maxSide: maxSide,
+          quality: quality,
+        ),
+      );
+    }
+  }
+  return (photos: images, videos: videos);
 }

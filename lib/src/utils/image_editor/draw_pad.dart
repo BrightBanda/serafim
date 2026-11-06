@@ -11,17 +11,18 @@ import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// The square sheet behind Draw Together and the scribble pad.
+/// The sheet behind Draw Together and the scribble pad.
 ///
 /// One finger draws (a tap makes a dot); two fingers zoom and move the sheet.
-/// Everything it reports is in fractions of the sheet (0..1), whatever the
-/// zoom or the size of the screen. It holds no drawing of its own: the screen
+/// Everything it reports is in sheet widths (see [drawSheetAspect]), whatever
+/// the zoom or the size of the screen. It holds no drawing of its own: the screen
 /// keeps the strokes and passes them back in.
 class DrawPad extends StatefulWidget {
   const DrawPad({
     super.key,
     required this.padKey,
     required this.side,
+    this.aspect = 1,
     required this.paper,
     required this.strokes,
     required this.onBegin,
@@ -39,7 +40,10 @@ class DrawPad extends StatefulWidget {
 
   /// On the part that takes touches.
   final Key padKey;
+
+  /// How wide it is on screen, and how many times that it is tall.
   final double side;
+  final double aspect;
   final Color paper;
   final List<Stroke> strokes;
   final ValueChanged<Offset> onBegin;
@@ -110,15 +114,14 @@ class _DrawPadState extends State<DrawPad> {
     super.didUpdateWidget(old);
     if (widget.placing != null && widget.placing != old.placing) {
       // In the middle of what is on screen right now.
-      _stickerAt = _toSheet(Offset(widget.side, widget.side) / 2);
+      _stickerAt = _toSheet(Offset(widget.side, _tall) / 2);
       _stickerSize = DrawPad.stickerStartSize / _zoom;
       _stickerTurn = 0;
     }
   }
 
   Offset _toSheet(Offset onScreen) {
-    final p = (onScreen - _pan) / (_zoom * widget.side);
-    return Offset(p.dx.clamp(0.0, 1.0), p.dy.clamp(0.0, 1.0));
+    return _clampToSheet((onScreen - _pan) / (_zoom * widget.side));
   }
 
   void _down(PointerDownEvent e) {
@@ -231,12 +234,16 @@ class _DrawPadState extends State<DrawPad> {
   }
 
   Offset _clampToSheet(Offset p) =>
-      Offset(p.dx.clamp(0.0, 1.0), p.dy.clamp(0.0, 1.0));
+      Offset(p.dx.clamp(0.0, 1.0), p.dy.clamp(0.0, widget.aspect));
+
+  double get _tall => widget.side * widget.aspect;
 
   /// The sheet always fills the pad: no empty space past its edges.
   Offset _clampPan(Offset pan, double zoom) {
-    final least = widget.side * (1 - zoom);
-    return Offset(pan.dx.clamp(least, 0.0), pan.dy.clamp(least, 0.0));
+    return Offset(
+      pan.dx.clamp(widget.side * (1 - zoom), 0.0),
+      pan.dy.clamp(_tall * (1 - zoom), 0.0),
+    );
   }
 
   void _resetZoom() => setState(() {
@@ -258,8 +265,9 @@ class _DrawPadState extends State<DrawPad> {
               rotation: _stickerTurn,
             ),
           ];
-    return SizedBox.square(
-      dimension: widget.side,
+    return SizedBox(
+      width: widget.side,
+      height: _tall,
       child: Stack(
         children: [
           Positioned.fill(
@@ -288,7 +296,7 @@ class _DrawPadState extends State<DrawPad> {
                           scale: widget.side,
                           drawing: widget.drawing,
                         ),
-                        side: widget.side,
+                        sheet: Size(widget.side, _tall),
                       ),
                       size: Size.infinite,
                     ),
@@ -350,20 +358,20 @@ class _SheetPainter extends CustomPainter {
     required this.zoom,
     required this.pan,
     required this.inner,
-    required this.side,
+    required this.sheet,
   });
 
   final double zoom;
   final Offset pan;
   final StrokePainter inner;
-  final double side;
+  final Size sheet;
 
   @override
   void paint(Canvas canvas, Size size) {
     canvas.save();
     canvas.translate(pan.dx, pan.dy);
     canvas.scale(zoom);
-    inner.paint(canvas, Size.square(side));
+    inner.paint(canvas, sheet);
     canvas.restore();
   }
 

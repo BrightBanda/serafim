@@ -66,6 +66,7 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
         strokes: [for (final s in session.strokes) s.stroke],
         // The strokes are fractions of the sheet, so "1 wide" scales them.
         displayedWidth: 1,
+        aspect: drawSheetAspect,
         paper: scribblePapers[session.paper % scribblePapers.length],
       );
       await ref
@@ -215,15 +216,12 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, box) {
-              final side =
-                  (box.maxWidth < box.maxHeight
-                      ? box.maxWidth
-                      : box.maxHeight) -
-                  32;
+              final sheet = fitDrawSheet(box.biggest, drawSheetAspect);
               return Center(
                 child: DrawPad(
                   padKey: const ValueKey('together-pad'),
-                  side: side,
+                  side: sheet.width,
+                  aspect: drawSheetAspect,
                   paper: paper,
                   enabled: !ended,
                   smoothing: _smoothing,

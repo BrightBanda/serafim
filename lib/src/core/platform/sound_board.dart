@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:audio_session/audio_session.dart';
+import 'package:crypto/crypto.dart' show md5;
 import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 
 /// The moments the app makes a sound for, while it is open.
 enum SoundEvent {
@@ -154,6 +158,52 @@ abstract interface class SoundOutput {
   Future<void> dispose();
 }
 
+/// Runs audio steps strictly one after another. A player cancels whatever it
+/// is doing when asked to do something else (`PlayerInterruptedException`), so
+/// nothing may overlap: a sound arriving while another is still loading waits
+/// its turn. One step failing never stops the ones after it, and an interrupted
+/// step (only possible as the player closes) is not an error.
+class SoundSteps {
+  Future<void> _last = Future.value();
+
+  Future<void> run(Future<void> Function() step) {
+    final next = _last.then((_) async {
+      try {
+        await step();
+      } on PlayerInterruptedException catch (_) {}
+    });
+    _last = next.then((_) {}, onError: (Object _) {});
+    return next;
+  }
+
+  /// When everything asked for so far is done.
+  Future<void> get idle => _last;
+}
+
+/// The file to play for a built-in sound. It is named after its contents, so a
+/// new version of the app with a changed sound gets a new file, and older
+/// copies are removed. (just_audio's own `setAsset` keeps the first copy it
+/// ever made under the same name, for good.)
+Future<File> builtInSoundFile(Directory dir, String id, Uint8List bytes) async {
+  await dir.create(recursive: true);
+  final file = File('${dir.path}/$id-${md5.convert(bytes)}.wav');
+  if (await file.exists() && await file.length() == bytes.length) return file;
+  // Written whole and then moved into place, so a half-written one is never
+  // played.
+  final partial = File('${file.path}.partial');
+  await partial.writeAsBytes(bytes, flush: true);
+  await partial.rename(file.path);
+  await for (final old in dir.list()) {
+    final name = old.uri.pathSegments.last;
+    if (old.path != file.path && name.startsWith('$id-')) {
+      try {
+        await old.delete();
+      } catch (_) {}
+    }
+  }
+  return file;
+}
+
 /// The real output: one small player per event, loaded ahead of time.
 /// Sounds use Android's notification audio type, so they follow the
 /// notification volume and silent/vibrate mode, and never pause the
@@ -161,6 +211,9 @@ abstract interface class SoundOutput {
 class JustAudioOutput implements SoundOutput {
   final _players = <SoundEvent, AudioPlayer>{};
   AudioPlayer? _previewer;
+  final _steps = SoundSteps();
+  bool _disposed = false;
+  Directory? _soundDir;
 
   static Future<AudioPlayer> _player() async {
     final p = AudioPlayer(
@@ -179,42 +232,76 @@ class JustAudioOutput implements SoundOutput {
     return p;
   }
 
-  static Future<void> _set(AudioPlayer p, SoundChoice choice) async {
+  Future<Directory> _sounds() async {
+    if (_soundDir case final dir?) return dir;
+    final temp = await getTemporaryDirectory();
+    // Earlier versions of the app played stale copies from here.
+    try {
+      await Directory(
+        '${temp.path}/just_audio_cache/assets/assets/sounds',
+      ).delete(recursive: true);
+    } catch (_) {}
+    return _soundDir = Directory('${temp.path}/serafim_sounds');
+  }
+
+  Future<void> _set(AudioPlayer p, SoundChoice choice) async {
     if (choice.isFile) {
       await p.setFilePath(choice.value);
-    } else {
-      await p.setAsset(BuiltInSound.byId(choice.value)!.asset);
-    }
-  }
-
-  @override
-  Future<void> load(SoundEvent event, SoundChoice choice) async {
-    if (choice.isNone) {
-      await _players.remove(event)?.dispose();
       return;
     }
-    final p = _players[event] ??= await _player();
-    await _set(p, choice);
+    final sound = BuiltInSound.byId(choice.value)!;
+    final bytes = await rootBundle.load(sound.asset);
+    final file = await builtInSoundFile(
+      await _sounds(),
+      sound.id,
+      bytes.buffer.asUint8List(),
+    );
+    await p.setFilePath(file.path);
+  }
+
+  /// Starts [p] without waiting for the sound to finish.
+  static void _start(AudioPlayer p) {
+    unawaited(
+      p.play().catchError((Object e) {
+        if (e is! PlayerInterruptedException && kDebugMode) {
+          // ignore: avoid_print
+          print('[sound] could not play: $e');
+        }
+      }),
+    );
   }
 
   @override
-  Future<void> play(SoundEvent event, double volume) async {
+  Future<void> load(SoundEvent event, SoundChoice choice) =>
+      _steps.run(() async {
+        if (_disposed) return;
+        if (choice.isNone) {
+          await _players.remove(event)?.dispose();
+          return;
+        }
+        final p = _players[event] ??= await _player();
+        await _set(p, choice);
+      });
+
+  @override
+  Future<void> play(SoundEvent event, double volume) => _steps.run(() async {
     final p = _players[event];
-    if (p == null) return;
+    if (p == null || _disposed) return;
     await p.setVolume(volume);
     await p.seek(Duration.zero);
-    unawaited(p.play());
-  }
+    _start(p);
+  });
 
   @override
-  Future<void> preview(SoundChoice choice, double volume) async {
-    if (choice.isNone) return;
-    final p = _previewer ??= await _player();
-    await p.stop();
-    await _set(p, choice);
-    await p.setVolume(volume);
-    unawaited(p.play());
-  }
+  Future<void> preview(SoundChoice choice, double volume) =>
+      _steps.run(() async {
+        if (choice.isNone || _disposed) return;
+        final p = _previewer ??= await _player();
+        await p.stop();
+        await _set(p, choice);
+        await p.setVolume(volume);
+        _start(p);
+      });
 
   @override
   Future<Duration?> probe(String path) async {
@@ -232,12 +319,15 @@ class JustAudioOutput implements SoundOutput {
   }
 
   @override
-  Future<void> dispose() async {
-    for (final p in _players.values) {
-      await p.dispose();
-    }
-    _players.clear();
-    await _previewer?.dispose();
+  Future<void> dispose() {
+    _disposed = true;
+    return _steps.run(() async {
+      for (final p in _players.values) {
+        await p.dispose();
+      }
+      _players.clear();
+      await _previewer?.dispose();
+    });
   }
 }
 
@@ -302,10 +392,16 @@ class SoundBoard {
   }) async {
     this.enabled = enabled;
     this.volume = volume;
+    // All known at once, so a sound asked for while these load still plays
+    // (its turn comes after its loading).
+    final changed = <SoundEvent, SoundChoice>{};
     for (final event in SoundEvent.values) {
       final choice = choices[event] ?? event.fallback;
       if (_choices[event] == choice) continue;
       _choices[event] = choice;
+      changed[event] = choice;
+    }
+    for (final MapEntry(key: event, value: choice) in changed.entries) {
       try {
         await _output.load(event, choice);
       } catch (e) {
@@ -334,8 +430,14 @@ class SoundBoard {
         .catchError((Object e) => _log('play ${event.name}: $e'));
   }
 
-  Future<void> preview(SoundChoice choice) =>
-      _output.preview(choice, volume <= 0 ? 0.8 : volume);
+  /// Plays [choice] once, for the settings screen. Never throws.
+  Future<void> preview(SoundChoice choice) async {
+    try {
+      await _output.preview(choice, volume <= 0 ? 0.8 : volume);
+    } catch (e) {
+      _log('could not preview: $e');
+    }
+  }
 
   Future<Duration?> probe(String path) => _output.probe(path);
 

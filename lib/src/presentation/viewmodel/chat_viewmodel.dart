@@ -88,6 +88,11 @@ class ChatViewModel extends Notifier<ChatState> {
     final events = ref.read(webSocketEventsProvider).listen(_onSocketEvent);
     ref.onDispose(events.cancel);
     ref.onDispose(() => _typingTicker?.cancel());
+    // Sounds ready before the first is needed, without slowing the start.
+    final soundsReady = Timer(const Duration(seconds: 3), () {
+      if (ref.mounted) ref.read(soundBoardProvider);
+    });
+    ref.onDispose(soundsReady.cancel);
 
     // Retention: clear old local messages at startup and whenever the choice
     // changes.

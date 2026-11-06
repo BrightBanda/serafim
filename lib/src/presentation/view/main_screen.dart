@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/chat_thread_page.dart';
+import 'package:serafim/src/providers/media_library_providers.dart';
 import 'package:serafim/src/presentation/view/chat_list_page.dart';
 import 'package:serafim/src/presentation/view/circles_page.dart';
 import 'package:serafim/src/presentation/view/discover_page.dart';
@@ -69,6 +71,26 @@ class _MainScreenState extends ConsumerState<MainScreen> {
         );
       });
     }, fireImmediately: true);
+
+    // Android closed the app while a picker was open: back to that chat, with
+    // what was chosen.
+    ref.read(lostPickProvider.future).then((lost) {
+      if (lost == null || !mounted) return;
+      final t = lost.target;
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ChatThreadPage(
+            contactName: t.contactName,
+            recipientId: t.recipientId,
+            username: t.username,
+            profilePic: t.profilePic,
+            isGroup: t.isGroup,
+            groupId: t.groupId,
+            recoveredPick: lost.files,
+          ),
+        ),
+      );
+    }, onError: (Object _) {});
 
     // Offer a newer version once per launch (unless dismissed for it).
     ref.listenManual<AsyncValue<UpdateStatus>>(updateCheckProvider, (_, next) {

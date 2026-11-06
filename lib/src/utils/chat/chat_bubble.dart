@@ -233,9 +233,9 @@ class ChatBubble extends StatelessWidget {
                   child: ConstrainedBox(
                     // Photos are big; GIFs and stickers are a small
                     // thing you glance at, so they are kept small. A
-                    // scribble is shown whole, in a square.
+                    // scribble is shown whole, whatever its shape.
                     constraints: isScribble(imagePath!)
-                        ? const BoxConstraints(maxHeight: 220, maxWidth: 220)
+                        ? const BoxConstraints(maxHeight: 300, maxWidth: 220)
                         : isSmallMedia(imagePath!)
                         ? const BoxConstraints(maxHeight: 130, maxWidth: 170)
                         : const BoxConstraints(maxHeight: 260),
