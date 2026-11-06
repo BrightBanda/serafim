@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
 import 'package:serafim/src/providers/echo_providers.dart';
 import 'package:serafim/src/providers/halo_providers.dart';
@@ -366,7 +367,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
 
     Widget body;
     if (currentUser == null || nothingToShowYet) {
-      body = Center(child: CircularProgressIndicator(color: AppColors.primary));
+      body = const Center(child: SerafimLoader());
     } else if (_searching && _query.isNotEmpty) {
       // Everyone on the list we can name without asking the server.
       final people = <PublicUser>[

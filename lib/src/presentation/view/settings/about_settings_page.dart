@@ -54,7 +54,7 @@ class _AboutCard extends ConsumerWidget {
     // Read from the installed app (Android), so it is always the real one.
     final installed = ref.watch(installedVersionProvider);
     final version = installed.when(
-      data: (v) => v == null ? 'Unknown' : '${v.name} (build ${v.code})',
+      data: (v) => v == null ? 'Unknown' : v.name,
       loading: () => '…',
       error: (_, __) => 'Unknown',
     );

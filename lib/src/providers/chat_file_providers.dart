@@ -39,6 +39,19 @@ class FileTransfers extends Notifier<Map<String, FileTransfer>> {
   void clear(String messageId) => state = {...state}..remove(messageId);
 }
 
+/// Files the server has said are gone (chat videos last 3 days there), by
+/// message id, so their bubbles can say so. Asked again on each tap.
+class ExpiredFiles extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => const {};
+
+  void add(String messageId) => state = {...state, messageId};
+}
+
+final expiredFilesProvider = NotifierProvider<ExpiredFiles, Set<String>>(
+  ExpiredFiles.new,
+);
+
 final fileTransfersProvider =
     NotifierProvider<FileTransfers, Map<String, FileTransfer>>(
       FileTransfers.new,

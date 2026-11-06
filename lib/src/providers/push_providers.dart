@@ -431,6 +431,11 @@ final pushRegistrarProvider = Provider<PushRegistrar>((ref) {
   return registrar;
 });
 
+/// How long after opening the app push registration starts: just past the
+/// loading mascot.
+const pushStartAfter = Duration(milliseconds: 3500);
+bool _pushStarted = false;
+
 /// Keeps push registration in step with sign-in and the notification
 /// settings. Watched from the main screen, like the chat view model.
 final pushLifecycleProvider = Provider<void>((ref) {
@@ -450,12 +455,16 @@ final pushLifecycleProvider = Provider<void>((ref) {
 
   // After this provider has built: both report progress to
   // pushStatusProvider, sometimes straight away (no push on desktop), and a
-  // provider may not change another while it is building.
-  unawaited(
-    Future.microtask(
-      () => enabled
+  // provider may not change another while it is building. The first time, also
+  // after the app has opened: starting Firebase holds up the screen for a
+  // moment, which stalled the loading mascot.
+  final wait = Timer(_pushStarted ? Duration.zero : pushStartAfter, () {
+    _pushStarted = true;
+    unawaited(
+      enabled
           ? registrar.start(showPreview: preview)
           : registrar.unregisterThisDevice(),
-    ),
-  );
+    );
+  });
+  ref.onDispose(wait.cancel);
 });

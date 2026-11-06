@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/post.dart';
 import 'package:serafim/src/presentation/view/circle_detail_page.dart';
@@ -116,8 +117,7 @@ class _PostDetailPageState extends ConsumerState<PostDetailPage> {
       backgroundColor: AppColors.paper,
       appBar: AppTopBar(title: 'POST', onBack: _back),
       body: post.when(
-        loading: () =>
-            Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        loading: () => const Center(child: SerafimLoader()),
         error: (e, _) => Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -161,11 +161,7 @@ class _PostDetailPageState extends ConsumerState<PostDetailPage> {
                       loading: () => [
                         Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.primary,
-                            ),
-                          ),
+                          child: const Center(child: SerafimLoader()),
                         ),
                       ],
                       error: (e, _) => [

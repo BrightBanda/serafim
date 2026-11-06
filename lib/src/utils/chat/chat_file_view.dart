@@ -44,6 +44,7 @@ class ChatFileView extends ConsumerWidget {
     final playback = ref.watch(voicePlayerProvider);
     final path = message.localMediaPath;
     final failed = message.status == MessageStatus.failed && outgoing;
+    final gone = ref.watch(expiredFilesProvider.select((s) => s.contains(id)));
     final isCurrent = playback.messageId == id;
 
     // On a video's preview the controls are always white.
@@ -79,6 +80,16 @@ class ChatFileView extends ConsumerWidget {
         semantics: 'Sending failed. Retry',
         onTap: onRetry,
         child: Icon(Icons.refresh, color: AppColors.rustPale, size: 20),
+      );
+    } else if (path == null && gone) {
+      status = 'No longer available';
+      action = onDownload;
+      button = _Round(
+        onPicture: _isVideo,
+        color: fg,
+        semantics: '$what no longer available',
+        onTap: onDownload,
+        child: Icon(Icons.videocam_off_outlined, color: fg, size: 22),
       );
     } else if (path == null) {
       status = message.mediaRemoteId == null

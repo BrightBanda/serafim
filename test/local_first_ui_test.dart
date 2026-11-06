@@ -1,4 +1,7 @@
 import 'package:camera/camera.dart' show XFile;
+import 'dart:typed_data';
+import 'package:serafim/src/providers/chat_file_providers.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/data/services/media_library.dart';
 import 'package:serafim/src/presentation/view/audio_library_page.dart';
 import 'package:serafim/src/presentation/view/media_gallery_page.dart';
@@ -45,6 +48,30 @@ final alex = person('al', 'Alex Moyo', 'alexm');
 final nina = person('nina', 'Nina Bell', 'ninab', status: FriendStatus.none);
 
 class _FakeChat extends ChatViewModel {
+  static String? lastSent;
+  static String? lastReplyTo;
+
+  @override
+  Future<bool> downloadFile(String messageId) async {
+    ref.read(expiredFilesProvider.notifier).add(messageId);
+    return false;
+  }
+
+  @override
+  Future<void> sendMessage({
+    required String roomId,
+    required String recipientId,
+    String content = '',
+    Uint8List? imageBytes,
+    String? replyToId,
+    MessageType? type,
+    String? groupId,
+    bool forwarded = false,
+  }) async {
+    lastSent = content;
+    lastReplyTo = replyToId;
+  }
+
   @override
   ChatState build() => const ChatState();
   @override
@@ -60,6 +87,7 @@ Future<void> pump(
   List<String> peers = const [],
   bool serverAnswers = false,
   MediaLibrary? media,
+  List<LocalMessage> messages = const [],
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -92,7 +120,7 @@ Future<void> pump(
         conversationPeerIdsProvider.overrideWith(() => _FixedPeers(peers)),
         chatRoomsProvider.overrideWith(_NoRooms.new),
         roomMessagesStreamProvider.overrideWith(
-          (ref, roomId) => Stream.value(<LocalMessage>[]),
+          (ref, roomId) => Stream.value(messages),
         ),
         chatViewModelProvider.overrideWith(_FakeChat.new),
       ],
@@ -142,7 +170,7 @@ void main() {
       'shows your saved chats at once: no spinner while the server is slow',
       (tester) async {
         await pump(tester, const ChatListPage(), savedFriends: [sam, alex]);
-        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(find.byType(SerafimLoader), findsNothing);
         expect(find.text('Sam Ndlovu'), findsOneWidget);
         expect(find.text('Alex Moyo'), findsOneWidget);
       },
@@ -167,7 +195,7 @@ void main() {
       tester,
     ) async {
       await pump(tester, const ChatListPage());
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(SerafimLoader), findsOneWidget);
     });
   });
 
@@ -281,7 +309,7 @@ void main() {
           const UserProfilePage(userId: 'sam'),
           savedFriends: [sam],
         );
-        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(find.byType(SerafimLoader), findsNothing);
         expect(find.text('Sam Ndlovu'), findsOneWidget);
         expect(find.text('@sam_n'), findsOneWidget);
       },
@@ -291,7 +319,7 @@ void main() {
       'a person never seen before shows the spinner until the server answers',
       (tester) async {
         await pump(tester, const UserProfilePage(userId: 'stranger'));
-        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(find.byType(SerafimLoader), findsOneWidget);
       },
     );
 
@@ -382,6 +410,64 @@ void main() {
       expect(find.byType(AudioLibraryPage), findsOneWidget);
     });
 
+    group('a video past its 3 days', () {
+      LocalMessage video({required String from}) => LocalMessage()
+        ..messageId = 'v1'
+        ..roomId = 'x'
+        ..senderId = from
+        ..recipientId = me
+        ..textContent = ''
+        ..mediaRemoteId = 'media-1'
+        ..fileName = 'holiday.mp4'
+        ..type = MessageType.video
+        ..status = MessageStatus.delivered
+        ..timestamp = DateTime.utc(2026, 11, 1);
+
+      Future<void> tapIt(WidgetTester tester) async {
+        final button = find.bySemanticsLabel('Download video');
+        expect(button, findsOneWidget);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('says so, and offers to ask the sender for it again', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          thread(),
+          savedFriends: [sam],
+          messages: [video(from: 'sam')],
+        );
+        await tester.pumpAndSettle();
+        await tapIt(tester);
+        expect(find.text('Media no longer available'), findsOneWidget);
+        expect(
+          find.textContaining('Ask Sam Ndlovu to send it'),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const ValueKey('video-gone-ask')));
+        await tester.pumpAndSettle();
+        expect(find.text('Media no longer available'), findsNothing);
+        expect(_FakeChat.lastSent, contains('send this video again'));
+        expect(_FakeChat.lastReplyTo, 'v1');
+        expect(find.text('No longer available'), findsWidgets);
+      });
+
+      testWidgets('its own sender has nobody to ask', (tester) async {
+        await pump(
+          tester,
+          thread(),
+          savedFriends: [sam],
+          messages: [video(from: me)],
+        );
+        await tester.pumpAndSettle();
+        await tapIt(tester);
+        expect(find.text('Media no longer available'), findsOneWidget);
+        expect(find.byKey(const ValueKey('video-gone-ask')), findsNothing);
+      });
+    });
+
     testWidgets('a pick recovered after Android closed the app asks first', (
       tester,
     ) async {
@@ -428,6 +514,9 @@ void main() {
       await openSheet(tester);
       await tester.tap(find.byKey(const ValueKey('attach-schedule')));
       await tester.pumpAndSettle();
+      expect(find.text('SCHEDULED MESSAGES'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('scheduled-new')));
+      await tester.pumpAndSettle();
       expect(find.text('SCHEDULE A MESSAGE'), findsOneWidget);
       expect(
         find.descendant(
@@ -451,6 +540,9 @@ void main() {
 
       await openSheet(tester);
       await tester.tap(find.byKey(const ValueKey('attach-schedule')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('scheduled-empty')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('scheduled-new')));
       await tester.pumpAndSettle();
       expect(find.text('SCHEDULE A MESSAGE'), findsOneWidget);
     });

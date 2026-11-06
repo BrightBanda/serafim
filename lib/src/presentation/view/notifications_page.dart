@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/presentation/view/echo_page.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
@@ -145,7 +146,7 @@ class NotificationsPage extends ConsumerWidget {
         ),
       ]);
     } else if (list == null) {
-      body = Center(child: CircularProgressIndicator(color: AppColors.primary));
+      body = const Center(child: SerafimLoader());
     } else if (list.isEmpty) {
       body = scrollable([
         const SizedBox(height: 80),

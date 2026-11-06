@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/core/network/api_exception.dart';
 import 'package:serafim/src/data/models/group.dart';
@@ -90,7 +91,7 @@ class GroupInfoPage extends ConsumerWidget {
         ),
       );
     } else {
-      body = Center(child: CircularProgressIndicator(color: AppColors.primary));
+      body = const Center(child: SerafimLoader());
     }
 
     return Scaffold(

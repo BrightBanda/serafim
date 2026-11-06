@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/core/platform/google_support.dart';
 import 'package:serafim/src/data/services/backup_service.dart';
@@ -212,9 +213,7 @@ class _BackupSettingsPageState extends ConsumerState<BackupSettingsPage> {
         if (busy)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            ),
+            child: const Center(child: SerafimLoader()),
           ),
       ],
     );

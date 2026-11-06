@@ -42,12 +42,17 @@ class OfficialService {
 
   /// Administrators only; the server answers 403 for anyone else. With
   /// [update] it announces an Android release (the text may then be empty).
-  Future<Announcement> post(String content, {AppUpdate? update}) async {
+  Future<Announcement> post(
+    String content, {
+    AppUpdate? update,
+    Map<String, dynamic>? video,
+  }) async {
     final data = await _call(
       () => _dio.post<dynamic>(
         '/official/announcements',
         data: {
           'content': content,
+          if (video != null) 'video': video,
           if (update != null)
             'update': {
               'version_name': update.versionName,
@@ -74,6 +79,36 @@ class OfficialService {
       throw const ApiException('Something went wrong. Please try again.');
     }
     return Announcement.fromJson(data);
+  }
+
+  /// Administrators only: where to upload a video for an announcement.
+  Future<String> startVideoUpload({
+    required String contentType,
+    required int size,
+  }) async {
+    final data = await _call(
+      () => _dio.post<dynamic>(
+        '/official/videos',
+        data: {'content_type': contentType, 'size': size},
+      ),
+    );
+    final path = data is Map<String, dynamic> ? data['upload_path'] : null;
+    if (path is! String || path.isEmpty) {
+      throw const ApiException('Something went wrong. Please try again.');
+    }
+    return path;
+  }
+
+  /// A short-lived link to an announcement's video.
+  Future<String> videoUrl(String id) async {
+    final data = await _call(
+      () => _dio.get<dynamic>('/official/announcements/$id/video-url'),
+    );
+    final url = data is Map<String, dynamic> ? data['url'] : null;
+    if (url is! String || url.isEmpty) {
+      throw const ApiException('Something went wrong. Please try again.');
+    }
+    return url;
   }
 
   Future<void> delete(String id) async {

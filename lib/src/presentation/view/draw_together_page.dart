@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
@@ -429,7 +430,7 @@ class _Notice extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (busy) const CircularProgressIndicator(),
+          if (busy) const SerafimLoader(onBlack: true),
           const SizedBox(height: 18),
           Text(text, style: const TextStyle(color: Colors.white)),
           TextButton(

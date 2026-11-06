@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/presentation/view/post_detail_page.dart';
 import 'package:serafim/src/presentation/view/widgets/load_more_button.dart';
@@ -25,8 +26,7 @@ class PostListPage extends ConsumerWidget {
         onBack: () => Navigator.of(context).pop(),
       ),
       body: posts.when(
-        loading: () =>
-            Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        loading: () => const Center(child: SerafimLoader()),
         error: (e, _) =>
             Center(child: Text(humanError(e), style: AppTextStyles.body)),
         data: (page) => ListView(
@@ -44,7 +44,8 @@ class PostListPage extends ConsumerWidget {
                     onSpark: (on) => ref
                         .read(sparkProvider.notifier)
                         .togglePost(post, on: on),
-                    onComment: () => openPost(context, post.id, focusComment: true),
+                    onComment: () =>
+                        openPost(context, post.id, focusComment: true),
                     onCircleTap: post.circle == null
                         ? null
                         : () => openCircle(context, post.circle!.id),

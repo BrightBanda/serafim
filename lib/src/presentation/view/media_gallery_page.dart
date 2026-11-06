@@ -14,9 +14,16 @@ const browseFiles = 'browse-files';
 /// background where Android may close it. Pops the chosen [DeviceMedia] list,
 /// or [browseFiles].
 class MediaGalleryPage extends ConsumerStatefulWidget {
-  const MediaGalleryPage({super.key, required this.filter});
+  const MediaGalleryPage({
+    super.key,
+    required this.filter,
+    this.single = false,
+  });
 
   final MediaFilter filter;
+
+  /// For choosing just one: tapping it chooses it.
+  final bool single;
 
   static const pageSize = 60;
 
@@ -105,6 +112,10 @@ class _MediaGalleryPageState extends ConsumerState<MediaGalleryPage> {
   }
 
   void _toggle(DeviceMedia m) {
+    if (widget.single) {
+      Navigator.of(context).pop(<DeviceMedia>[m]);
+      return;
+    }
     final fits = _selection.toggle(m);
     setState(() {});
     if (!fits) {

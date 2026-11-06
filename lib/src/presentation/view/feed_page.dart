@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/utils/notification_bell.dart';
 import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,8 +49,7 @@ class FeedPage extends ConsumerWidget {
         await ref.read(feedProvider.future);
       },
       child: feed.when(
-        loading: () =>
-            Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        loading: () => const Center(child: SerafimLoader()),
         error: (e, _) => ListView(
           children: [
             Padding(

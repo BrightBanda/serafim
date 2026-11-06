@@ -3,8 +3,11 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/presentation/view/chat_features_page.dart';
 import 'package:serafim/src/presentation/view/widgets/scheduled_message_sheets.dart';
+import 'package:serafim/src/data/services/scheduled_message_service.dart';
+import 'package:serafim/src/providers/scheduled_message_providers.dart';
 import 'package:serafim/src/utils/chat/attachment_sheet.dart';
 import 'package:camera/camera.dart' show XFile;
 import 'package:serafim/src/data/services/media_library.dart';
@@ -327,6 +330,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
         ? "Photos and GIFs can't be shared in groups yet."
         : friendsOnly;
     final quota = _loadQuota();
+    final scheduled = ref.read(scheduledInRoomProvider(_roomId));
 
     final options = [
       AttachOption(
@@ -366,11 +370,13 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             ? 'Draw Together is for two friends, not groups.'
             : friendsOnly,
       ),
-      const AttachOption(
+      AttachOption(
         value: 'schedule',
         icon: Icons.schedule_send_outlined,
         label: 'Scheduled',
-        color: Color(0xFFE2B93B),
+        color: const Color(0xFFE2B93B),
+        badge: scheduled.isEmpty ? null : scheduled.length,
+        badgeAlert: scheduled.any((m) => m.status == ScheduledStatus.failed),
       ),
     ];
     final choice = await showAttachmentSheet(
@@ -417,8 +423,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       case 'together':
         await _startDrawTogether();
       case 'schedule':
-        await showScheduleComposer(
+        await showScheduledMessages(
           context,
+          roomId: _roomId,
           recipientId: isGroup ? null : widget.recipientId,
           groupId: widget.groupId,
           // Already typed it? Then it is what gets scheduled.
@@ -830,11 +837,62 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     final ok = await ref
         .read(chatViewModelProvider.notifier)
         .downloadFile(message.messageId);
-    if (!ok && mounted) {
+    if (!mounted) return;
+    if (!ok && ref.read(expiredFilesProvider).contains(message.messageId)) {
+      await _explainGoneVideo(message);
+    } else if (!ok) {
       _toast(
         "Couldn't download that. Check your connection and try again.",
         error: true,
       );
+    }
+  }
+
+  /// A video past its 3 days on the server, that this phone never downloaded.
+  /// The person who sent it probably still has it, so offer to ask them.
+  Future<void> _explainGoneVideo(LocalMessage message) async {
+    final mine = message.senderId == ref.read(currentAccountIdProvider);
+    final name = mine ? null : _nameOf(message.senderId);
+    final ask = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const ValueKey('video-gone'),
+        backgroundColor: AppColors.paperAlt,
+        title: const Text('Media no longer available'),
+        content: Text(
+          mine
+              ? 'Videos are kept for 3 days, and this one is no longer on your '
+                    'phone either.'
+              : 'Videos are kept for 3 days. Ask $name to send it again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Close'),
+          ),
+          if (!mine)
+            TextButton(
+              key: const ValueKey('video-gone-ask'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ask to resend'),
+            ),
+        ],
+      ),
+    );
+    if (ask != true || !mounted) return;
+    try {
+      await ref
+          .read(chatViewModelProvider.notifier)
+          .sendMessage(
+            roomId: _roomId,
+            recipientId: widget.recipientId,
+            groupId: widget.groupId,
+            content: "Can you send this video again? It's no longer available.",
+            replyToId: message.messageId,
+          );
+      _scheduleScrollToBottom();
+    } catch (error) {
+      _toast(humanError(error), error: true);
     }
   }
 
@@ -1929,6 +1987,28 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     );
 
     final messagesAsync = ref.watch(messagesProvider);
+
+    // No bar in the chat for scheduled messages any more, so one that could
+    // not go has to say so here.
+    ref.listen<List<ScheduledMessage>>(scheduledInRoomProvider(roomId), (
+      before,
+      now,
+    ) {
+      final known = {
+        for (final m in before ?? const <ScheduledMessage>[])
+          if (m.status == ScheduledStatus.failed) m.id,
+      };
+      for (final m in now) {
+        if (m.status == ScheduledStatus.failed && !known.contains(m.id)) {
+          _toast(
+            "A scheduled message couldn't be sent. See Scheduled under the "
+            'paperclip.',
+            error: true,
+          );
+          break;
+        }
+      }
+    });
     final hideDeleted = ref.watch(chatFeaturesProvider(roomId)).hideDeleted;
 
     // Attachments are friends-only. The button explains why it is off; the
@@ -2061,11 +2141,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                   child: messagesAsync.when(
                     skipLoadingOnReload: true,
                     loading: () {
-                      return Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.primary,
-                        ),
-                      );
+                      return const Center(child: SerafimLoader());
                     },
 
                     error: (error, stack) {
@@ -2408,7 +2484,6 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                       focusNode: _inputFocus,
                       onSend: _handleSend,
                       onAttach: _handleAttach,
-                      notice: ScheduledMessagesBar(roomId: roomId),
                       attachBusy: _attaching,
                       onStickers: _toggleStickers,
                       stickersOpen: _stickersOpen,

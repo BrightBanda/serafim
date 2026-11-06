@@ -1,6 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
-import 'package:serafim/src/utils/serafim_mark.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/presentation/view/landing_page.dart';
 import 'package:serafim/src/presentation/view/login_page.dart';
@@ -29,8 +31,107 @@ class AuthGate extends ConsumerStatefulWidget {
 class _AuthGateState extends ConsumerState<AuthGate> {
   _UnauthedView _currentView = _UnauthedView.landing;
 
+  /// The mascot stays up for at least this long when the app opens, however
+  /// fast it loads. Everything loads behind it meanwhile, so what comes next is
+  /// ready the moment it goes.
+  static const _splashAtLeast = Duration(milliseconds: 2500);
+  static const _splashFade = Duration(milliseconds: 220);
+
+  /// The first build of the main screen takes a good 150 ms whatever is done
+  /// to it, which would stall a moving mascot. So the logo screen stays up
+  /// until that is done: a still picture can't stutter, and the mascot then has
+  /// a clear run. This long at most, for when loading is slow; it then waits on
+  /// screen as usual.
+  static const _logoAtMost = Duration(seconds: 2);
+
+  /// The main screen's first data and start-up work come just after its first
+  /// build, and were measured to be over by about this much later.
+  static const _logoAfterLoaded = Duration(milliseconds: 650);
+
+  Timer? _splashTimer;
+  Timer? _logoTimer;
+  bool _logoReleasing = false;
+  bool _logoReleased = false;
+  bool _splashHolding = true;
+  bool _splashGone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.deferFirstFrame();
+    _logoTimer = Timer(_logoAtMost, _releaseLogo);
+  }
+
+  /// Shows the first frame, and starts the mascot's time.
+  void _releaseLogo() {
+    if (_logoReleased) return;
+    _logoReleased = true;
+    _logoTimer?.cancel();
+    WidgetsBinding.instance.allowFirstFrame();
+    if (!mounted) return;
+    _splashTimer = Timer(_splashAtLeast, () {
+      if (mounted) setState(() => _splashHolding = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _splashTimer?.cancel();
+    // Never leave the app showing nothing.
+    _releaseLogo();
+    _splashTimer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    // One mascot, on top: shown while opening, and whenever the app below has
+    // nothing to show yet, so it never restarts or appears twice.
+    final loading = _stillLoading();
+    if (!loading && !_logoReleasing) {
+      _logoReleasing = true;
+      _logoTimer?.cancel();
+      _logoTimer = Timer(_logoAfterLoaded, _releaseLogo);
+    }
+    final show = _splashHolding || loading;
+    if (show) _splashGone = false;
+    // The same shape throughout: the app below must not be rebuilt from scratch
+    // when the mascot goes.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Page animations wait until they can be seen.
+        TickerMode(enabled: !show, child: _content(context)),
+        if (!_splashGone)
+          IgnorePointer(
+            ignoring: !show,
+            child: AnimatedOpacity(
+              opacity: show ? 1 : 0,
+              duration: _splashFade,
+              onEnd: () {
+                if (!show) setState(() => _splashGone = true);
+              },
+              child: const AbsorbPointer(child: _Splash()),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Whether [_content] is waiting, with only an empty page to show.
+  bool _stillLoading() {
+    if (ref.watch(appConfigProvider).configurationError != null) return false;
+    return switch (ref.watch(authStatusProvider)) {
+      AuthStatus.unknown => true,
+      AuthStatus.authenticated =>
+        ref
+            .watch(profileViewModelProvider)
+            .maybeWhen(loading: () => true, orElse: () => false),
+      _ => false,
+    };
+  }
+
+  Widget _content(BuildContext context) {
     final configError = ref.watch(appConfigProvider).configurationError;
     if (configError != null) {
       return _Message(title: 'Not configured', body: configError);
@@ -48,7 +149,8 @@ class _AuthGateState extends ConsumerState<AuthGate> {
     });
 
     return switch (status) {
-      AuthStatus.unknown => const _Splash(),
+      // The mascot on top covers this.
+      AuthStatus.unknown => ColoredBox(color: AppColors.paper),
 
       AuthStatus.unauthenticated => switch (_currentView) {
         _UnauthedView.landing => LandingPage(
@@ -94,7 +196,8 @@ class _AuthedApp extends ConsumerWidget {
     final onboarding = ref.watch(onboardingViewModelProvider);
 
     return profile.when(
-      loading: () => const _Splash(),
+      // The mascot on top covers this.
+      loading: () => ColoredBox(color: AppColors.paper),
       error: (error, _) => _Message(
         title: 'Could not load your profile',
         body: humanError(error),
@@ -117,23 +220,7 @@ class _Splash extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.paper,
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SerafimMark(size: 96),
-            const SizedBox(height: 28),
-            SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: AppColors.primary,
-              ),
-            ),
-          ],
-        ),
-      ),
+      body: const Center(child: SerafimLoader(size: 170)),
     );
   }
 }

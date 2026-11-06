@@ -1,6 +1,7 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart' show PhotoManager;
+import 'package:serafim/src/utils/serafim_loader.dart';
 
 /// Popped when the person would rather use the phone's own camera app.
 const usePhoneCamera = 'use-phone-camera';
@@ -157,7 +158,7 @@ class _InAppCameraPageState extends State<InAppCameraPage>
                 children: [
                   Expanded(
                     child: controller == null
-                        ? const Center(child: CircularProgressIndicator())
+                        ? const Center(child: SerafimLoader(onBlack: true))
                         : Center(child: CameraPreview(controller)),
                   ),
                   Padding(

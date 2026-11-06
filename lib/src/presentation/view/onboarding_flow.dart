@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/presentation/view/avatar_crop_page.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -126,9 +127,7 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
           Positioned.fill(
             child: ColoredBox(
               color: Color(0x99000000),
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.primary),
-              ),
+              child: const Center(child: SerafimLoader()),
             ),
           ),
       ],

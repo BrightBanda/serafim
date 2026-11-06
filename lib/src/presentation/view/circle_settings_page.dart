@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/circle.dart';
 import 'package:serafim/src/presentation/view/circle_invite_page.dart';
@@ -34,9 +35,7 @@ class CircleSettingsPage extends ConsumerWidget {
       ),
       body: SafeArea(
         child: detail.when(
-          loading: () => Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          ),
+          loading: () => const Center(child: SerafimLoader()),
           error: (e, _) => Center(
             child: Padding(
               padding: const EdgeInsets.all(24),

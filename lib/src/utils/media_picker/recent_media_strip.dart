@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/services/media_library.dart';
@@ -19,8 +21,8 @@ class RecentMediaStrip extends ConsumerStatefulWidget {
   final ValueChanged<List<DeviceMedia>> onSend;
   final VoidCallback onSeeAll;
 
-  /// How many are loaded here: Gallery has the rest.
-  static const count = 30;
+  /// How many are loaded at a time, as it is scrolled.
+  static const pageSize = 40;
 
   @override
   ConsumerState<RecentMediaStrip> createState() => _RecentMediaStripState();
@@ -31,13 +33,50 @@ class _RecentMediaStripState extends ConsumerState<RecentMediaStrip> {
   bool _refused = false;
   List<DeviceMedia> _items = const [];
   final _selection = MediaSelection();
+  final _scroll = ScrollController();
+  MediaAlbum? _album;
+  int _nextPage = 0;
+  bool _loadingMore = false;
+  bool _atEnd = false;
 
   MediaLibrary get _library => ref.read(mediaLibraryProvider);
 
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(() {
+      if (_scroll.position.extentAfter < 300) _loadMore();
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadMore() async {
+    final album = _album;
+    if (_loadingMore || _atEnd || album == null) return;
+    _loadingMore = true;
+    try {
+      final more = await _library.page(
+        album,
+        _nextPage,
+        RecentMediaStrip.pageSize,
+      );
+      if (!mounted) return;
+      setState(() {
+        _items = [..._items, ...more];
+        _nextPage++;
+        _atEnd = more.length < RecentMediaStrip.pageSize;
+      });
+    } catch (_) {
+      // Scrolling again retries.
+    } finally {
+      _loadingMore = false;
+    }
   }
 
   Future<void> _load({bool ask = false}) async {
@@ -49,7 +88,14 @@ class _RecentMediaStripState extends ConsumerState<RecentMediaStrip> {
       if (access.canRead) {
         final albums = await _library.albums(widget.filter);
         if (albums.isNotEmpty) {
-          items = await _library.page(albums.first, 0, RecentMediaStrip.count);
+          _album = albums.first;
+          items = await _library.page(
+            albums.first,
+            0,
+            RecentMediaStrip.pageSize,
+          );
+          _nextPage = 1;
+          _atEnd = items.length < RecentMediaStrip.pageSize;
         }
       }
       if (!mounted) return;
@@ -117,19 +163,23 @@ class _RecentMediaStripState extends ConsumerState<RecentMediaStrip> {
               ),
           ],
         ),
+        // Up and down, like the gallery; the height leaves the options above
+        // in view.
         SizedBox(
-          height: 96,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
+          height: math.min(340, MediaQuery.sizeOf(context).height * 0.42),
+          child: GridView.builder(
+            controller: _scroll,
+            padding: EdgeInsets.zero,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 3,
+              crossAxisSpacing: 3,
+            ),
             itemCount: _items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 4),
-            itemBuilder: (_, i) => SizedBox(
-              width: 96,
-              child: MediaThumb(
-                media: _items[i],
-                position: _selection.positionOf(_items[i]),
-                onTap: () => _toggle(_items[i]),
-              ),
+            itemBuilder: (_, i) => MediaThumb(
+              media: _items[i],
+              position: _selection.positionOf(_items[i]),
+              onTap: () => _toggle(_items[i]),
             ),
           ),
         ),

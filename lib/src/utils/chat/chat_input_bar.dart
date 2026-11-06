@@ -13,7 +13,6 @@ class ChatInputBar extends StatelessWidget {
     this.onSend,
     this.onAttach,
     this.attachDisabledReason,
-    this.notice,
     this.attachBusy = false,
     this.replyPreview,
     this.onStickers,
@@ -60,10 +59,6 @@ class ChatInputBar extends StatelessWidget {
   /// When non-null the attach button is dimmed and tapping it explains this
   /// reason instead of picking a file. (The server enforces the rule too.)
   final String? attachDisabledReason;
-
-  /// Above the bar, when there is something to say about this chat (e.g. its
-  /// scheduled messages).
-  final Widget? notice;
 
   /// A photo is being prepared or sent: the attach button shows a spinner and
   /// ignores taps.
@@ -240,8 +235,6 @@ class ChatInputBar extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (notice != null)
-          KeyedSubtree(key: const ValueKey('input-notice'), child: notice!),
         if (reply != null)
           KeyedSubtree(
             key: const ValueKey('reply-preview'),

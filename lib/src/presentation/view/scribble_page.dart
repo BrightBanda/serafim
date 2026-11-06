@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/utils/image_editor/draw_pad.dart';
 import 'package:serafim/src/utils/image_editor/draw_toolbar.dart';
@@ -239,7 +240,7 @@ class _ScribblePageState extends State<ScribblePage> {
                   builder: (context, box) {
                     final sheet = fitDrawSheet(box.biggest, _aspect);
                     if (loading) {
-                      return const Center(child: CircularProgressIndicator());
+                      return const Center(child: SerafimLoader(onBlack: true));
                     }
                     return Center(
                       child: DrawPad(

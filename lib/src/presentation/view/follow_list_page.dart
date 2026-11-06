@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -41,9 +42,7 @@ class FollowListPage extends ConsumerWidget {
             } catch (_) {}
           },
           child: people.when(
-            loading: () => Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            ),
+            loading: () => const Center(child: SerafimLoader()),
             error: (error, _) => ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(24),
@@ -52,9 +51,7 @@ class FollowListPage extends ConsumerWidget {
                 Text(
                   humanError(error),
                   textAlign: TextAlign.center,
-                  style: AppTextStyles.body.copyWith(
-                    color: AppColors.rustPale,
-                  ),
+                  style: AppTextStyles.body.copyWith(color: AppColors.rustPale),
                 ),
               ],
             ),

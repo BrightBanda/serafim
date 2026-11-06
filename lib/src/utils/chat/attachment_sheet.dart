@@ -11,7 +11,15 @@ class AttachOption {
     required this.label,
     required this.color,
     this.disabledReason,
+    this.badge,
+    this.badgeAlert = false,
   });
+
+  /// A count on its corner (how many are waiting, say).
+  final int? badge;
+
+  /// The count is about a problem: shown in red.
+  final bool badgeAlert;
 
   final String value;
   final IconData icon;
@@ -94,18 +102,42 @@ class _Tile extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              height: 46,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.paper,
-                border: Border.all(color: AppColors.lineSoft, width: 1.5),
-              ),
-              child: Icon(
-                option.icon,
-                size: 24,
-                color: off ? AppColors.lineSoft : option.color,
-              ),
+            Stack(
+              children: [
+                Container(
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.paper,
+                    border: Border.all(color: AppColors.lineSoft, width: 1.5),
+                  ),
+                  child: Icon(
+                    option.icon,
+                    size: 24,
+                    color: off ? AppColors.lineSoft : option.color,
+                  ),
+                ),
+                if (option.badge case final count?)
+                  Positioned(
+                    top: 3,
+                    right: 3,
+                    child: Container(
+                      key: ValueKey('attach-badge-${option.value}'),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      color: option.badgeAlert
+                          ? Colors.red.shade400
+                          : AppColors.primary,
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 6),
             Text(

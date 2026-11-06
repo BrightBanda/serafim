@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,6 +61,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   @override
   void initState() {
     super.initState();
+    _nextTab = Timer(_firstTabAfter, _buildNextTab);
     // Something shared to Serafim from another app: choose who gets it. This
     // screen only exists once signed in, so a share made before that waits.
     ref.listenManual<String?>(incomingShareProvider, (_, text) {
@@ -151,6 +154,34 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       ? (FeatureFlags.posts ? _withBoth : _withCircles)
       : (FeatureFlags.posts ? _withFeed : _plain);
 
+  /// Tabs built so far. Building them all at once as the app opens stalled the
+  /// loading mascot for a good 200 ms, so only the one on screen is built then,
+  /// and the others once the mascot has gone: one at a time, so that each stays
+  /// too short to notice, and all ready before most people switch.
+  final _builtTabs = <int>{};
+  Timer? _nextTab;
+
+  /// A little longer than the mascot stays up.
+  static const _firstTabAfter = Duration(milliseconds: 3400);
+  static const _nextTabAfter = Duration(milliseconds: 450);
+
+  void _buildNextTab() {
+    if (!mounted) return;
+    final missing = [
+      for (var i = 0; i < _screens.length; i++)
+        if (!_builtTabs.contains(i)) i,
+    ];
+    if (missing.isEmpty) return;
+    setState(() => _builtTabs.add(missing.first));
+    _nextTab = Timer(_nextTabAfter, _buildNextTab);
+  }
+
+  @override
+  void dispose() {
+    _nextTab?.cancel();
+    super.dispose();
+  }
+
   final _backGuard = BackToExitGuard();
 
   /// Back on the main screen only. Pages, dialogs and sheets opened on top
@@ -180,6 +211,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
   @override
   Widget build(BuildContext context) {
     final currentIndex = ref.watch(navigationNotifierProvider);
+    _builtTabs.add(currentIndex);
 
     // Keeps the websocket connected and receipts flowing on every tab, not
     // only while a conversation is open.
@@ -196,7 +228,15 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       child: Scaffold(
         backgroundColor: AppColors.paper,
         // IndexedStack preserves the scroll position and state of each tab screen
-        body: IndexedStack(index: currentIndex, children: _screens),
+        body: IndexedStack(
+          index: currentIndex,
+          children: [
+            for (var i = 0; i < _screens.length; i++)
+              i == currentIndex || _builtTabs.contains(i)
+                  ? _screens[i]
+                  : const SizedBox.shrink(),
+          ],
+        ),
         bottomNavigationBar: AppBottomNav(
           currentIndex: currentIndex,
           onTap: (index) =>

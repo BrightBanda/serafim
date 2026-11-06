@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/presentation/view/widgets/profile_posts.dart';
 import 'package:serafim/src/utils/wing_toggle.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
@@ -165,9 +166,7 @@ class UserProfilePage extends ConsumerWidget {
         child: shown != null
             ? content(shown)
             : userAsync.when(
-                loading: () => Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
-                ),
+                loading: () => const Center(child: SerafimLoader()),
                 error: (error, _) => Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),

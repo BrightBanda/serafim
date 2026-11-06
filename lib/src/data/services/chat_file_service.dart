@@ -357,7 +357,19 @@ class ChatFileService {
     String savePath, {
     void Function(double progress)? onProgress,
   }) async {
-    final url = await downloadUrl(mediaId);
+    await downloadFrom(
+      await downloadUrl(mediaId),
+      savePath,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Fetches [url] into [savePath], with the same promise as [download].
+  Future<void> downloadFrom(
+    String url,
+    String savePath, {
+    void Function(double progress)? onProgress,
+  }) async {
     final partial = '$savePath.part';
     try {
       await _downloader.download(

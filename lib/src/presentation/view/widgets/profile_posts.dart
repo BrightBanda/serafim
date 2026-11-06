@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/config/feature_flags.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/presentation/view/post_detail_page.dart';
@@ -55,7 +56,7 @@ class ProfilePosts extends ConsumerWidget {
         posts.when(
           loading: () => const Padding(
             padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator()),
+            child: Center(child: SerafimLoader()),
           ),
           error: (e, _) => Text(humanError(e), style: AppTextStyles.body),
           data: (page) {

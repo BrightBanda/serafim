@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 
 import 'package:flutter/material.dart';
@@ -193,8 +194,7 @@ class _SuggestionsState extends ConsumerState<_Suggestions> {
     );
 
     return discover.when(
-      loading: () =>
-          Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      loading: () => const Center(child: SerafimLoader()),
       error: (error, _) => scrollable([
         const SizedBox(height: 60),
         _Message(
@@ -287,8 +287,7 @@ class _SearchResultsState extends ConsumerState<_SearchResults> {
     final results = ref.watch(userSearchProvider(query));
 
     return results.when(
-      loading: () =>
-          Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      loading: () => const Center(child: SerafimLoader()),
       error: (error, _) => ListView(
         padding: const EdgeInsets.all(14),
         children: [

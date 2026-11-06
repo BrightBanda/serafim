@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/echo.dart';
 import 'package:serafim/src/providers/echo_providers.dart';
@@ -70,9 +71,7 @@ class _EchoPageState extends ConsumerState<EchoPage> {
       ),
       body: SafeArea(
         child: echo.when(
-          loading: () => Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
-          ),
+          loading: () => const Center(child: SerafimLoader()),
           error: (e, _) => _Message(text: humanError(e)),
           data: (e) => _card(e),
         ),

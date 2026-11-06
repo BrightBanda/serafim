@@ -95,7 +95,7 @@ void main() {
       await show(
         t,
         library,
-        SizedBox(width: 800, child: strip(onSend: (s) => sent = s)),
+        SizedBox(width: 400, child: strip(onSend: (s) => sent = s)),
       );
       Future<void> tap(String id) async {
         await t.tap(find.byKey(ValueKey('media-$id')));
@@ -113,6 +113,16 @@ void main() {
       await tap('m0'); // changed their mind
       await t.tap(find.byKey(const ValueKey('recent-send')));
       expect(sent!.map((m) => m.id), ['m2', 'm1', 'm3']);
+    });
+
+    testWidgets('scrolls up and down, loading more as it goes', (t) async {
+      final library = FakeLibrary(items: fakeItems(100));
+      await show(t, library, strip());
+      final grid = t.widget<GridView>(find.byType(GridView));
+      expect(grid.scrollDirection, Axis.vertical);
+      await t.drag(find.byType(GridView), const Offset(0, -3000));
+      await t.pumpAndSettle();
+      expect(library.pagesAsked.length, greaterThan(1));
     });
 
     testWidgets('only loads its share, and See all goes further', (t) async {

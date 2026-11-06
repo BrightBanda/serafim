@@ -211,7 +211,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('About'));
     await t.pumpAndSettle();
-    expect(find.text('1.0.2 (build 3)'), findsOneWidget);
+    expect(find.text('1.0.2'), findsOneWidget);
     expect(find.text('Bright Banda'), findsOneWidget);
     expect(find.text('Terms of Service'), findsOneWidget);
     expect(find.text('Privacy Policy'), findsOneWidget);

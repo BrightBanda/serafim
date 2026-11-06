@@ -305,70 +305,45 @@ class _TimeChip extends StatelessWidget {
   }
 }
 
-/// Above the message box when this chat has scheduled messages. Shows nothing
-/// otherwise.
-class ScheduledMessagesBar extends ConsumerWidget {
-  const ScheduledMessagesBar({super.key, required this.roomId});
+/// Paperclip → Scheduled: this chat's scheduled messages, and a new one.
+Future<void> showScheduledMessages(
+  BuildContext context, {
+  required String roomId,
+  String? recipientId,
+  String? groupId,
+  String initialText = '',
+  VoidCallback? onScheduled,
+}) => showSettledSheet<void>(
+  context: context,
+  backgroundColor: AppColors.paper,
+  shape: const RoundedRectangleBorder(),
+  isScrollControlled: true,
+  builder: (_) => _ScheduledList(
+    roomId: roomId,
+    recipientId: recipientId,
+    groupId: groupId,
+    initialText: initialText,
+    onScheduled: onScheduled,
+  ),
+);
 
-  final String roomId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(scheduledInRoomProvider(roomId));
-    if (items.isEmpty) return const SizedBox.shrink();
-    final failed = items.where((m) => m.status == ScheduledStatus.failed);
-    final waiting = items.length - failed.length;
-    final text = failed.isNotEmpty
-        ? "${failed.length} scheduled message${failed.length == 1 ? '' : 's'} "
-              "couldn't be sent"
-        : '$waiting scheduled message${waiting == 1 ? '' : 's'}';
-    return GestureDetector(
-      key: const ValueKey('scheduled-bar'),
-      behavior: HitTestBehavior.opaque,
-      onTap: () => showSettledSheet<void>(
-        context: context,
-        backgroundColor: AppColors.paper,
-        shape: const RoundedRectangleBorder(),
-        isScrollControlled: true,
-        builder: (_) => _ScheduledList(roomId: roomId),
-      ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-        decoration: BoxDecoration(
-          color: AppColors.paperRaised,
-          border: Border(top: BorderSide(color: AppColors.line, width: 2)),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              failed.isNotEmpty ? Icons.error_outline : Icons.schedule,
-              size: 16,
-              color: failed.isNotEmpty
-                  ? Colors.red.shade400
-                  : AppColors.primaryPale,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                text,
-                style: AppTextStyles.body.copyWith(fontSize: 11),
-              ),
-            ),
-            Icon(Icons.chevron_right, size: 18, color: AppColors.textDim),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// This chat's scheduled messages: change or cancel what is waiting, see why
-/// something failed.
+/// Change or cancel what is waiting, see why something failed, write a new one.
 class _ScheduledList extends ConsumerWidget {
-  const _ScheduledList({required this.roomId});
+  const _ScheduledList({
+    required this.roomId,
+    this.recipientId,
+    this.groupId,
+    this.initialText = '',
+    this.onScheduled,
+  });
 
   final String roomId;
+  final String? recipientId;
+  final String? groupId;
+
+  /// What is typed in the chat's message box, offered to a new one.
+  final String initialText;
+  final VoidCallback? onScheduled;
 
   Future<void> _remove(
     BuildContext context,
@@ -386,88 +361,120 @@ class _ScheduledList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(scheduledInRoomProvider(roomId));
-    if (items.isEmpty) {
-      // The last one went out or was cancelled.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) Navigator.of(context).maybePop();
-      });
-    }
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.75,
         ),
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'SCHEDULED MESSAGES',
-              style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+              child: Text(
+                'SCHEDULED MESSAGES',
+                style: AppTextStyles.displayHeading.copyWith(fontSize: 18),
+              ),
             ),
-            const SizedBox(height: 10),
-            for (final m in items)
-              Container(
-                key: ValueKey('scheduled-${m.id}'),
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.paperAlt,
-                  border: Border.all(
-                    color: m.status == ScheduledStatus.failed
-                        ? Colors.red.shade400
-                        : AppColors.lineSoft,
-                    width: 1.5,
-                  ),
+            if (items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Text(
+                  'Nothing scheduled in this chat yet. Write a message now, '
+                  'and choose when it arrives.',
+                  key: const ValueKey('scheduled-empty'),
+                  style: AppTextStyles.smallDim,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              )
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
-                    Text(
-                      m.content,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.body,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      m.status == ScheduledStatus.failed
-                          ? m.failureText
-                          : 'Arrives: ${formatArrival(context, m.sendAt)}',
-                      style: AppTextStyles.smallDim.copyWith(
-                        color: m.status == ScheduledStatus.failed
-                            ? Colors.red.shade400
-                            : AppColors.primaryPale,
-                      ),
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        if (m.status == ScheduledStatus.pending)
-                          TextButton(
-                            key: ValueKey('scheduled-edit-${m.id}'),
-                            onPressed: () =>
-                                showScheduleComposer(context, editing: m),
-                            child: Text(
-                              'Change',
-                              style: AppTextStyles.linkText,
-                            ),
-                          ),
-                        TextButton(
-                          key: ValueKey('scheduled-remove-${m.id}'),
-                          onPressed: () => _remove(context, ref, m),
-                          child: Text(
-                            m.status == ScheduledStatus.failed
-                                ? 'Dismiss'
-                                : 'Cancel',
-                            style: AppTextStyles.linkText,
+                    for (final m in items)
+                      Container(
+                        key: ValueKey('scheduled-${m.id}'),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.paperAlt,
+                          border: Border.all(
+                            color: m.status == ScheduledStatus.failed
+                                ? Colors.red.shade400
+                                : AppColors.lineSoft,
+                            width: 1.5,
                           ),
                         ),
-                      ],
-                    ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              m.content,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.body,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              m.status == ScheduledStatus.failed
+                                  ? m.failureText
+                                  : 'Arrives: '
+                                        '${formatArrival(context, m.sendAt)}',
+                              style: AppTextStyles.smallDim.copyWith(
+                                color: m.status == ScheduledStatus.failed
+                                    ? Colors.red.shade400
+                                    : AppColors.primaryPale,
+                              ),
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                if (m.status == ScheduledStatus.pending)
+                                  TextButton(
+                                    key: ValueKey('scheduled-edit-${m.id}'),
+                                    onPressed: () => showScheduleComposer(
+                                      context,
+                                      editing: m,
+                                    ),
+                                    child: Text(
+                                      'Change',
+                                      style: AppTextStyles.linkText,
+                                    ),
+                                  ),
+                                TextButton(
+                                  key: ValueKey('scheduled-remove-${m.id}'),
+                                  onPressed: () => _remove(context, ref, m),
+                                  child: Text(
+                                    m.status == ScheduledStatus.failed
+                                        ? 'Dismiss'
+                                        : 'Remove',
+                                    style: AppTextStyles.linkText,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+              child: SerafimButton(
+                key: const ValueKey('scheduled-new'),
+                label: 'NEW SCHEDULED MESSAGE',
+                onPressed: () => showScheduleComposer(
+                  context,
+                  recipientId: recipientId,
+                  groupId: groupId,
+                  initialText: initialText,
+                  onScheduled: onScheduled,
+                ),
+              ),
+            ),
           ],
         ),
       ),

@@ -296,8 +296,11 @@ void main() {
     });
   });
 
-  group('the list above the message box', () {
+  group('the scheduled list, behind the paperclip', () {
     Future<(ProviderContainer, _Server)> show(WidgetTester t) async {
+      t.view.physicalSize = const Size(500, 1000);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
       final server = _Server();
       final c = ProviderContainer(
         overrides: [
@@ -309,8 +312,19 @@ void main() {
       await t.pumpWidget(
         UncontrolledProviderScope(
           container: c,
-          child: const MaterialApp(
-            home: Scaffold(body: ScheduledMessagesBar(roomId: room)),
+          child: MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showScheduledMessages(
+                    context,
+                    roomId: room,
+                    recipientId: 'ann',
+                  ),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
           ),
         ),
       );
@@ -318,47 +332,65 @@ void main() {
       return (c, server);
     }
 
-    testWidgets('only shows when this chat has some; they can be cancelled', (
-      t,
-    ) async {
-      final (c, server) = await show(t);
-      expect(find.byKey(const ValueKey('scheduled-bar')), findsNothing);
+    Future<void> open(WidgetTester t) async {
+      await t.tap(find.text('open'));
+      await t.pumpAndSettle();
+    }
 
+    testWidgets('empty: says so, and offers a new one', (t) async {
+      await show(t);
+      await open(t);
+      expect(find.byKey(const ValueKey('scheduled-empty')), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('scheduled-new')));
+      await t.pumpAndSettle();
+      expect(find.text('SCHEDULE A MESSAGE'), findsOneWidget);
+    });
+
+    testWidgets('shows only this chat; a new one appears; one can be removed '
+        'and the list stays open', (t) async {
+      final (c, server) = await show(t);
       final soon = DateTime.now().add(const Duration(hours: 1));
       final n = c.read(scheduledMessagesProvider.notifier);
       await n.schedule(recipientId: 'someone', content: 'other', sendAt: soon);
-      await t.pump();
-      expect(find.byKey(const ValueKey('scheduled-bar')), findsNothing);
-
       await n.schedule(recipientId: 'ann', content: 'hello', sendAt: soon);
-      await t.pump();
-      expect(find.text('1 scheduled message'), findsOneWidget);
-
-      await t.tap(find.byKey(const ValueKey('scheduled-bar')));
-      await t.pumpAndSettle();
+      await open(t);
       expect(find.text('hello'), findsOneWidget);
       expect(find.text('other'), findsNothing);
+
+      await t.tap(find.byKey(const ValueKey('scheduled-new')));
+      await t.pumpAndSettle();
+      await t.enterText(find.byType(TextField), 'another');
+      await t.pump();
+      await t.tap(find.text('In 1 hour'));
+      await t.pump();
+      await t.tap(find.byKey(const ValueKey('schedule-submit')));
+      await t.pumpAndSettle();
+      expect(find.text('another'), findsOneWidget);
+      expect(server.rows.last.recipientId, 'ann');
+
       await t.tap(find.byKey(const ValueKey('scheduled-remove-s1')));
       await t.pumpAndSettle();
       expect(server.removed, ['s1']);
-      expect(find.byKey(const ValueKey('scheduled-bar')), findsNothing);
+      expect(find.text('hello'), findsNothing);
+      await t.tap(find.byKey(const ValueKey('scheduled-remove-s2')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('scheduled-empty')), findsOneWidget);
     });
 
     testWidgets('one that could not go says why', (t) async {
-      final (c, _) = await show(t);
-      await c.read(scheduledMessagesProvider.notifier).heard({
-        'type': 'scheduled_update',
-        'id': 's9',
-        'recipient_id': 'ann',
-        'content': 'hello',
-        'send_at': '2026-11-06T10:00:00Z',
-        'status': 'failed',
-        'reason': 'user_unavailable',
-      });
-      await t.pump();
-      expect(find.textContaining("couldn't be sent"), findsOneWidget);
-      await t.tap(find.byKey(const ValueKey('scheduled-bar')));
-      await t.pumpAndSettle();
+      final (c, server) = await show(t);
+      server.rows.add(
+        ScheduledMessage.fromJson({
+          'id': 's9',
+          'recipient_id': 'ann',
+          'content': 'hello',
+          'send_at': '2026-11-06T10:00:00Z',
+          'status': 'failed',
+          'reason': 'user_unavailable',
+        }),
+      );
+      await c.read(scheduledMessagesProvider.notifier).refresh();
+      await open(t);
       expect(find.text('This person is not available.'), findsOneWidget);
       expect(find.text('Dismiss'), findsOneWidget);
       expect(find.text('Change'), findsNothing);

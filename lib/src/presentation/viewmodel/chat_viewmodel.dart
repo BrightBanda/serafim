@@ -1558,6 +1558,13 @@ class ChatViewModel extends Notifier<ChatState> {
         }
       }
       return true;
+    } on ApiException catch (error) {
+      // Past its time on the server: the page explains, using this.
+      if (error.statusCode == 410) {
+        ref.read(expiredFilesProvider.notifier).add(messageId);
+      }
+      _log('file download failed: $error');
+      return false;
     } catch (error) {
       _log('file download failed: $error');
       return false;
@@ -1579,14 +1586,41 @@ class ChatViewModel extends Notifier<ChatState> {
     final mediaId = source.mediaRemoteId;
     if (user == null || mediaId == null) return false;
     final tempId = DateTime.now().microsecondsSinceEpoch.toString();
-    final copy = await ref
-        .read(chatFileServiceProvider)
-        .forward(
-          mediaId,
-          clientId: tempId,
-          recipientId: groupId == null ? recipientId : null,
-          groupId: groupId,
-        );
+    final ChatFileUpload copy;
+    try {
+      copy = await ref
+          .read(chatFileServiceProvider)
+          .forward(
+            mediaId,
+            clientId: tempId,
+            recipientId: groupId == null ? recipientId : null,
+            groupId: groupId,
+          );
+    } on ApiException catch (error) {
+      // Gone from the server, but still on this phone (the sender's own copy,
+      // say): send it afresh, which is how it gets resent.
+      final path = source.localMediaPath;
+      if (error.statusCode != 410 ||
+          path == null ||
+          !await File(path).exists()) {
+        rethrow;
+      }
+      await sendFile(
+        roomId: roomId,
+        recipientId: recipientId,
+        groupId: groupId,
+        file: PickedChatFile(
+          path: path,
+          name: source.fileName ?? path.split('/').last,
+          size: await File(path).length(),
+          kind: source.type == MessageType.video
+              ? ChatFileKind.video
+              : ChatFileKind.audio,
+          durationMs: source.durationMs,
+        ),
+      );
+      return true;
+    }
 
     // Each message owns its local file (deleting a message deletes its
     // file), so the forwarded one gets its own copy when there is one.

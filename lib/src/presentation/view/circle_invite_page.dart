@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/circle.dart';
 import 'package:serafim/src/data/models/public_user.dart';
@@ -107,7 +108,7 @@ class _CircleInvitePageState extends ConsumerState<CircleInvitePage> {
                           textAlign: TextAlign.center,
                         ),
                       )
-                    : CircularProgressIndicator(color: AppColors.primary),
+                    : const SerafimLoader(),
               )
             : _body(circle, friends.value!, manager),
       ),

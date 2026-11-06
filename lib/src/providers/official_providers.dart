@@ -1,4 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:serafim/src/data/services/chat_file_service.dart';
+import 'package:serafim/src/providers/chat_file_providers.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/announcement.dart';
 import 'package:serafim/src/data/models/app_update.dart';
@@ -152,6 +160,57 @@ class OfficialChatController extends AsyncNotifier<OfficialChatState> {
     }
   }
 
+  /// Administrators only: uploads [file] and announces it, with [content] as
+  /// its words (which may be empty). Returns null on success or a message to
+  /// show.
+  Future<String?> postVideo(
+    PickedChatFile file, {
+    String content = '',
+    void Function(double progress)? onProgress,
+  }) async {
+    final contentType =
+        chatFileContentType(file.name, ChatFileKind.video) ??
+        chatFileContentType(file.path, ChatFileKind.video);
+    if (contentType == null) {
+      return "That video format can't be sent. Try MP4, MOV or WebM.";
+    }
+    try {
+      final uploadPath = await _service.startVideoUpload(
+        contentType: contentType,
+        size: file.size,
+      );
+      Uint8List? thumbnail;
+      try {
+        thumbnail = await ref.read(videoThumbnailerProvider)(file.path);
+      } catch (_) {
+        // It still works without a preview picture.
+      }
+      await ref
+          .read(chatFileServiceProvider)
+          .upload(
+            clientId: uploadPath,
+            path: file.path,
+            uploadPath: uploadPath,
+            contentType: contentType,
+            onProgress: onProgress,
+          );
+      _insert(
+        await _service.post(
+          content.trim(),
+          video: {
+            'upload_path': uploadPath,
+            'file_name': file.name,
+            'duration_ms': file.durationMs ?? 0,
+            if (thumbnail != null) 'thumbnail': base64Encode(thumbnail),
+          },
+        ),
+      );
+      return null;
+    } catch (error) {
+      return humanError(error, fallback: "Couldn't post the video.");
+    }
+  }
+
   /// Administrators only: announces an Android release. Returns null on
   /// success or a message to show.
   Future<String?> postUpdate(AppUpdate update) async {
@@ -178,6 +237,8 @@ class OfficialChatController extends AsyncNotifier<OfficialChatState> {
   void receive(Announcement announcement) => _insert(announcement);
 
   void removeLocal(String id) {
+    // Its video is gone for everyone now, so this phone's copy goes too.
+    unawaited(ref.read(officialVideoStoreProvider).forget(id));
     final current = state.value;
     if (current == null) return;
     _save(
@@ -219,6 +280,58 @@ class OfficialChatController extends AsyncNotifier<OfficialChatState> {
       ..sort((x, y) => y.createdAt.compareTo(x.createdAt));
   }
 }
+
+/// The videos of announcements on this phone. Kept in the app's own files,
+/// outside the chat database, so "keep messages for" never removes them; a copy
+/// only goes when its announcement is deleted.
+class OfficialVideoStore {
+  OfficialVideoStore(this._ref);
+  final Ref _ref;
+
+  Future<Directory> _dir() async {
+    final base = await getApplicationSupportDirectory();
+    return Directory('${base.path}/official_videos').create(recursive: true);
+  }
+
+  static String _extension(AnnouncementVideo video) {
+    final name = video.name;
+    final dot = name.lastIndexOf('.');
+    return dot < 0 ? 'mp4' : name.substring(dot + 1).toLowerCase();
+  }
+
+  /// The video of [announcement] on this phone, fetching it the first time.
+  Future<String> fileFor(
+    Announcement announcement, {
+    void Function(double progress)? onProgress,
+  }) async {
+    final video = announcement.video!;
+    final path =
+        '${(await _dir()).path}/${announcement.id}.${_extension(video)}';
+    if (await File(path).exists()) return path;
+    final url = await _ref
+        .read(officialServiceProvider)
+        .videoUrl(announcement.id);
+    await _ref
+        .read(chatFileServiceProvider)
+        .downloadFrom(url, path, onProgress: onProgress);
+    return path;
+  }
+
+  /// Removes this phone's copy of a deleted announcement's video. Never throws.
+  Future<void> forget(String announcementId) async {
+    try {
+      await for (final f in (await _dir()).list()) {
+        if (f.uri.pathSegments.last.startsWith('$announcementId.')) {
+          await f.delete();
+        }
+      }
+    } catch (_) {}
+  }
+}
+
+final officialVideoStoreProvider = Provider<OfficialVideoStore>(
+  OfficialVideoStore.new,
+);
 
 final officialChatProvider =
     AsyncNotifierProvider<OfficialChatController, OfficialChatState>(
