@@ -9,6 +9,9 @@ typedef GalleryImage = ({
   String path,
   Future<void> Function()? onSave,
   Future<void> Function()? onDelete,
+
+  /// Edits a copy of a drawing. True once the copy has been sent.
+  Future<bool> Function()? onEdit,
 });
 
 /// Opens [images] full screen at [initialIndex]; swipe sideways to move
@@ -74,6 +77,17 @@ class _ChatImageGalleryState extends State<ChatImageGallery> {
               )
             : null,
         actions: [
+          if (current.onEdit case final edit?)
+            IconButton(
+              key: const ValueKey('gallery-edit-copy'),
+              tooltip: 'Edit a copy',
+              icon: const Icon(Icons.draw_outlined),
+              onPressed: () async {
+                final navigator = Navigator.of(context);
+                // Back to the chat, where the new copy now is.
+                if (await edit() && mounted) navigator.pop();
+              },
+            ),
           if (current.onDelete case final delete?)
             IconButton(
               tooltip: 'Delete',

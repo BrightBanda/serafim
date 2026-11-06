@@ -22,7 +22,36 @@ class DrawToolbar extends StatelessWidget {
     this.onEraser,
     this.eraserWidth = defaultEraserIndex,
     this.onEraserWidth,
+    this.canRedo = false,
+    this.onRedo,
+    this.brush = Brush.pen,
+    this.onBrush,
+    this.smoothing = DrawSmoothing.off,
+    this.onSmoothing,
+    this.onSticker,
   });
+
+  /// Brings back what Undo took. Only shown when [onRedo] is given.
+  final bool canRedo;
+  final VoidCallback? onRedo;
+
+  /// The brush in use. The brushes are only shown when [onBrush] is given.
+  final Brush brush;
+  final ValueChanged<Brush>? onBrush;
+
+  /// How much lines are steadied. Only shown when [onSmoothing] is given.
+  final DrawSmoothing smoothing;
+  final ValueChanged<DrawSmoothing>? onSmoothing;
+
+  /// Opens the stickers. Only shown when given.
+  final VoidCallback? onSticker;
+
+  static const _brushIcons = {
+    Brush.pen: Icons.edit,
+    Brush.marker: Icons.brush,
+    Brush.highlighter: Icons.border_color,
+    Brush.ink: Icons.gesture,
+  };
 
   /// Index into [drawColors] / [drawWidths].
   final int color;
@@ -139,20 +168,105 @@ class DrawToolbar extends StatelessWidget {
                 ),
               ),
             const Spacer(),
-            IconButton(
-              key: const ValueKey('draw-undo'),
-              tooltip: 'Undo',
-              icon: const Icon(Icons.undo, color: Colors.white),
-              onPressed: hasStrokes ? onUndo : null,
+            _action(
+              const ValueKey('draw-undo'),
+              'Undo',
+              Icons.undo,
+              hasStrokes ? onUndo : null,
             ),
-            IconButton(
-              key: const ValueKey('draw-clear'),
-              tooltip: 'Clear all',
-              icon: const Icon(Icons.delete_sweep, color: Colors.white),
-              onPressed: hasStrokes ? onClear : null,
+            if (onRedo != null)
+              _action(
+                const ValueKey('draw-redo'),
+                'Redo',
+                Icons.redo,
+                canRedo ? onRedo : null,
+              ),
+            _action(
+              const ValueKey('draw-clear'),
+              'Clear all',
+              Icons.delete_sweep,
+              hasStrokes ? onClear : null,
             ),
           ],
         ),
+        if (onBrush != null || onSmoothing != null || onSticker != null) ...[
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                if (onBrush case final choose?)
+                  for (final b in Brush.values)
+                    Tooltip(
+                      message: _brushName(b),
+                      child: _SizeButton(
+                        key: ValueKey('draw-brush-${b.name}'),
+                        selected: b == brush && !erasing,
+                        onTap: () => choose(b),
+                        child: Icon(
+                          _brushIcons[b],
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                if (onSticker case final open?)
+                  Tooltip(
+                    message: 'Stickers',
+                    child: _SizeButton(
+                      key: const ValueKey('draw-stickers'),
+                      selected: false,
+                      onTap: open,
+                      child: const Icon(
+                        Icons.emoji_emotions_outlined,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                if (onSmoothing case final choose?)
+                  Tooltip(
+                    message: 'Steadies your lines as you draw',
+                    child: GestureDetector(
+                      key: const ValueKey('draw-smoothing'),
+                      onTap: () => choose(smoothing.next),
+                      child: Container(
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        margin: const EdgeInsets.only(right: 6),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: smoothing == DrawSmoothing.off
+                                ? Colors.white24
+                                : Colors.white,
+                            width: smoothing == DrawSmoothing.off ? 1 : 2,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.auto_fix_high,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Smooth\n${smoothing.label}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                height: 1.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
         if (extra != null) ...[
           const SizedBox(height: 8),
           Align(alignment: Alignment.centerLeft, child: extra!),
@@ -161,6 +275,29 @@ class DrawToolbar extends StatelessWidget {
     );
   }
 }
+
+String _brushName(Brush b) => switch (b) {
+  Brush.pen => 'Pen',
+  Brush.marker => 'Marker',
+  Brush.highlighter => 'Highlighter',
+  Brush.ink => 'Brush pen',
+};
+
+/// Undo, redo, clear: compact, so all three fit beside the sizes on a narrow
+/// phone.
+Widget _action(Key key, String tooltip, IconData icon, VoidCallback? onTap) =>
+    IconButton(
+      key: key,
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 34, minHeight: 36),
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: Icon(icon, color: onTap == null ? Colors.white38 : Colors.white),
+      onPressed: onTap,
+    );
 
 /// One size choice: a box with a preview of the line inside.
 class _SizeButton extends StatelessWidget {

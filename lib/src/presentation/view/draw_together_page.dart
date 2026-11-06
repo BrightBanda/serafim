@@ -5,7 +5,7 @@ import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/draw_together_providers.dart';
 import 'package:serafim/src/providers/social_providers.dart';
-import 'package:serafim/src/utils/image_editor/draw_canvas.dart';
+import 'package:serafim/src/utils/image_editor/draw_pad.dart';
 import 'package:serafim/src/utils/image_editor/draw_toolbar.dart';
 import 'package:serafim/src/utils/image_editor/scribble.dart';
 import 'package:serafim/src/utils/image_editor/stroke.dart';
@@ -33,13 +33,27 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
   int _width = defaultWidthIndex;
   int _eraserWidth = defaultEraserIndex;
   bool _erasing = false;
-  double _side = 1;
   bool _sending = false;
+  Brush _brush = Brush.pen;
+  DrawSmoothing _smoothing = DrawSmoothing.light;
+
+  /// The sticker being positioned on the sheet.
+  String? _placing;
 
   DrawTogether get _notifier => ref.read(drawTogetherProvider.notifier);
 
-  Offset _norm(Offset p) =>
-      Offset((p.dx / _side).clamp(0.0, 1.0), (p.dy / _side).clamp(0.0, 1.0));
+  @override
+  void initState() {
+    super.initState();
+    loadDrawSmoothing().then((s) {
+      if (mounted) setState(() => _smoothing = s);
+    });
+  }
+
+  Future<void> _pickSticker() async {
+    final id = await pickDrawSticker(context);
+    if (id != null && mounted) setState(() => _placing = id);
+  }
 
   /// Puts the drawing in the chat as a scribble.
   Future<void> _sendToChat(DrawSession session) async {
@@ -206,47 +220,36 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
                       ? box.maxWidth
                       : box.maxHeight) -
                   32;
-              _side = side;
               return Center(
-                child: Stack(
-                  children: [
-                    Container(
-                      width: side,
-                      height: side,
-                      decoration: BoxDecoration(
-                        color: paper,
-                        border: Border.all(color: Colors.white24, width: 2),
-                      ),
-                      child: GestureDetector(
-                        key: const ValueKey('together-pad'),
-                        onPanStart: ended
-                            ? null
-                            : (d) => _notifier.beginStroke(
-                                color: drawColors[_color],
-                                widthIndex: _erasing ? _eraserWidth : _width,
-                                erase: _erasing,
-                                point: _norm(d.localPosition),
-                              ),
-                        onPanUpdate: ended
-                            ? null
-                            : (d) => _notifier.extendStroke(
-                                _norm(d.localPosition),
-                              ),
-                        onPanEnd: ended ? null : (_) => _notifier.endStroke(),
-                        onPanCancel: ended ? null : _notifier.endStroke,
-                        child: RepaintBoundary(
-                          child: CustomPaint(
-                            painter: StrokePainter(
-                              strokes: [
-                                for (final s in session.strokes) s.stroke,
-                              ],
-                              scale: side,
-                            ),
-                            size: Size.infinite,
-                          ),
-                        ),
-                      ),
-                    ),
+                child: DrawPad(
+                  padKey: const ValueKey('together-pad'),
+                  side: side,
+                  paper: paper,
+                  enabled: !ended,
+                  smoothing: _smoothing,
+                  strokes: [for (final s in session.strokes) s.stroke],
+                  onBegin: (point) => _notifier.beginStroke(
+                    color: drawColors[_color],
+                    widthIndex: _erasing ? _eraserWidth : _width,
+                    erase: _erasing,
+                    brush: _brush,
+                    point: point,
+                  ),
+                  onExtend: _notifier.extendStroke,
+                  onEnd: _notifier.endStroke,
+                  onCancel: _notifier.cancelStroke,
+                  placing: _placing,
+                  onPlacingCancelled: () => setState(() => _placing = null),
+                  onPlaced: (at, size, rotation) {
+                    _notifier.placeSticker(
+                      _placing!,
+                      at: at,
+                      size: size,
+                      rotation: rotation,
+                    );
+                    setState(() => _placing = null);
+                  },
+                  overlay: [
                     if (session.peerAway && !ended)
                       Positioned(
                         left: 0,
@@ -267,18 +270,18 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
                       ),
                     if (ended)
                       Positioned.fill(
-                        child: Container(
-                          width: side,
-                          height: side,
-                          color: Colors.black54,
-                          alignment: Alignment.center,
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            session.endedBecause ?? 'It ended.',
-                            textAlign: TextAlign.center,
-                            style: AppTextStyles.displayHeading.copyWith(
-                              fontSize: 20,
-                              color: Colors.white,
+                        child: IgnorePointer(
+                          child: Container(
+                            color: Colors.black54,
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              session.endedBecause ?? 'It ended.',
+                              textAlign: TextAlign.center,
+                              style: AppTextStyles.displayHeading.copyWith(
+                                fontSize: 20,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                         ),
@@ -306,7 +309,20 @@ class _DrawTogetherPageState extends ConsumerState<DrawTogetherPage> {
               onEraser: () => setState(() => _erasing = !_erasing),
               hasStrokes: session.strokes.any((s) => s.mine),
               onUndo: _notifier.undo,
+              canRedo: _notifier.canRedo,
+              onRedo: _notifier.redo,
               onClear: _notifier.clear,
+              brush: _brush,
+              onBrush: (b) => setState(() {
+                _brush = b;
+                _erasing = false;
+              }),
+              smoothing: _smoothing,
+              onSmoothing: (next) {
+                saveDrawSmoothing(next);
+                setState(() => _smoothing = next);
+              },
+              onSticker: _pickSticker,
               extra: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

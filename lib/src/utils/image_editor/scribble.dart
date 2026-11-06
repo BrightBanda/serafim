@@ -32,12 +32,14 @@ bool hasScribbleMarker(Uint8List png) {
 
 /// Draws [strokes] on a square sheet of [paper], [pixels] across, and returns
 /// a labelled PNG. [displayedWidth] is how wide the pad was on screen, so the
-/// lines come out the same thickness relative to the sheet.
+/// lines come out the same thickness relative to the sheet. [drawing] is an
+/// earlier drawing this one is an edited copy of.
 Future<Uint8List> renderScribble({
   required List<Stroke> strokes,
   required double displayedWidth,
   required Color paper,
   int pixels = 1000,
+  ui.Image? drawing,
 }) async {
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
@@ -45,6 +47,7 @@ Future<Uint8List> renderScribble({
   canvas.drawRect(Offset.zero & size, Paint()..color = paper);
   StrokePainter(
     strokes: strokes,
+    drawing: drawing,
     scale: strokeScale(displayedWidth: displayedWidth, imageWidth: pixels),
   ).paint(canvas, size);
   final picture = recorder.endRecording();

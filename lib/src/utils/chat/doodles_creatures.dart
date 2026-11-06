@@ -595,3 +595,205 @@ void meltingScoop(Canvas c, DoodleInk ink) {
   );
   ink.line.strokeWidth = 1.8;
 }
+
+/// A smiling jellyfish among scattered ticks, traced from the owner's own
+/// marker drawing, wobbles and all, on the same cream paper. Unlike the other
+/// doodles its colours are the drawing itself, so it ignores the ink. The
+/// sheet is 100 across.
+void jellyfish(Canvas c, DoodleInk _) {
+  const yellow = Color(0xFFFDD835);
+  const blue = Color(0xFF1E88E5);
+  const red = Color(0xFFE53935);
+  const orange = Color(0xFFFB8C00);
+  const green = Color(0xFF43A047);
+
+  c.drawCircle(
+    const Offset(50, 50),
+    64,
+    Paint()..color = const Color(0xFFF6F1E7),
+  );
+
+  void line(Color colour, List<double> xy) {
+    final pts = [
+      for (var i = 0; i + 1 < xy.length; i += 2) Offset(xy[i], xy[i + 1]),
+    ];
+    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+    for (var i = 1; i < pts.length - 1; i++) {
+      final mid = (pts[i] + pts[i + 1]) / 2;
+      path.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
+    }
+    path.lineTo(pts.last.dx, pts.last.dy);
+    c.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..strokeWidth = 2.2
+        ..color = colour,
+    );
+  }
+
+  void dot(Color colour, double x, double y, double r) =>
+      c.drawCircle(Offset(x, y), r, Paint()..color = colour);
+
+  // The bell: over the top, the double line on the left, then the scalloped
+  // edge along the bottom.
+  line(yellow, const [
+    22.8,
+    32,
+    25,
+    26.5,
+    30,
+    21.5,
+    35,
+    18,
+    38.5,
+    16,
+    47,
+    15.2,
+    54,
+    15,
+    60,
+    15.5, //
+    68, 19, 74, 24, 78, 29.5, 80.5, 35, 80.8, 37.5,
+  ]);
+  line(yellow, const [41, 19, 34, 21.5, 29, 24.5, 26, 28.5, 23.8, 32]);
+  line(yellow, const [78.5, 36.5, 79, 39.5, 77.5, 44.5]);
+  line(yellow, const [
+    79.5,
+    43.2,
+    77,
+    45.5,
+    73.5,
+    44,
+    69,
+    41,
+    64,
+    40.8,
+    59,
+    43,
+    54.5,
+    46,
+    48,
+    45.5, //
+    43,
+    43,
+    39.5,
+    39.5,
+    35,
+    38.5,
+    30.5,
+    41.5,
+    27,
+    44.5,
+    23,
+    43.5,
+    21.2,
+    41,
+    22,
+    36.5, //
+    24, 32,
+  ]);
+
+  // The face.
+  dot(blue, 42, 26, 1.5);
+  dot(blue, 60.3, 26.8, 1.8);
+  line(blue, const [45, 33.2, 47.5, 35, 51, 36.5, 54.5, 35.2, 56, 32.2]);
+
+  // The tentacles.
+  line(blue, const [
+    23.3,
+    44.8,
+    27,
+    47.5,
+    29.5,
+    51,
+    29,
+    56,
+    27.2,
+    61,
+    26.8,
+    65,
+    30,
+    70,
+    31.5,
+    72, //
+    30.2, 77, 30.5, 81, 31.5, 82.2,
+  ]);
+  line(red, const [
+    41.2,
+    43.5,
+    45,
+    47.5,
+    46,
+    52,
+    44,
+    58,
+    44,
+    63,
+    47,
+    69,
+    49,
+    73.5,
+    46.5,
+    80,
+    46,
+    83.5, //
+    47.2, 85.8, 50.2, 85,
+  ]);
+  line(red, const [
+    57.2,
+    44.7,
+    60,
+    48,
+    63,
+    53,
+    62.5,
+    58,
+    60,
+    64,
+    60,
+    69,
+    64,
+    74.5,
+    65.5,
+    79,
+    66,
+    84, //
+    65.5, 85.5,
+  ]);
+  line(green, const [
+    70.8,
+    45.3,
+    74.5,
+    48.5,
+    76.2,
+    52.5,
+    75.2,
+    58.5,
+    73,
+    64.5,
+    75,
+    69,
+    76.8,
+    74,
+    77,
+    78, //
+    76.2, 81,
+  ]);
+
+  // Everything scattered around it.
+  line(orange, const [32.3, 7.3, 37, 8.5, 42, 10.8, 44, 6.2, 47.2, 4]);
+  dot(orange, 10.8, 12.5, 1.6);
+  dot(orange, 88.3, 10.2, 1.7);
+  line(orange, const [85.8, 29.3, 89, 33, 91.8, 36.8, 92.5, 30, 96.3, 22]);
+  line(orange, const [3.3, 51.6, 6.5, 54.5, 9, 57.5, 10, 53, 11.8, 49.8]);
+  line(green, const [83.8, 70, 88.5, 73.7]);
+  line(green, const [95.2, 59.5, 91.5, 66, 87, 71.5, 88.5, 73.7]);
+  line(green, const [5.2, 85.3, 8, 87, 11, 89.2, 10.5, 84, 12.2, 80]);
+  line(green, const [83.5, 87.3, 88, 89.5, 90.5, 93.3]);
+  line(red, const [23.5, 93.5, 27, 95.5, 32.2, 98.5]);
+  line(red, const [24.5, 93.5, 26, 94]);
+  line(red, const [29.5, 96.5, 30.5, 93.5, 28.5, 93.2]);
+}

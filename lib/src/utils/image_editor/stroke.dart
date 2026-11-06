@@ -1,14 +1,81 @@
 import 'package:flutter/material.dart';
 
-/// One freehand line drawn on a picture. Points are in the coordinates of the
-/// on-screen picture; [width] is the on-screen thickness.
+/// What a line is drawn with.
+enum Brush {
+  /// An even, solid line.
+  pen,
+
+  /// Wider and slightly see-through.
+  marker,
+
+  /// Very wide and see-through, for colouring over things.
+  highlighter,
+
+  /// Thin when fast and at the ends, thick when slow: like a brush pen.
+  ink;
+
+  /// The name that travels between phones; anything unknown is a [pen].
+  static Brush parse(Object? name) =>
+      Brush.values.firstWhere((b) => b.name == name, orElse: () => Brush.pen);
+}
+
+/// How much a line is steadied as it is drawn.
+enum DrawSmoothing {
+  off(1, 'Off'),
+  light(0.45, 'Light'),
+  strong(0.2, 'Strong');
+
+  const DrawSmoothing(this.follow, this.label);
+
+  /// How far the line moves towards the finger with each new position.
+  final double follow;
+  final String label;
+
+  DrawSmoothing get next => values[(index + 1) % values.length];
+}
+
+/// Steadies a shaky finger: the line follows it a little behind, so small
+/// wobbles never reach the page. What comes out is an ordinary list of points,
+/// so the other phone gets the steadied line and needs no smoothing of its own.
+class StrokeSmoother {
+  StrokeSmoother(this.smoothing, Offset start) : _at = start;
+
+  final DrawSmoothing smoothing;
+  Offset _at;
+
+  /// The next point of the line, for the finger being at [finger].
+  Offset follow(Offset finger) => _at += (finger - _at) * smoothing.follow;
+}
+
+/// One freehand line drawn on a picture, or (with [sticker] set) a sticker
+/// stuck on it. Points are in the coordinates of the on-screen picture; [width]
+/// is the on-screen thickness.
 class Stroke {
   Stroke({
     required this.color,
     required this.width,
     List<Offset>? points,
     this.erase = false,
+    this.brush = Brush.pen,
+    this.sticker,
+    this.stickerSize = 0,
+    this.stickerRotation = 0,
   }) : points = points ?? [];
+
+  /// A sticker placed at [at]: [size] across, turned by [rotation] radians.
+  factory Stroke.sticker(
+    String id, {
+    required Offset at,
+    required double size,
+    double rotation = 0,
+  }) => Stroke(
+    color: const Color(0x00000000),
+    width: 0.01,
+    points: [at],
+    sticker: id,
+    stickerSize: size,
+    stickerRotation: rotation,
+  );
 
   final Color color;
   final double width;
@@ -17,7 +84,19 @@ class Stroke {
   /// An eraser stroke: it rubs out the pen strokes under it instead of
   /// painting. (It never touches the picture or paper underneath.)
   final bool erase;
+
+  final Brush brush;
+
+  /// The id of the sticker this is instead of a line; `points.first` is its
+  /// centre.
+  final String? sticker;
+  final double stickerSize;
+  final double stickerRotation;
 }
+
+/// How thick pens are on a shared sheet, per [drawWidths] unit: a pen of size
+/// 8 is `8 / referencePadWidth` of the sheet, whatever the screen.
+const double referencePadWidth = 360;
 
 /// The seven colours to draw with.
 const List<Color> drawColors = [

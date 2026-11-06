@@ -556,10 +556,13 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
   }
 
   /// A hand-drawn note: draw it, then it goes out like a picture.
-  Future<void> _handleScribble() async {
-    if (ref.read(currentUserProvider) == null || _attaching) return;
-    final png = await scribble(context);
-    if (png == null || !mounted) return;
+  ///
+  /// With [editing] it starts from a copy of that drawing, and goes out as a
+  /// new message. True once sent.
+  Future<bool> _handleScribble({String? editing}) async {
+    if (ref.read(currentUserProvider) == null || _attaching) return false;
+    final png = await scribble(context, editing: editing);
+    if (png == null || !mounted) return false;
     setState(() => _attaching = true);
     try {
       await ref
@@ -573,11 +576,13 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
           );
       _reply.clear();
       _scheduleScrollToBottom();
+      return true;
     } catch (error) {
       _toast(
         humanError(error, fallback: "Couldn't send that scribble."),
         error: true,
       );
+      return false;
     } finally {
       if (mounted) setState(() => _attaching = false);
     }
@@ -1614,6 +1619,14 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
         ? "Photos and GIFs can't be shared in groups yet."
         : notFriendsReason;
 
+    // Anyone's drawing here can be edited into a new copy, wherever you may
+    // send pictures.
+    bool canEditCopy(LocalMessage m) =>
+        photoDisabledReason == null &&
+        !m.isDeleted &&
+        m.localMediaPath != null &&
+        isScribble(m.localMediaPath!);
+
     return PopScope(
       canPop: !_stickersOpen && !_searching,
       onPopInvokedWithResult: (didPop, _) {
@@ -1884,6 +1897,12 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                                   ),
                                               onSave: () =>
                                                   _saveToDevice(image, who),
+                                              onEdit: canEditCopy(image)
+                                                  ? () => _handleScribble(
+                                                      editing:
+                                                          image.localMediaPath,
+                                                    )
+                                                  : null,
                                               onDelete: () => _deleteFlow(
                                                 image,
                                                 isOutgoing: isOutgoing,
@@ -1973,6 +1992,11 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                                   ),
                                   onSaveImage: () =>
                                       _saveToDevice(message, who),
+                                  onEditImage: canEditCopy(message)
+                                      ? () => _handleScribble(
+                                          editing: message.localMediaPath,
+                                        )
+                                      : null,
                                   onDeleteImage: () => _deleteFlow(
                                     message,
                                     isOutgoing: isOutgoing,

@@ -24,6 +24,7 @@ class ChatImageAttachment {
     this.onLongPress,
     this.onSave,
     this.onDelete,
+    this.onEdit,
   });
 
   final String path;
@@ -32,6 +33,7 @@ class ChatImageAttachment {
   final VoidCallback? onLongPress;
   final Future<void> Function()? onSave;
   final Future<void> Function()? onDelete;
+  final Future<bool> Function()? onEdit;
 }
 
 /// A single chat message bubble. Purely presentational — takes the
@@ -50,6 +52,7 @@ class ChatBubble extends StatelessWidget {
     this.onLongPress,
     this.onSaveImage,
     this.onDeleteImage,
+    this.onEditImage,
     this.quote,
     this.footer,
     this.forwarded = false,
@@ -67,6 +70,9 @@ class ChatBubble extends StatelessWidget {
 
   /// Adds a Delete button to the full-screen image viewer.
   final Future<void> Function()? onDeleteImage;
+
+  /// Adds Edit a copy to the viewer. True once the copy has been sent.
+  final Future<bool> Function()? onEditImage;
 
   /// Deleted for everyone: shows a placeholder instead of the content.
   final bool deleted;
@@ -221,6 +227,7 @@ class ChatBubble extends StatelessWidget {
                           path: imagePath!,
                           onSave: onSaveImage,
                           onDelete: onDeleteImage,
+                          onEdit: onEditImage,
                         ),
                       ]),
                   child: ConstrainedBox(
@@ -308,7 +315,12 @@ class ChatImageGrid extends StatelessWidget {
             image.onTap ??
             () => openChatImageGallery(context, [
               for (final m in images)
-                (path: m.path, onSave: m.onSave, onDelete: m.onDelete),
+                (
+                  path: m.path,
+                  onSave: m.onSave,
+                  onDelete: m.onDelete,
+                  onEdit: m.onEdit,
+                ),
             ], initialIndex: i),
         onLongPress: image.onLongPress,
         child: SizedBox(

@@ -1,25 +1,57 @@
+import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:serafim/src/utils/image_editor/draw_canvas.dart';
+import 'package:serafim/src/core/errors/human_error.dart';
+import 'package:serafim/src/utils/image_editor/draw_pad.dart';
 import 'package:serafim/src/utils/image_editor/draw_toolbar.dart';
 import 'package:serafim/src/utils/image_editor/scribble.dart';
 import 'package:serafim/src/utils/image_editor/stroke.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
 /// Opens the scribble pad. Returns the drawing as a picture to send, or null
-/// if the person backed out.
-Future<Uint8List?> scribble(BuildContext context) =>
+/// if the person backed out. With [editing] (the path of a scribble) the pad
+/// starts from a copy of that drawing; the original stays as it is.
+Future<Uint8List?> scribble(BuildContext context, {String? editing}) =>
     Navigator.of(context).push<Uint8List>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => const ScribblePage(),
+        builder: (_) => ScribblePage(editing: editing),
       ),
     );
 
-/// A blank square to draw a quick note on and send: a hand-drawn whisper.
+/// The paper an earlier drawing was made on: whichever colour most of its
+/// corners agree on (a line may cross one corner, not all of them).
+Future<Color> paperOf(ui.Image image) async {
+  final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  if (data == null) return scribblePapers.first;
+  Color at(int x, int y) {
+    final o = (y * image.width + x) * 4;
+    return Color.fromARGB(
+      data.getUint8(o + 3),
+      data.getUint8(o),
+      data.getUint8(o + 1),
+      data.getUint8(o + 2),
+    );
+  }
+
+  final w = image.width - 1, h = image.height - 1;
+  final corners = [at(0, 0), at(w, 0), at(0, h), at(w, h)];
+  final count = <Color, int>{};
+  for (final c in corners) {
+    count[c] = (count[c] ?? 0) + 1;
+  }
+  return corners.reduce((a, b) => count[b]! > count[a]! ? b : a);
+}
+
+/// A blank square to draw a quick note on and send: a hand-drawn whisper. Or,
+/// with [editing], a copy of someone's drawing to change and send back.
 class ScribblePage extends StatefulWidget {
-  const ScribblePage({super.key});
+  const ScribblePage({super.key, this.editing});
+
+  /// The path of the drawing this starts from.
+  final String? editing;
 
   @override
   State<ScribblePage> createState() => _ScribblePageState();
@@ -27,13 +59,64 @@ class ScribblePage extends StatefulWidget {
 
 class _ScribblePageState extends State<ScribblePage> {
   final List<Stroke> _strokes = [];
+  final List<Stroke> _undone = [];
   int _color = 1; // black on paper
   int _width = defaultWidthIndex;
   int _eraserWidth = defaultEraserIndex;
   bool _erasing = false;
   int _paper = 0;
-  double _padWidth = 1;
   bool _busy = false;
+  Brush _brush = Brush.pen;
+  DrawSmoothing _smoothing = DrawSmoothing.light;
+  String? _placing;
+
+  /// The drawing being edited, once it has loaded, and the paper it is on.
+  ui.Image? _drawing;
+  Color? _editedPaper;
+
+  bool get _editing => widget.editing != null;
+  Color get _sheet => _editedPaper ?? scribblePapers[_paper];
+
+  @override
+  void initState() {
+    super.initState();
+    loadDrawSmoothing().then((s) {
+      if (mounted) setState(() => _smoothing = s);
+    });
+    if (_editing) _loadDrawing();
+  }
+
+  Future<void> _loadDrawing() async {
+    try {
+      final bytes = await File(widget.editing!).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final image = (await codec.getNextFrame()).image;
+      final paper = await paperOf(image);
+      if (!mounted) {
+        image.dispose();
+        return;
+      }
+      setState(() {
+        _drawing = image;
+        _editedPaper = paper;
+        if (paper.computeLuminance() < 0.2) _color = 0;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(humanError(e, fallback: "Couldn't open that drawing.")),
+        ),
+      );
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _drawing?.dispose();
+    super.dispose();
+  }
 
   Future<void> _send() async {
     if (_busy || _strokes.isEmpty) return;
@@ -41,8 +124,10 @@ class _ScribblePageState extends State<ScribblePage> {
     try {
       final png = await renderScribble(
         strokes: _strokes,
-        displayedWidth: _padWidth,
-        paper: scribblePapers[_paper],
+        // The strokes are fractions of the sheet, so "1 wide" scales them.
+        displayedWidth: 1,
+        paper: _sheet,
+        drawing: _drawing,
       );
       if (mounted) Navigator.of(context).pop(png);
     } catch (_) {
@@ -61,13 +146,25 @@ class _ScribblePageState extends State<ScribblePage> {
     });
   }
 
+  void _add(Stroke stroke) => setState(() {
+    _undone.clear();
+    _strokes.add(stroke);
+  });
+
+  Future<void> _pickSticker() async {
+    final id = await pickDrawSticker(context);
+    if (id != null && mounted) setState(() => _placing = id);
+  }
+
   Future<void> _cancel() async {
     if (_strokes.isEmpty) return Navigator.of(context).pop();
     final discard = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.paperAlt,
-        title: const Text('Throw this scribble away?'),
+        title: Text(
+          _editing ? 'Throw this copy away?' : 'Throw this scribble away?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -85,6 +182,7 @@ class _ScribblePageState extends State<ScribblePage> {
 
   @override
   Widget build(BuildContext context) {
+    final loading = _editing && _drawing == null;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -95,7 +193,7 @@ class _ScribblePageState extends State<ScribblePage> {
         appBar: AppBar(
           backgroundColor: Colors.black,
           foregroundColor: Colors.white,
-          title: const Text('Scribble'),
+          title: Text(_editing ? 'Edit a copy' : 'Scribble'),
           leading: IconButton(
             icon: const Icon(Icons.close),
             onPressed: _busy ? null : _cancel,
@@ -120,6 +218,15 @@ class _ScribblePageState extends State<ScribblePage> {
         body: SafeArea(
           child: Column(
             children: [
+              if (_editing)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Goes out as a new copy. The original stays as it is.',
+                    key: const ValueKey('scribble-copy-note'),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, box) {
@@ -130,38 +237,49 @@ class _ScribblePageState extends State<ScribblePage> {
                             ? box.maxWidth
                             : box.maxHeight) -
                         32;
-                    _padWidth = side;
+                    if (loading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
                     return Center(
-                      child: Container(
-                        width: side,
-                        height: side,
-                        decoration: BoxDecoration(
-                          color: scribblePapers[_paper],
-                          border: Border.all(color: Colors.white24, width: 2),
-                        ),
-                        child: GestureDetector(
-                          key: const ValueKey('scribble-pad'),
-                          onPanStart: (d) => setState(
-                            () => _strokes.add(
-                              Stroke(
-                                color: drawColors[_color],
-                                width: strokeWidthFor(
+                      child: DrawPad(
+                        padKey: const ValueKey('scribble-pad'),
+                        side: side,
+                        paper: _sheet,
+                        drawing: _drawing,
+                        smoothing: _smoothing,
+                        strokes: _strokes,
+                        onBegin: (point) => _add(
+                          Stroke(
+                            color: drawColors[_color],
+                            width:
+                                strokeWidthFor(
                                   _erasing ? _eraserWidth : _width,
                                   erase: _erasing,
-                                ),
-                                erase: _erasing,
-                                points: [d.localPosition],
-                              ),
-                            ),
-                          ),
-                          onPanUpdate: (d) => setState(
-                            () => _strokes.last.points.add(d.localPosition),
-                          ),
-                          child: CustomPaint(
-                            painter: StrokePainter(strokes: _strokes),
-                            size: Size.infinite,
+                                ) /
+                                referencePadWidth,
+                            erase: _erasing,
+                            brush: _brush,
+                            points: [point],
                           ),
                         ),
+                        onExtend: (point) =>
+                            setState(() => _strokes.last.points.add(point)),
+                        onEnd: () {},
+                        onCancel: () => setState(_strokes.removeLast),
+                        placing: _placing,
+                        onPlacingCancelled: () =>
+                            setState(() => _placing = null),
+                        onPlaced: (at, size, rotation) {
+                          _add(
+                            Stroke.sticker(
+                              _placing!,
+                              at: at,
+                              size: size,
+                              rotation: rotation,
+                            ),
+                          );
+                          setState(() => _placing = null);
+                        },
                       ),
                     );
                   },
@@ -182,32 +300,53 @@ class _ScribblePageState extends State<ScribblePage> {
                   erasing: _erasing,
                   onEraser: () => setState(() => _erasing = !_erasing),
                   hasStrokes: _strokes.isNotEmpty,
-                  onUndo: () => setState(() => _strokes.removeLast()),
-                  onClear: () => setState(_strokes.clear),
-                  extra: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var i = 0; i < scribblePapers.length; i++)
-                        GestureDetector(
-                          key: ValueKey('scribble-paper-$i'),
-                          onTap: () => _choosePaper(i),
-                          child: Container(
-                            width: 24,
-                            height: 24,
-                            margin: const EdgeInsets.only(left: 6),
-                            decoration: BoxDecoration(
-                              color: scribblePapers[i],
-                              border: Border.all(
-                                color: i == _paper
-                                    ? Colors.white
-                                    : Colors.white24,
-                                width: i == _paper ? 3 : 1,
+                  onUndo: () =>
+                      setState(() => _undone.add(_strokes.removeLast())),
+                  canRedo: _undone.isNotEmpty,
+                  onRedo: () =>
+                      setState(() => _strokes.add(_undone.removeLast())),
+                  onClear: () => setState(() {
+                    _strokes.clear();
+                    _undone.clear();
+                  }),
+                  brush: _brush,
+                  onBrush: (b) => setState(() {
+                    _brush = b;
+                    _erasing = false;
+                  }),
+                  smoothing: _smoothing,
+                  onSmoothing: (next) {
+                    saveDrawSmoothing(next);
+                    setState(() => _smoothing = next);
+                  },
+                  onSticker: _pickSticker,
+                  // An edited drawing keeps the paper it was drawn on.
+                  extra: _editing
+                      ? null
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (var i = 0; i < scribblePapers.length; i++)
+                              GestureDetector(
+                                key: ValueKey('scribble-paper-$i'),
+                                onTap: () => _choosePaper(i),
+                                child: Container(
+                                  width: 24,
+                                  height: 24,
+                                  margin: const EdgeInsets.only(left: 6),
+                                  decoration: BoxDecoration(
+                                    color: scribblePapers[i],
+                                    border: Border.all(
+                                      color: i == _paper
+                                          ? Colors.white
+                                          : Colors.white24,
+                                      width: i == _paper ? 3 : 1,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
+                          ],
                         ),
-                    ],
-                  ),
                 ),
               ),
             ],

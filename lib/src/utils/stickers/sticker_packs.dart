@@ -1,5 +1,6 @@
 import 'package:serafim/src/utils/chat/doodle_catalogue.dart';
 import 'package:serafim/src/utils/chat/doodle_kit.dart';
+import 'package:serafim/src/utils/chat/doodles_creatures.dart' show jellyfish;
 
 /// How a sticker moves (where animation is on).
 enum StickerMotion { none, bounce, wobble, pulse, float }
@@ -96,6 +97,15 @@ StickerPack _doodlePack() {
             bounds: boundsOf(d),
             motion: motions[name] ?? StickerMotion.none,
           ),
+      // Drawn by the owner in Draw Together: its colours are part of it, and
+      // it stays off the (nearly invisible) chat wallpaper.
+      const Sticker(
+        id: 'doodles/jellyfish',
+        name: 'jellyfish',
+        draw: jellyfish,
+        bounds: DoodleBounds(50, 50, 52),
+        motion: StickerMotion.float,
+      ),
     ],
   );
 }

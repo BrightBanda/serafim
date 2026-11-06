@@ -183,7 +183,12 @@ void _openImages(
   final index = images.indexWhere((e) => e.message.messageId == m.messageId);
   openChatImageGallery(context, [
     for (final e in images)
-      (path: e.message.localMediaPath!, onSave: null, onDelete: null),
+      (
+        path: e.message.localMediaPath!,
+        onSave: null,
+        onDelete: null,
+        onEdit: null,
+      ),
   ], initialIndex: index < 0 ? 0 : index);
 }
 

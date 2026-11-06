@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:serafim/src/core/debug_log.dart';
 
@@ -18,10 +19,6 @@ import 'package:serafim/src/utils/image_editor/stroke.dart';
 ///
 /// Coordinates travel as fractions of the square (0..1) and pen widths as a
 /// fraction of its width, so different screens agree.
-
-/// How thick pens are on the shared sheet, per [drawWidths] unit: a pen of
-/// size 8 is `8 / referencePadWidth` of the sheet, whatever the screen.
-const double referencePadWidth = 360;
 
 enum DrawStatus {
   /// We asked; waiting for them to join.
@@ -125,11 +122,21 @@ class DrawTogether extends Notifier<DrawSession?> {
   static const joinWaits = Duration(seconds: 15);
   static const flushEvery = Duration(milliseconds: 60);
 
+  /// The most numbers the server takes in one stroke frame (300 points).
+  static const maxNumbersPerFrame = 600;
+
   Timer? _giveUp;
   Timer? _flush;
   int _nextStroke = 0;
   SharedStroke? _drawing;
   final List<double> _unsent = [];
+
+  /// My lines taken back with undo, newest last, for redo. A new line, or the
+  /// sheet being cleared, empties it.
+  final List<SharedStroke> _undone = [];
+
+  /// There is something of mine to bring back.
+  bool get canRedo => _undone.isNotEmpty;
 
   /// Whom we invited and then cancelled before the server had named the
   /// session: it is left as soon as it is named.
@@ -289,6 +296,7 @@ class DrawTogether extends Notifier<DrawSession?> {
       case 'started':
       case 'state':
         _giveUp?.cancel();
+        _undone.clear();
         state = s.copyWith(
           status: DrawStatus.live,
           paper: frame['paper'] is int ? frame['paper'] as int : 0,
@@ -303,6 +311,7 @@ class DrawTogether extends Notifier<DrawSession?> {
         state = s.touched();
       case 'clear':
         s.strokes.clear();
+        _undone.clear();
         state = s.touched();
       case 'paper':
         final i = frame['i'];
@@ -352,6 +361,10 @@ class DrawTogether extends Notifier<DrawSession?> {
         color: Color(colour is int ? colour : 0xFF000000),
         width: width is num ? width.toDouble() : 0.02,
         erase: frame['e'] == true,
+        brush: Brush.parse(frame['b']),
+        sticker: frame['s'] is String ? frame['s'] as String : null,
+        stickerSize: frame['z'] is num ? (frame['z'] as num).toDouble() : 0,
+        stickerRotation: frame['r'] is num ? (frame['r'] as num).toDouble() : 0,
       ),
     );
     _addPoints(shared, frame);
@@ -391,15 +404,23 @@ class DrawTogether extends Notifier<DrawSession?> {
     required int widthIndex,
     required bool erase,
     required Offset point,
+    Brush brush = Brush.pen,
   }) {
     final s = state;
     if (s == null || s.status != DrawStatus.live) return;
+    _undone.clear();
     final id = '${_nextStroke++}';
     final width = strokeWidthFor(widthIndex, erase: erase) / referencePadWidth;
     final shared = SharedStroke(
       key: '${_me ?? 'me'}:$id',
       mine: true,
-      stroke: Stroke(color: color, width: width, erase: erase, points: [point]),
+      stroke: Stroke(
+        color: color,
+        width: width,
+        erase: erase,
+        brush: brush,
+        points: [point],
+      ),
     );
     _drawing = shared;
     _unsent
@@ -429,21 +450,89 @@ class DrawTogether extends Notifier<DrawSession?> {
     _flush = null;
   }
 
+  /// The line just begun was really the start of a pinch: it never happened.
+  void cancelStroke() {
+    final s = state;
+    final drawing = _drawing;
+    if (s == null || drawing == null) return;
+    _drawing = null;
+    _unsent.clear();
+    _flush?.cancel();
+    _flush = null;
+    s.strokes.remove(drawing);
+    _sendInSession({'op': 'undo', 'id': drawing.key.split(':').last});
+    state = s.touched();
+  }
+
+  /// Sticks a sticker on the sheet, for both of us. It travels and undoes
+  /// like a one-point line.
+  void placeSticker(
+    String sticker, {
+    required Offset at,
+    required double size,
+    required double rotation,
+  }) {
+    final s = state;
+    if (s == null || s.status != DrawStatus.live) return;
+    _undone.clear();
+    final shared = SharedStroke(
+      key: '${_me ?? 'me'}:${_nextStroke++}',
+      mine: true,
+      stroke: Stroke.sticker(sticker, at: at, size: size, rotation: rotation),
+    )..done = true;
+    s.strokes.add(shared);
+    _sendWhole(shared);
+    state = s.touched();
+  }
+
+  /// The frame for [shared], carrying [points].
+  Map<String, dynamic> _strokeFrame(
+    SharedStroke shared,
+    List<double> points, {
+    required bool done,
+  }) {
+    final stroke = shared.stroke;
+    return {
+      'op': 'stroke',
+      'id': shared.key.split(':').last,
+      'c': stroke.color.toARGB32(),
+      'w': stroke.width,
+      'e': stroke.erase,
+      'p': points,
+      'done': done,
+      if (stroke.brush != Brush.pen) 'b': stroke.brush.name,
+      if (stroke.sticker != null) ...{
+        's': stroke.sticker,
+        'z': stroke.stickerSize,
+        'r': stroke.stickerRotation,
+      },
+    };
+  }
+
+  /// Sends a finished line all at once, in frames small enough for the server.
+  void _sendWhole(SharedStroke shared) {
+    final numbers = [
+      for (final p in shared.stroke.points) ...[p.dx, p.dy],
+    ];
+    for (var i = 0; i < numbers.length; i += maxNumbersPerFrame) {
+      final end = math.min(i + maxNumbersPerFrame, numbers.length);
+      _sendInSession(
+        _strokeFrame(
+          shared,
+          numbers.sublist(i, end),
+          done: end == numbers.length,
+        ),
+      );
+    }
+  }
+
   /// Sends what has been drawn since the last time, in one small frame.
   void _flushNow({bool done = false}) {
     final drawing = _drawing;
     if (drawing == null || (_unsent.isEmpty && !done)) return;
     final points = List<double>.of(_unsent);
     _unsent.clear();
-    _sendInSession({
-      'op': 'stroke',
-      'id': drawing.key.split(':').last,
-      'c': drawing.stroke.color.toARGB32(),
-      'w': drawing.stroke.width,
-      'e': drawing.stroke.erase,
-      'p': points,
-      'done': done,
-    });
+    _sendInSession(_strokeFrame(drawing, points, done: done));
   }
 
   /// Takes back my last line.
@@ -453,7 +542,19 @@ class DrawTogether extends Notifier<DrawSession?> {
     final index = s.strokes.lastIndexWhere((x) => x.mine);
     if (index < 0) return;
     final removed = s.strokes.removeAt(index);
+    _undone.add(removed);
     _sendInSession({'op': 'undo', 'id': removed.key.split(':').last});
+    state = s.touched();
+  }
+
+  /// Brings back the line I last took back. It lands on top of the sheet, on
+  /// both phones, even if they have drawn since.
+  void redo() {
+    final s = state;
+    if (s == null || s.status != DrawStatus.live || _undone.isEmpty) return;
+    final back = _undone.removeLast();
+    s.strokes.add(back);
+    _sendWhole(back);
     state = s.touched();
   }
 
@@ -462,6 +563,7 @@ class DrawTogether extends Notifier<DrawSession?> {
     final s = state;
     if (s == null || s.status != DrawStatus.live) return;
     s.strokes.clear();
+    _undone.clear();
     _sendInSession({'op': 'clear'});
     state = s.touched();
   }
@@ -497,6 +599,7 @@ class DrawTogether extends Notifier<DrawSession?> {
     _flush?.cancel();
     _flush = null;
     _drawing = null;
+    _undone.clear();
     final s = state;
     if (s == null) return;
     state = s.copyWith(status: DrawStatus.ended, endedBecause: reason);
@@ -509,6 +612,7 @@ class DrawTogether extends Notifier<DrawSession?> {
     _flush = null;
     _drawing = null;
     _nextStroke = 0;
+    _undone.clear();
     state = null;
   }
 }
