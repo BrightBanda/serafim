@@ -20,6 +20,8 @@ class ChatRow extends StatelessWidget {
     this.leading,
     this.nameBadge,
     this.avatarHeroTag,
+    this.userId,
+    this.nameColor,
     this.typing = false,
     this.halo = false,
   });
@@ -49,6 +51,13 @@ class ChatRow extends StatelessWidget {
 
   /// When set, tapping the avatar opens the photo full screen.
   final String? avatarHeroTag;
+
+  /// The name's colour (gold for one of your Wings); null for the usual one.
+  final Color? nameColor;
+
+  /// The other person in a 1:1 chat: their avatar shows a ring when they have
+  /// a moment.
+  final String? userId;
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +92,7 @@ class ChatRow extends StatelessWidget {
                         name: name,
                         isGroup: isGroup,
                         halo: halo,
+                        userId: userId,
                       )),
             const SizedBox(width: 10),
             Expanded(
@@ -97,7 +107,7 @@ class ChatRow extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: AppTextStyles.body.copyWith(
-                            color: AppColors.text,
+                            color: nameColor ?? AppColors.text,
                             fontSize: 11.5,
                             fontWeight: FontWeight.w700,
                           ),

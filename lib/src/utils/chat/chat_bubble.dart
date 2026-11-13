@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -497,10 +498,18 @@ class ReplyQuoteData {
     required this.snippet,
     this.available = true,
     this.onTap,
+    this.thumbnail,
+    this.icon,
   });
+
+  /// A small mark before the author (the Echo mark on a reply to an Echo).
+  final Widget? icon;
 
   final String author;
   final String snippet;
+
+  /// A small picture shown beside the text (the moment a reply was about).
+  final Uint8List? thumbnail;
 
   /// False when the original was deleted/removed; shown muted.
   final bool available;
@@ -531,28 +540,60 @@ class _ReplyQuote extends StatelessWidget {
             ),
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Text(
-              data.author,
-              style: AppTextStyles.fieldLabel.copyWith(
-                fontSize: 8.5,
-                color: outgoing ? AppColors.primaryPale : AppColors.tealPale,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (data.icon != null) ...[
+                        data.icon!,
+                        const SizedBox(width: 4),
+                      ],
+                      Flexible(
+                        child: Text(
+                          data.author,
+                          style: AppTextStyles.fieldLabel.copyWith(
+                            fontSize: 8.5,
+                            color: outgoing
+                                ? AppColors.primaryPale
+                                : AppColors.tealPale,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    data.snippet,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 10.5,
+                      height: 1.35,
+                      fontStyle: data.available ? null : FontStyle.italic,
+                      color: fg.withValues(alpha: data.available ? 0.9 : 0.6),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              data.snippet,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.body.copyWith(
-                fontSize: 10.5,
-                height: 1.35,
-                fontStyle: data.available ? null : FontStyle.italic,
-                color: fg.withValues(alpha: data.available ? 0.9 : 0.6),
+            if (data.thumbnail != null) ...[
+              const SizedBox(width: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Image.memory(
+                  data.thumbnail!,
+                  key: const ValueKey('moment-quote-thumb'),
+                  width: 34,
+                  height: 44,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

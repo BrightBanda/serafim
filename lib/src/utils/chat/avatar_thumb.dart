@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:serafim/src/utils/halo_style.dart';
+import 'package:serafim/src/utils/moment_ring.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 
 /// Small circular avatar placeholder. [isGroup] swaps the gradient so
@@ -15,6 +16,7 @@ class AvatarThumb extends StatelessWidget {
     this.isGroup = false,
     this.imageProvider,
     this.halo = false,
+    this.ring = MomentRingState.none,
   });
 
   final double size;
@@ -24,8 +26,19 @@ class AvatarThumb extends StatelessWidget {
   /// Their halo is lit: a gold glow around the photo ("free to chat").
   final bool halo;
 
+  /// They have a moment showing: a coloured ring outside everything else (the
+  /// halo sits just inside it).
+  final MomentRingState ring;
+
   @override
   Widget build(BuildContext context) {
+    final ringed = ring != MomentRingState.none;
+    // The picture, and the halo round it, shrink to make room for the ring.
+    final inner = ringed ? size - momentRingSpace : size;
+    return MomentRingFrame(size: size, state: ring, child: _haloed(inner));
+  }
+
+  Widget _haloed(double size) {
     final photo = _photo(halo ? size - 7 : size);
     if (!halo) return photo;
     return Semantics(

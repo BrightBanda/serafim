@@ -23,6 +23,9 @@ enum NotificationKind {
   echoReceived,
   echoResponded,
 
+  // Someone liked your moment.
+  momentLiked,
+
   // About posts outside Circles, and Sparks anywhere.
   friendPosted,
   postCommented,
@@ -50,6 +53,7 @@ enum NotificationKind {
     'circle_added' => NotificationKind.circleAdded,
     'echo' => NotificationKind.echoReceived,
     'echo_responded' => NotificationKind.echoResponded,
+    'moment_liked' => NotificationKind.momentLiked,
     'friend_posted' => NotificationKind.friendPosted,
     'post_commented' => NotificationKind.postCommented,
     'comment_replied' => NotificationKind.commentReplied,
@@ -99,6 +103,7 @@ enum NotificationKind {
     NotificationKind.circleAdded => 'added you to a Circle',
     NotificationKind.echoReceived => 'sent an Echo: up for a chat',
     NotificationKind.echoResponded => 'answered your Echo',
+    NotificationKind.momentLiked => 'liked your moment',
     NotificationKind.friendPosted => 'shared a new post',
     NotificationKind.postCommented => 'commented on your post',
     NotificationKind.commentReplied => 'replied to your comment',
@@ -120,6 +125,7 @@ enum NotificationKind {
     NotificationKind.commentReplied => 'COMMENTS',
     NotificationKind.postSparked || NotificationKind.commentSparked => 'SPARKS',
     NotificationKind.echoReceived || NotificationKind.echoResponded => 'ECHO',
+    NotificationKind.momentLiked => 'MOMENT',
     NotificationKind.unknown => 'NOTIFICATION',
     _ => 'CIRCLES',
   };

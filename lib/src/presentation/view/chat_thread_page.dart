@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/echo_icon.dart';
+import 'package:serafim/src/data/models/echo.dart';
+import 'package:serafim/src/utils/halo_style.dart';
+import 'package:serafim/src/providers/wings_providers.dart';
 import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/presentation/view/chat_features_page.dart';
 import 'package:serafim/src/presentation/view/widgets/scheduled_message_sheets.dart';
@@ -95,10 +100,14 @@ class ChatThreadPage extends ConsumerStatefulWidget {
     this.onBack,
     this.groupId,
     this.recoveredPick,
+    this.aboutEcho,
   });
 
   /// What was picked here before Android closed the app: offered on opening.
   final List<XFile>? recoveredPick;
+
+  /// Opened from answering an Echo: the first message says it answers it.
+  final EchoPreview? aboutEcho;
 
   /// Set for a group chat ([recipientId] is then the group id too).
   final String? groupId;
@@ -246,6 +255,9 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
 
   /// The message being replied to, while composing.
   late final ReplyController _reply = ReplyController(focusNode: _inputFocus);
+
+  /// The Echo the next message answers; gone once it is sent (or dismissed).
+  late EchoPreview? _echo = widget.aboutEcho;
 
   /// The sticker panel is open in place of the keyboard.
   bool _stickersOpen = false;
@@ -1552,7 +1564,32 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     String? myId,
   ) {
     final targetId = message.replyToId;
-    if (targetId == null) return null;
+    if (targetId == null) {
+      // An answer to someone's moment: what it was about, kept in the message.
+      if (message.echoId != null) {
+        return ReplyQuoteData(
+          author: message.senderId == myId
+              ? 'You answered their Echo'
+              : 'Answered your Echo',
+          snippet: message.echoText ?? 'Echo',
+          icon: const EchoIcon(size: 11, color: Color(0xFFFFC94D)),
+        );
+      }
+      if (message.momentId == null) return null;
+      final caption = message.momentCaption?.trim() ?? '';
+      final thumb = message.momentThumb;
+      return ReplyQuoteData(
+        author: message.senderId == myId
+            ? 'You replied to their moment'
+            : 'Replied to your moment',
+        snippet: caption.isNotEmpty
+            ? caption
+            : message.momentKind == 'video'
+            ? 'Video'
+            : 'Photo',
+        thumbnail: thumb == null ? null : base64Decode(thumb),
+      );
+    }
 
     final original = byId[targetId];
     if (original == null) {
@@ -1778,15 +1815,28 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       return;
     }
 
-    ref
-        .read(chatViewModelProvider.notifier)
-        .sendMessage(
-          roomId: _roomId,
-          recipientId: widget.recipientId,
-          groupId: widget.groupId,
-          content: content,
-          replyToId: _reply.value?.messageId,
-        );
+    final echo = _reply.value == null && widget.groupId == null ? _echo : null;
+    if (echo != null) {
+      ref
+          .read(chatViewModelProvider.notifier)
+          .replyToEcho(
+            roomId: _roomId,
+            recipientId: widget.recipientId,
+            content: content,
+            about: echo,
+          );
+      setState(() => _echo = null);
+    } else {
+      ref
+          .read(chatViewModelProvider.notifier)
+          .sendMessage(
+            roomId: _roomId,
+            recipientId: widget.recipientId,
+            groupId: widget.groupId,
+            content: content,
+            replyToId: _reply.value?.messageId,
+          );
+    }
 
     _messageController.clear();
     _reply.clear();
@@ -2102,6 +2152,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                   size: 30,
                   isGroup: widget.isGroup,
                   halo: !widget.isGroup && _friendHaloLit(),
+                  userId: widget.isGroup ? null : widget.recipientId,
                   heroTag: 'thread:${widget.recipientId}',
                   name: widget.contactName,
                   image:
@@ -2122,7 +2173,12 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.body.copyWith(
-                      color: AppColors.text,
+                      // One of your Wings is in gold.
+                      color:
+                          !widget.isGroup &&
+                              ref.watch(isWingProvider(widget.recipientId))
+                          ? haloColor
+                          : AppColors.text,
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
@@ -2521,14 +2577,20 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
                       ),
                       onContentInserted: (content) =>
                           _handleInserted(content, photoDisabledReason),
-                      replyPreview: replyTarget == null
-                          ? null
-                          : (
+                      replyPreview: replyTarget != null
+                          ? (
                               author: replyTarget.senderId == currentUserId
                                   ? 'yourself'
                                   : _nameOf(replyTarget.senderId),
                               snippet: _snippetOf(replyTarget),
                               onCancel: _reply.clear,
+                            )
+                          : _echo == null
+                          ? null
+                          : (
+                              author: 'their Echo',
+                              snippet: _echo!.text,
+                              onCancel: () => setState(() => _echo = null),
                             ),
                     ),
                   ),

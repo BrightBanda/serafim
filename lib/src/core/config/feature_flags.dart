@@ -35,4 +35,10 @@ class FeatureFlags {
   /// Posts on a profile, and the feed that mixes them with the posts of
   /// people you follow. Needs the same backend as [circles].
   static const bool posts = true;
+
+  /// Moments: a photo or video that lasts 24 hours, with a coloured ring round
+  /// the picture of whoever has one. Needs the backend's `/moments` routes
+  /// (`sql/030_moments.sql` run, backend deployed); without them the rings
+  /// simply never appear and posting says it can't be done right now.
+  static const bool moments = true;
 }

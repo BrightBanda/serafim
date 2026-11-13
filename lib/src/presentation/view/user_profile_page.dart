@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/halo_style.dart';
+import 'package:serafim/src/providers/wings_providers.dart';
 import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/presentation/view/widgets/profile_posts.dart';
 import 'package:serafim/src/utils/wing_toggle.dart';
@@ -67,13 +69,19 @@ class UserProfilePage extends ConsumerWidget {
                   TappableAvatar(
                     size: 80,
                     heroTag: 'profile:${user.id}',
+                    userId: user.id,
                     name: user.displayName,
                     image: avatarImage(user.profilePic),
                   ),
                   const SizedBox(height: 14),
                   Text(
                     user.displayName,
-                    style: AppTextStyles.displayHeading,
+                    style: AppTextStyles.displayHeading.copyWith(
+                      // One of your Wings is in gold.
+                      color: ref.watch(isWingProvider(user.id))
+                          ? haloColor
+                          : null,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 2),

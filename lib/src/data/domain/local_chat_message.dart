@@ -67,6 +67,18 @@ class LocalMessage {
   /// The message this one answers (its server id), if any.
   String? replyToId;
 
+  /// A reply to someone's moment: its id and what it was (photo or video), its
+  /// caption and a small preview picture (base64 JPEG). Kept in the message,
+  /// so it still shows what the reply was about after the moment has ended.
+  String? momentId;
+  String? momentKind;
+  String? momentCaption;
+  String? momentThumb;
+
+  /// A reply to an Echo: its id and text, so the chat says where it came from.
+  String? echoId;
+  String? echoText;
+
   /// "Delete for me": hidden from this device only. The row stays (content
   /// wiped) so a re-push from the server can never bring it back.
   bool isHiddenForMe = false;

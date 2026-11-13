@@ -1,5 +1,9 @@
 import 'package:camera/camera.dart' show XFile;
 import 'dart:typed_data';
+import 'package:serafim/src/utils/themes/app_colors.dart';
+import 'package:serafim/src/utils/halo_style.dart';
+import 'package:serafim/src/utils/chat/chat_row.dart';
+import 'package:serafim/src/data/models/echo.dart';
 import 'package:serafim/src/providers/chat_file_providers.dart';
 import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/data/services/media_library.dart';
@@ -50,6 +54,17 @@ final nina = person('nina', 'Nina Bell', 'ninab', status: FriendStatus.none);
 class _FakeChat extends ChatViewModel {
   static String? lastSent;
   static String? lastReplyTo;
+  static final echoReplies = <(String text, String echoId)>[];
+
+  @override
+  Future<void> replyToEcho({
+    required String roomId,
+    required String recipientId,
+    required String content,
+    required EchoPreview about,
+  }) async {
+    echoReplies.add((content, about.id));
+  }
 
   @override
   Future<bool> downloadFile(String messageId) async {
@@ -545,6 +560,115 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('scheduled-new')));
       await tester.pumpAndSettle();
       expect(find.text('SCHEDULE A MESSAGE'), findsOneWidget);
+    });
+  });
+
+  group('answering an Echo', () {
+    Future<void> say(WidgetTester tester, String text) async {
+      await tester.enterText(find.byType(TextField).last, text);
+      await tester.pump();
+      await tester.tap(find.text('Send'));
+      await tester.pump();
+    }
+
+    testWidgets('the first message says it answers the Echo, the rest do not', (
+      tester,
+    ) async {
+      _FakeChat.echoReplies.clear();
+      _FakeChat.lastSent = null;
+      await pump(
+        tester,
+        const ChatThreadPage(
+          contactName: 'Sam Ndlovu',
+          username: 'sam_n',
+          recipientId: 'sam',
+          aboutEcho: EchoPreview(id: 'e1', text: 'Anyone up for football?'),
+        ),
+        savedFriends: [sam],
+      );
+      // The person sees what they are answering.
+      expect(find.byKey(const ValueKey('reply-preview')), findsOneWidget);
+      expect(find.text('Anyone up for football?'), findsOneWidget);
+
+      await say(tester, 'Count me in');
+      expect(_FakeChat.echoReplies, [('Count me in', 'e1')]);
+      expect(_FakeChat.lastSent, isNull);
+      expect(find.byKey(const ValueKey('reply-preview')), findsNothing);
+
+      await say(tester, 'Where do we meet?');
+      expect(_FakeChat.echoReplies, hasLength(1));
+      expect(_FakeChat.lastSent, 'Where do we meet?');
+    });
+
+    testWidgets('dismissing the note sends an ordinary message', (
+      tester,
+    ) async {
+      _FakeChat.echoReplies.clear();
+      _FakeChat.lastSent = null;
+      await pump(
+        tester,
+        const ChatThreadPage(
+          contactName: 'Sam Ndlovu',
+          username: 'sam_n',
+          recipientId: 'sam',
+          aboutEcho: EchoPreview(id: 'e1', text: 'Football?'),
+        ),
+        savedFriends: [sam],
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('reply-preview')),
+          matching: find.byType(IconButton),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('reply-preview')), findsNothing);
+      await say(tester, 'Hello');
+      expect(_FakeChat.echoReplies, isEmpty);
+      expect(_FakeChat.lastSent, 'Hello');
+    });
+
+    testWidgets('a chat opened any other way never tags a message', (
+      tester,
+    ) async {
+      _FakeChat.echoReplies.clear();
+      await pump(
+        tester,
+        const ChatThreadPage(
+          contactName: 'Sam Ndlovu',
+          username: 'sam_n',
+          recipientId: 'sam',
+        ),
+        savedFriends: [sam],
+      );
+      await say(tester, 'Hi');
+      expect(_FakeChat.echoReplies, isEmpty);
+    });
+  });
+
+  group('one of your Wings', () {
+    Future<Color?> nameColor(WidgetTester tester, Color? color) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatRow(
+              name: 'Alex Moyo',
+              preview: 'hi',
+              time: '10:00',
+              nameColor: color,
+            ),
+          ),
+        ),
+      );
+      return tester.widget<Text>(find.text('Alex Moyo')).style?.color;
+    }
+
+    testWidgets('has their name in gold in the chat list', (tester) async {
+      expect(await nameColor(tester, haloColor), haloColor);
+    });
+
+    testWidgets('anyone else has the usual colour', (tester) async {
+      expect(await nameColor(tester, null), AppColors.text);
     });
   });
 

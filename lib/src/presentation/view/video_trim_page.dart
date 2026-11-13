@@ -15,20 +15,34 @@ import 'package:video_player/video_player.dart';
 /// send: [file] itself when all of it was kept, a new trimmed file otherwise
 /// (its path differs; the caller deletes it after sending), or null if they
 /// backed out.
+///
+/// With [maxLength] the part can be no longer than that (a moment's 60
+/// seconds): a longer video opens with its first part chosen, and "all of it"
+/// is no longer an option.
 Future<PickedChatFile?> chooseVideoPart(
   BuildContext context,
-  PickedChatFile file,
-) => Navigator.of(context).push<PickedChatFile>(
+  PickedChatFile file, {
+  Duration? maxLength,
+  String? title,
+}) => Navigator.of(context).push<PickedChatFile>(
   MaterialPageRoute(
     fullscreenDialog: true,
-    builder: (_) => VideoTrimPage(file: file),
+    builder: (_) =>
+        VideoTrimPage(file: file, maxLength: maxLength, title: title),
   ),
 );
 
 class VideoTrimPage extends ConsumerStatefulWidget {
-  const VideoTrimPage({super.key, required this.file});
+  const VideoTrimPage({
+    super.key,
+    required this.file,
+    this.maxLength,
+    this.title,
+  });
 
   final PickedChatFile file;
+  final Duration? maxLength;
+  final String? title;
 
   @override
   ConsumerState<VideoTrimPage> createState() => _VideoTrimPageState();
@@ -49,7 +63,12 @@ class _VideoTrimPageState extends ConsumerState<VideoTrimPage> {
     _controller.initialize().then(
       (_) {
         if (!mounted) return;
-        setState(() => _range = TrimRange.whole(_controller.value.duration));
+        setState(
+          () => _range = TrimRange.whole(
+            _controller.value.duration,
+            maxLength: widget.maxLength,
+          ),
+        );
         _controller
           ..addListener(_keepInside)
           ..play();
@@ -108,7 +127,18 @@ class _VideoTrimPageState extends ConsumerState<VideoTrimPage> {
     final range = _range;
     if (range == null || _trimming) return;
     if (range.isWhole) {
-      Navigator.of(context).pop(widget.file);
+      // Untouched: the same file, now with its length (the picker may not
+      // have known it).
+      final f = widget.file;
+      Navigator.of(context).pop(
+        PickedChatFile(
+          path: f.path,
+          name: f.name,
+          size: f.size,
+          kind: f.kind,
+          durationMs: range.total.inMilliseconds,
+        ),
+      );
       return;
     }
     setState(() => _trimming = true);
@@ -198,7 +228,7 @@ class _VideoTrimPageState extends ConsumerState<VideoTrimPage> {
           onPressed: _close,
         ),
         Text(
-          'Choose the part to send',
+          widget.title ?? 'Choose the part to send',
           style: AppTextStyles.body.copyWith(
             color: Colors.white,
             fontWeight: FontWeight.bold,

@@ -66,6 +66,37 @@ void main() {
     expect(r.estimatedBytes(40 * 1024 * 1024), 20 * 1024 * 1024);
   });
 
+  test('with a limit, a long video starts as its first part', () {
+    final r = TrimRange.whole(total, maxLength: const Duration(seconds: 20));
+    expect(r.end, const Duration(seconds: 20));
+    expect(r.isWhole, isFalse);
+    // A video within the limit is still whole.
+    expect(
+      TrimRange.whole(
+        const Duration(seconds: 15),
+        maxLength: const Duration(seconds: 20),
+      ).isWhole,
+      isTrue,
+    );
+  });
+
+  test('the limit holds whichever handle moves', () {
+    const limit = Duration(seconds: 20);
+    var r = TrimRange.whole(total, maxLength: limit);
+    // Dragging the end on pushes against the limit.
+    expect(r.withEnd(const Duration(seconds: 50)).end, limit);
+    // Dragging the start back stops where the clip would be too long.
+    r = r
+        .withStart(const Duration(seconds: 10))
+        .withEnd(const Duration(seconds: 30));
+    expect(r.length, limit);
+    expect(r.withStart(Duration.zero).start, const Duration(seconds: 10));
+    expect(
+      r.withEnd(const Duration(seconds: 60)).end,
+      const Duration(seconds: 30),
+    );
+  });
+
   test('clock text', () {
     expect(formatClock(const Duration(seconds: 7)), '0:07');
     expect(formatClock(const Duration(seconds: 65)), '1:05');

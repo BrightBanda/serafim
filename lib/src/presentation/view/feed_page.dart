@@ -4,7 +4,10 @@ import 'package:serafim/src/utils/notification_bell.dart';
 import 'package:serafim/src/utils/profile_menu_button.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
+import 'package:serafim/src/core/config/feature_flags.dart';
 import 'package:serafim/src/data/models/post.dart';
+import 'package:serafim/src/presentation/view/widgets/moments_strip.dart';
+import 'package:serafim/src/providers/moment_providers.dart';
 import 'package:serafim/src/presentation/view/composer_page.dart';
 import 'package:serafim/src/presentation/view/post_detail_page.dart';
 import 'package:serafim/src/presentation/view/widgets/load_more_button.dart';
@@ -33,6 +36,7 @@ class FeedPage extends ConsumerWidget {
       ),
       body: Column(
         children: [
+          if (FeatureFlags.moments) const MomentsStrip(),
           const _ComposeBar(),
           const _ModeTabs(),
           Expanded(child: _list(context, ref, feed)),
@@ -46,6 +50,8 @@ class FeedPage extends ConsumerWidget {
       onRefresh: () async {
         ref.read(sparkOverridesProvider.notifier).clear();
         ref.invalidate(feedProvider);
+        ref.invalidate(friendMomentsProvider);
+        ref.invalidate(myMomentsProvider);
         await ref.read(feedProvider.future);
       },
       child: feed.when(

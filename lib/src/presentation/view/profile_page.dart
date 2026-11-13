@@ -1,5 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/moment_ring.dart';
+import 'package:serafim/src/providers/moment_providers.dart';
+import 'package:serafim/src/presentation/view/moment_viewer_page.dart';
 import 'package:serafim/src/presentation/view/avatar_crop_page.dart';
 import 'package:serafim/src/presentation/view/main_screen.dart';
 import 'package:serafim/src/presentation/view/widgets/profile_posts.dart';
@@ -322,6 +325,7 @@ class _FriendRow extends ConsumerWidget {
             TappableAvatar(
               size: 36,
               halo: haloLit,
+              userId: friend.id,
               heroTag: 'friends:${friend.id}',
               name: friend.displayName,
               image: avatarImage(friend.profilePic),
@@ -444,6 +448,21 @@ class _ProfileAvatar extends ConsumerStatefulWidget {
 class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _askForRing();
+  }
+
+  /// Your own ring: you have a moment showing.
+  void _askForRing() {
+    final me = ref.read(currentAccountIdProvider);
+    if (me == null) return;
+    Future.microtask(() {
+      if (mounted) ref.read(momentRingsProvider.notifier).refresh([me]);
+    });
+  }
+
   void _tell(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -479,6 +498,10 @@ class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
 
   @override
   Widget build(BuildContext context) {
+    final me = ref.watch(currentAccountIdProvider);
+    final ring = me == null
+        ? null
+        : ref.watch(momentRingsProvider.select((rings) => rings[me]));
     return AvatarPicker(
       size: 80,
       imageProvider: widget.imageProvider,
@@ -487,12 +510,20 @@ class _ProfileAvatarState extends ConsumerState<_ProfileAvatar> {
       onEditTap: _change,
       onUploadTap: _change,
       heroTag: 'me',
-      onPhotoTap: () => openProfilePhoto(
-        context,
-        image: widget.imageProvider,
-        heroTag: 'me',
-        name: widget.name,
-      ),
+      ring: MomentRingState.of(ring),
+      onPhotoTap: () => ring != null && me != null
+          ? openMoments(
+              context,
+              userId: me,
+              name: widget.name,
+              avatar: widget.imageProvider,
+            )
+          : openProfilePhoto(
+              context,
+              image: widget.imageProvider,
+              heroTag: 'me',
+              name: widget.name,
+            ),
     );
   }
 }

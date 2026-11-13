@@ -121,3 +121,15 @@ class MyEchoStatus {
 DateTime _time(Object? raw) =>
     (raw is String ? DateTime.tryParse(raw)?.toUtc() : null) ??
     DateTime.now().toUtc();
+
+/// The Echo a first chat message answers: its id (the server checks it was
+/// sent to you) and its text, kept in the message to show where it came from.
+class EchoPreview {
+  const EchoPreview({required this.id, required this.text});
+
+  factory EchoPreview.of(Echo echo) =>
+      EchoPreview(id: echo.id, text: echo.text);
+
+  final String id;
+  final String text;
+}

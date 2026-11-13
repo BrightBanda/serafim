@@ -63,6 +63,7 @@ IconData notificationIcon(NotificationKind kind) => switch (kind) {
   NotificationKind.postSparked || NotificationKind.commentSparked => Icons.bolt,
   NotificationKind.echoReceived ||
   NotificationKind.echoResponded => Icons.campaign_rounded,
+  NotificationKind.momentLiked => Icons.favorite_rounded,
   NotificationKind.unknown => Icons.notifications_rounded,
   _ => Icons.groups_rounded,
 };
@@ -71,7 +72,8 @@ IconData notificationIcon(NotificationKind kind) => switch (kind) {
 Color notificationAccent(NotificationKind kind) => switch (kind) {
   NotificationKind.friendRequest => AppColors.primary,
   NotificationKind.friendAccepted => AppColors.teal,
-  NotificationKind.newFollower => AppColors.rust,
+  NotificationKind.newFollower ||
+  NotificationKind.momentLiked => AppColors.rust,
   NotificationKind.postSparked ||
   NotificationKind.commentSparked => AppColors.sparkAmber,
   NotificationKind.friendPosted ||

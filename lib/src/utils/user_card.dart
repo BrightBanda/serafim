@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/data/models/echo.dart';
 import 'package:serafim/src/utils/profile_photo_viewer.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/presentation/view/chat_thread_page.dart';
@@ -18,7 +19,13 @@ void openChatWith(BuildContext context, PublicUser user) {
 }
 
 /// Same, from code that has a navigator but no BuildContext (the banner).
-void openChatWithNavigator(NavigatorState navigator, PublicUser user) {
+///
+/// With [aboutEcho] the first message sent there says it answers that Echo.
+void openChatWithNavigator(
+  NavigatorState navigator,
+  PublicUser user, {
+  EchoPreview? aboutEcho,
+}) {
   navigator.push(
     MaterialPageRoute<void>(
       builder: (_) => ChatThreadPage(
@@ -26,6 +33,7 @@ void openChatWithNavigator(NavigatorState navigator, PublicUser user) {
         username: user.username,
         profilePic: user.profilePic,
         recipientId: user.id,
+        aboutEcho: aboutEcho,
       ),
     ),
   );
@@ -72,6 +80,7 @@ class UserCard extends StatelessWidget {
                 TappableAvatar(
                   size: 44,
                   heroTag: 'card:${user.id}',
+                  userId: user.id,
                   name: user.displayName,
                   image: avatarImage(user.profilePic),
                 ),

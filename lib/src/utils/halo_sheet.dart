@@ -44,9 +44,12 @@ class _HaloSheetState extends ConsumerState<_HaloSheet> {
   ) async {
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+    final route = ModalRoute.of(context);
     try {
       await job();
-      navigator.pop();
+      // Closed (back, or a tap outside) while the server was answering: the
+      // sheet is already gone, and popping now would pop the page under it.
+      if (mounted && (route?.isCurrent ?? false)) navigator.pop();
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(humanError(e))));
     }

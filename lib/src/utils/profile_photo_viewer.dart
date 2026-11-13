@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/moment_viewer_page.dart';
+import 'package:serafim/src/providers/moment_providers.dart';
+import 'package:serafim/src/utils/moment_ring.dart';
 import 'package:serafim/src/utils/chat/avatar_thumb.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
@@ -237,7 +241,11 @@ class _Placeholder extends StatelessWidget {
 
 /// An avatar that opens the photo full screen when tapped. [heroTag] must be
 /// unique on the screen (include where it is shown, e.g. `chats:<id>`).
-class TappableAvatar extends StatelessWidget {
+///
+/// Given a [userId], it also shows a coloured ring when that person has a
+/// moment showing that you may see; tapping then plays their moments, and
+/// pressing and holding opens the photo.
+class TappableAvatar extends ConsumerStatefulWidget {
   const TappableAvatar({
     super.key,
     required this.image,
@@ -246,6 +254,7 @@ class TappableAvatar extends StatelessWidget {
     this.size = 38,
     this.isGroup = false,
     this.halo = false,
+    this.userId,
   });
 
   /// Their halo is lit.
@@ -257,27 +266,74 @@ class TappableAvatar extends StatelessWidget {
   final double size;
   final bool isGroup;
 
+  /// Whose avatar this is, to show their moments' ring. Null: no ring.
+  final String? userId;
+
+  @override
+  ConsumerState<TappableAvatar> createState() => _TappableAvatarState();
+}
+
+class _TappableAvatarState extends ConsumerState<TappableAvatar> {
+  @override
+  void initState() {
+    super.initState();
+    _ask();
+  }
+
+  @override
+  void didUpdateWidget(TappableAvatar old) {
+    super.didUpdateWidget(old);
+    if (old.userId != widget.userId) _ask();
+  }
+
+  void _ask() {
+    final id = widget.userId;
+    if (id == null) return;
+    // After this frame: asking changes state, and building must not.
+    Future.microtask(() {
+      if (mounted) ref.read(momentRingsProvider.notifier).request(id);
+    });
+  }
+
+  void _openPhoto() => openProfilePhoto(
+    context,
+    image: widget.image,
+    heroTag: widget.heroTag,
+    name: widget.name,
+    isGroup: widget.isGroup,
+  );
+
   @override
   Widget build(BuildContext context) {
+    final id = widget.userId;
+    final ring = id == null
+        ? null
+        : ref.watch(momentRingsProvider.select((rings) => rings[id]));
+    final hasRing = ring != null;
     return Semantics(
       button: true,
-      label: "View $name's photo",
+      label: hasRing
+          ? "View ${widget.name}'s moments"
+          : "View ${widget.name}'s photo",
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => openProfilePhoto(
-          context,
-          image: image,
-          heroTag: heroTag,
-          name: name,
-          isGroup: isGroup,
-        ),
+        onTap: hasRing
+            ? () => openMoments(
+                context,
+                userId: id!,
+                name: widget.name,
+                avatar: widget.image,
+              )
+            : _openPhoto,
+        onLongPress: hasRing ? _openPhoto : null,
         child: Hero(
-          tag: heroTag,
+          tag: widget.heroTag,
           child: AvatarThumb(
-            size: size,
-            imageProvider: image,
-            isGroup: isGroup,
-            halo: halo,
+            size: widget.size,
+            imageProvider: widget.image,
+            isGroup: widget.isGroup,
+            halo: widget.halo,
+            ring: MomentRingState.of(ring),
           ),
         ),
       ),

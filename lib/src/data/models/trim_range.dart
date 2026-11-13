@@ -6,14 +6,21 @@ class TrimRange {
     required this.start,
     required this.end,
     this.minLength = defaultMinLength,
+    this.maxLength,
   });
 
-  /// The whole video, from its first to its last frame.
-  factory TrimRange.whole(Duration total, {Duration? minLength}) => TrimRange(
+  /// The whole video, from its first to its last frame, or its first
+  /// [maxLength] when there is a limit and the video is longer.
+  factory TrimRange.whole(
+    Duration total, {
+    Duration? minLength,
+    Duration? maxLength,
+  }) => TrimRange(
     total: total,
     start: Duration.zero,
-    end: total,
+    end: maxLength != null && total > maxLength ? maxLength : total,
     minLength: minLength ?? defaultMinLength,
+    maxLength: maxLength,
   );
 
   /// Shortest clip worth sending.
@@ -29,6 +36,9 @@ class TrimRange {
   final Duration end;
   final Duration minLength;
 
+  /// The longest clip allowed (a moment's 60 seconds), or null for no limit.
+  final Duration? maxLength;
+
   Duration get length => end - start;
 
   /// The shortest clip allowed: [minLength], or the whole video if shorter.
@@ -38,23 +48,31 @@ class TrimRange {
   bool get isWhole =>
       start <= untouchedTolerance && total - end <= untouchedTolerance;
 
-  /// Moves the start, never past the end minus the shortest clip.
+  /// Moves the start: never past the end minus the shortest clip, and never
+  /// so far back that the clip would be longer than allowed.
   TrimRange withStart(Duration value) {
     final latest = end - _floor;
+    final earliest = maxLength == null ? Duration.zero : end - maxLength!;
     return _copy(
       start: _clamp(
         value,
-        Duration.zero,
+        earliest < Duration.zero ? Duration.zero : earliest,
         latest < Duration.zero ? Duration.zero : latest,
       ),
     );
   }
 
-  /// Moves the end, never before the start plus the shortest clip.
+  /// Moves the end: never before the start plus the shortest clip, and never
+  /// so far on that the clip would be longer than allowed.
   TrimRange withEnd(Duration value) {
     final earliest = start + _floor;
+    final latest = maxLength == null ? total : start + maxLength!;
     return _copy(
-      end: _clamp(value, earliest > total ? total : earliest, total),
+      end: _clamp(
+        value,
+        earliest > total ? total : earliest,
+        latest > total ? total : latest,
+      ),
     );
   }
 
@@ -71,6 +89,7 @@ class TrimRange {
     start: start ?? this.start,
     end: end ?? this.end,
     minLength: minLength,
+    maxLength: maxLength,
   );
 
   static Duration _clamp(Duration v, Duration low, Duration high) =>

@@ -17,6 +17,17 @@ import 'package:serafim/src/utils/halo_sheet.dart';
 PublicUser _friend({DateTime? halo}) =>
     PublicUser(id: 'f1', username: 'ann', displayName: 'Ann', haloUntil: halo);
 
+/// A server that answers only when the test says so.
+class _SlowService extends _FakeService {
+  final answer = Completer<DateTime>();
+
+  @override
+  Future<DateTime> lightHalo(int minutes, {bool wingsOnly = false}) {
+    lit.add(minutes);
+    return answer.future;
+  }
+}
+
 class _FakeProfile extends ProfileViewModel {
   @override
   FutureOr<Profile?> build() => null;
@@ -238,6 +249,81 @@ void main() {
       await t.tap(find.byKey(const ValueKey('halo-off')));
       await t.pumpAndSettle();
       expect(service.dimmed, 1);
+    });
+  });
+
+  group('going back before the server answers', () {
+    testWidgets('closes only the sheet, never the page under it', (t) async {
+      final slow = _SlowService();
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [
+            profileServiceProvider.overrideWithValue(slow),
+            profileViewModelProvider.overrideWith(_FakeProfile.new),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (context, ref, _) => TextButton(
+                  onPressed: () => showHaloSheet(context, ref),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await t.tap(find.text('open'));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('halo-60')));
+      await t.pump();
+
+      // Back, before the light has come on.
+      final navigator = t.state<NavigatorState>(find.byType(Navigator));
+      navigator.pop();
+      await t.pumpAndSettle();
+      expect(find.text('HALO'), findsNothing);
+
+      // The server answers late. The page must still be there, and nothing
+      // may throw.
+      slow.answer.complete(
+        DateTime.now().toUtc().add(const Duration(hours: 1)),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('open'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('and a failure then does not crash either', (t) async {
+      final slow = _SlowService();
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [
+            profileServiceProvider.overrideWithValue(slow),
+            profileViewModelProvider.overrideWith(_FakeProfile.new),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (context, ref, _) => TextButton(
+                  onPressed: () => showHaloSheet(context, ref),
+                  child: const Text('open'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await t.tap(find.text('open'));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('halo-60')));
+      await t.pump();
+      t.state<NavigatorState>(find.byType(Navigator)).pop();
+      await t.pumpAndSettle();
+      slow.answer.completeError(StateError('offline'));
+      await t.pumpAndSettle();
+      expect(find.text('open'), findsOneWidget);
+      expect(t.takeException(), isNull);
     });
   });
 }

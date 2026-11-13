@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/halo_style.dart';
 import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
 import 'package:serafim/src/providers/echo_providers.dart';
@@ -752,10 +753,12 @@ class _ChatListItem extends ConsumerWidget {
       typing: typing,
       halo: halo,
       nameBadge: ref.watch(isWingProvider(user.id)) ? const WingMark() : null,
+      nameColor: ref.watch(isWingProvider(user.id)) ? haloColor : null,
       time: time,
       unread: (preview?.unread ?? 0) > 0,
       imageProvider: avatarImage(user.profilePic),
       avatarHeroTag: 'chats:${user.id}',
+      userId: user.id,
       onTap: () => openChatWith(context, user),
       onLongPress: () => showChatOptions(
         context,

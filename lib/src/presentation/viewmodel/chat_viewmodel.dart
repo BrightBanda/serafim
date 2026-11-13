@@ -9,6 +9,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart' show Icon, Icons;
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
+import 'package:serafim/src/data/models/echo.dart';
+import 'package:serafim/src/data/models/moment.dart';
 import 'package:serafim/src/core/platform/sound_board.dart';
 import 'package:serafim/src/providers/sound_providers.dart';
 import 'package:serafim/src/providers/nickname_providers.dart';
@@ -538,6 +540,8 @@ class ChatViewModel extends Notifier<ChatState> {
             ..status = _statusFromString(data['status'] as String?)
             ..timestamp = parsedTimestamp;
           _applyMediaFields(msg, data);
+          _applyMomentFields(msg, data);
+          _applyEchoFields(msg, data);
           if (msg.type == MessageType.video) {
             msg.thumbnailPath = await _storeThumbnail(messageId, data);
           }
@@ -1013,6 +1017,8 @@ class ChatViewModel extends Notifier<ChatState> {
       if (attachment != null)
         "attachment_type": path!.endsWith('.gif') ? 'gif' : 'image',
       if (msg.replyToId != null) "reply_to": msg.replyToId,
+      if (msg.momentId != null) "moment_id": msg.momentId,
+      if (msg.echoId != null) "echo_id": msg.echoId,
       "timestamp": msg.timestamp.toIso8601String(),
     };
   }
@@ -1775,6 +1781,58 @@ class ChatViewModel extends Notifier<ChatState> {
     MessageType? type,
     String? groupId,
     bool forwarded = false,
+  }) => _sendText(
+    roomId: roomId,
+    recipientId: recipientId,
+    content: content,
+    imageBytes: imageBytes,
+    replyToId: replyToId,
+    type: type,
+    groupId: groupId,
+    forwarded: forwarded,
+  );
+
+  /// Answers someone's moment: a text message to its owner that carries the
+  /// moment's id (so the server checks you may reply) and keeps a small
+  /// preview of it, to show what the reply was about.
+  Future<void> replyToMoment({
+    required String roomId,
+    required String recipientId,
+    required String content,
+    required MomentPreview about,
+  }) => _sendText(
+    roomId: roomId,
+    recipientId: recipientId,
+    content: content,
+    aboutMoment: about,
+  );
+
+  /// Answers someone's Echo: a text message to its sender that names the Echo
+  /// (the server checks you were sent it) and keeps its text, so the chat
+  /// says the message is from an Echo.
+  Future<void> replyToEcho({
+    required String roomId,
+    required String recipientId,
+    required String content,
+    required EchoPreview about,
+  }) => _sendText(
+    roomId: roomId,
+    recipientId: recipientId,
+    content: content,
+    aboutEcho: about,
+  );
+
+  Future<void> _sendText({
+    required String roomId,
+    required String recipientId,
+    String content = '',
+    Uint8List? imageBytes,
+    String? replyToId,
+    MessageType? type,
+    String? groupId,
+    bool forwarded = false,
+    MomentPreview? aboutMoment,
+    EchoPreview? aboutEcho,
   }) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
@@ -1802,6 +1860,18 @@ class ChatViewModel extends Notifier<ChatState> {
           type ?? (mediaPath != null ? MessageType.image : MessageType.text)
       ..status = MessageStatus.sending
       ..timestamp = timestamp;
+    if (aboutEcho != null) {
+      localMsg
+        ..echoId = aboutEcho.id
+        ..echoText = aboutEcho.text;
+    }
+    if (aboutMoment != null) {
+      localMsg
+        ..momentId = aboutMoment.id
+        ..momentKind = aboutMoment.kind.name
+        ..momentCaption = aboutMoment.caption
+        ..momentThumb = base64Encode(aboutMoment.thumbnail);
+    }
 
     // Awaited: guarantees the local row exists before we send over the
     // socket, so a fast-returning ack can never race ahead of this write.
@@ -1851,6 +1921,26 @@ MessageType messageTypeOfKind(String? kind, {required bool hasAttachment}) =>
       'audio' => MessageType.audioFile,
       _ => hasAttachment ? MessageType.image : MessageType.text,
     };
+
+/// Copies what the server says about the Echo a message answers onto [msg].
+void _applyEchoFields(LocalMessage msg, Map<String, dynamic> data) {
+  final echo = data['echo'];
+  if (echo is! Map<String, dynamic>) return;
+  msg
+    ..echoId = echo['id']?.toString()
+    ..echoText = echo['text'] as String?;
+}
+
+/// Copies what the server says about the moment a message answers onto [msg].
+void _applyMomentFields(LocalMessage msg, Map<String, dynamic> data) {
+  final moment = data['moment'];
+  if (moment is! Map<String, dynamic>) return;
+  msg
+    ..momentId = moment['id']?.toString()
+    ..momentKind = moment['kind'] as String?
+    ..momentCaption = moment['caption'] as String?
+    ..momentThumb = moment['thumbnail'] as String?;
+}
 
 /// Copies what the server says about a message's uploaded media (voice note,
 /// video or audio file) onto [msg].

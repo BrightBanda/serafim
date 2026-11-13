@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:serafim/src/utils/moment_ring.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -16,6 +17,7 @@ class AvatarPicker extends StatelessWidget {
     this.busyLabel = 'Please wait…',
     this.onPhotoTap,
     this.heroTag,
+    this.ring = MomentRingState.none,
   });
 
   /// Tapping the photo itself (not the camera badge), e.g. to view it.
@@ -23,6 +25,9 @@ class AvatarPicker extends StatelessWidget {
 
   /// Hero tag for a flight into a full-screen view.
   final String? heroTag;
+
+  /// A coloured ring outside the photo: this person has a moment showing.
+  final MomentRingState ring;
 
   final VoidCallback? onEditTap;
   final VoidCallback? onUploadTap;
@@ -38,6 +43,21 @@ class AvatarPicker extends StatelessWidget {
   final bool busy;
   final String busyLabel;
 
+  /// The photo, with the moment ring round it (outside its own box, so the
+  /// layout round it does not move).
+  Widget _ringed(Widget photo) {
+    if (ring == MomentRingState.none) return photo;
+    return Positioned(
+      left: -momentRingSpace / 2,
+      top: -momentRingSpace / 2,
+      child: MomentRingFrame(
+        size: size + momentRingSpace,
+        state: ring,
+        child: photo,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -48,39 +68,41 @@ class AvatarPicker extends StatelessWidget {
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              GestureDetector(
-                onTap: busy ? null : onPhotoTap,
-                child: _hero(
-                  Container(
-                    width: size,
-                    height: size,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.primary, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.line,
-                          offset: Offset(3, 3),
-                          blurRadius: 0,
-                        ),
-                      ],
-                      image: imageProvider != null
-                          ? DecorationImage(
-                              image: imageProvider!,
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                      gradient: imageProvider == null
-                          ? SweepGradient(
-                              colors: [
-                                AppColors.rust,
-                                AppColors.paperAlt,
-                                AppColors.teal,
-                                AppColors.primaryDeep,
-                                AppColors.primary,
-                              ],
-                            )
-                          : null,
+              _ringed(
+                GestureDetector(
+                  onTap: busy ? null : onPhotoTap,
+                  child: _hero(
+                    Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.primary, width: 3),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.line,
+                            offset: Offset(3, 3),
+                            blurRadius: 0,
+                          ),
+                        ],
+                        image: imageProvider != null
+                            ? DecorationImage(
+                                image: imageProvider!,
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                        gradient: imageProvider == null
+                            ? SweepGradient(
+                                colors: [
+                                  AppColors.rust,
+                                  AppColors.paperAlt,
+                                  AppColors.teal,
+                                  AppColors.primaryDeep,
+                                  AppColors.primary,
+                                ],
+                              )
+                            : null,
+                      ),
                     ),
                   ),
                 ),

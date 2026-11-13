@@ -35,7 +35,11 @@ class _EchoPageState extends ConsumerState<EchoPage> {
     try {
       await ref.read(echoActionsProvider).respond(echo.id);
       navigator.pop();
-      openChatWithNavigator(navigator, echo.user);
+      openChatWithNavigator(
+        navigator,
+        echo.user,
+        aboutEcho: EchoPreview.of(echo),
+      );
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(humanError(e))));
       ref.invalidate(echoFromProvider(widget.fromUserId));

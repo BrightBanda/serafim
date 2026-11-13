@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/core/config/feature_flags.dart';
+import 'package:serafim/src/presentation/view/moment_composer_page.dart';
 import 'package:serafim/src/presentation/view/profile_page.dart';
 import 'package:serafim/src/presentation/view/settings_page.dart';
 import 'package:serafim/src/data/models/profile.dart';
@@ -56,6 +58,19 @@ class ProfileMenuButton extends ConsumerWidget {
           showHaloSheet(context, ref);
           return;
         }
+        if (value == 'moment') {
+          openMomentComposer(context).then((posted) {
+            if (!posted || !context.mounted) return;
+            ScaffoldMessenger.of(context)
+              ..clearSnackBars()
+              ..showSnackBar(
+                const SnackBar(
+                  content: Text('Your moment is up for 24 hours.'),
+                ),
+              );
+          });
+          return;
+        }
         if (value == 'echo') {
           // A live one shows how it is doing (and End); otherwise write one.
           echoLive
@@ -92,6 +107,8 @@ class ProfileMenuButton extends ConsumerWidget {
             color: echoLive ? haloColor : null,
             trailing: echoLive ? 'LIVE' : null,
           ),
+        if (FeatureFlags.moments)
+          _item('moment', Icons.auto_awesome_outlined, 'Moment'),
         _item('settings', Icons.settings_outlined, 'Settings'),
       ],
       child: Padding(
