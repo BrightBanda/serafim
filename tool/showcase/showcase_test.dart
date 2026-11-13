@@ -25,8 +25,25 @@ import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/utils/serafim_mark.dart';
 import 'package:serafim/src/data/models/public_user.dart';
 import 'package:serafim/src/utils/image_editor/scribble.dart';
-import 'package:serafim/src/utils/chat/chat_input_bar.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'dart:math' as math;
+import 'package:dio/dio.dart';
+import 'package:serafim/src/data/services/chat_features_service.dart';
+import 'package:serafim/src/data/services/media_library.dart';
+import 'package:serafim/src/data/services/nickname_service.dart';
+import 'package:serafim/src/data/services/scheduled_message_service.dart';
+import 'package:serafim/src/presentation/view/media_gallery_page.dart';
+import 'package:serafim/src/presentation/view/scribble_page.dart';
+import 'package:serafim/src/presentation/view/settings/sound_settings_page.dart';
+import 'package:serafim/src/providers/chat_features_providers.dart';
+import 'package:serafim/src/providers/media_library_providers.dart';
+import 'package:serafim/src/providers/nickname_providers.dart';
+import 'package:serafim/src/providers/scheduled_message_providers.dart';
+import 'package:serafim/src/utils/chat/chat_image_gallery.dart';
+import 'package:serafim/src/utils/image_editor/stroke.dart';
+import 'package:serafim/src/utils/profile_menu_button.dart';
+import 'package:serafim/src/utils/serafim_loader.dart';
 
 import 'mock_world.dart';
 
@@ -326,6 +343,7 @@ void main() {
     Widget page, {
     MockTab tab = MockTab.chats,
     List<PublicUser> extraFriends = const [],
+    List extra = const [],
   }) async {
     final key = GlobalKey();
     SharedPreferences.setMockInitialValues({});
@@ -335,7 +353,7 @@ void main() {
     await _phone(
       tester,
       key,
-      mockOverrides(prefs, tab: tab, extraFriends: extraFriends),
+      [...mockOverrides(prefs, tab: tab, extraFriends: extraFriends), ...extra],
       page,
     );
     return (
@@ -349,18 +367,6 @@ void main() {
     c.read(drawTogetherProvider.notifier).close();
     await tester.pump(const Duration(seconds: 1));
   }
-
-  testWidgets('dt: the pencil menu in a chat', (tester) async {
-    final (key, _) = await open(tester, conversationPage());
-    await _settle(tester);
-    await tester.tap(
-      find.descendant(
-        of: find.byType(ChatInputBar),
-        matching: find.byIcon(Icons.draw_outlined),
-      ),
-    );
-    await _shoot(tester, key, 'dt_01_pencil');
-  });
 
   testWidgets('dt: waiting for your friend', (tester) async {
     final (key, c) = await open(tester, drawPage());
@@ -464,23 +470,6 @@ void main() {
     await _shoot(tester, key, 'e_01_chats');
   });
 
-  testWidgets('echo: writing one', (tester) async {
-    myEchoStatus = const MyEchoStatus();
-    final (key, _) = await open(tester, mainScreen());
-    await _settle(tester);
-    await tester.tap(find.byKey(const ValueKey('echo-send')));
-    await _settle(tester);
-    await tester.enterText(
-      find.descendant(
-        of: find.byKey(const ValueKey('echo-text')),
-        matching: find.byType(TextField),
-      ),
-      'Bored on a Friday night. Who wants to talk football?',
-    );
-    FocusManager.instance.primaryFocus?.unfocus();
-    await _shoot(tester, key, 'e_02_compose');
-  });
-
   testWidgets('echo: sent, and how it is doing', (tester) async {
     myEchoStatus = MyEchoStatus(echo: myLiveEcho(), sentToday: 1);
     final (key, _) = await open(tester, mainScreen());
@@ -527,4 +516,314 @@ void main() {
     await _shoot(tester, key, 'r_02_picker');
     messagesInChat = conversation;
   });
+
+  // ------------------------------------------------- 1.2.0, the release ---
+
+  final fakePhotos = [
+    for (final name in const [
+      'p1015', 'p1036', 'p429', 'p1043', 'p292', 'p431', 'p1039', 'p1060',
+      'p1062', 'p1080', 'p1015', 'p1036', 'p429', 'p1043', 'p292', 'p431',
+    ])
+      name,
+  ];
+
+  List releaseOverrides() => [
+    mediaLibraryProvider.overrideWithValue(
+      _PhotoLibrary([
+        for (var i = 0; i < fakePhotos.length; i++)
+          _Photo('m$i', '$_cache/photos/${fakePhotos[i]}.jpg', video: i % 5 == 2),
+      ]),
+    ),
+    scheduledMessageServiceProvider.overrideWithValue(_Scheduled()),
+    chatFeaturesServiceProvider.overrideWithValue(_Features()),
+    nicknamesProvider.overrideWith(
+      (ref) async => Nicknames(
+        given: {tamara.id: 'Tamz'},
+        received: {tamara.id: 'Captain'},
+      ),
+    ),
+  ];
+
+  testWidgets('release: the chat, and the paperclip menu', (tester) async {
+    final (key, _) = await open(
+      tester,
+      conversationPage(),
+      extra: releaseOverrides(),
+    );
+    await _shoot(tester, key, 'n_01_chat');
+    await tester.tap(find.byKey(const ValueKey('attach-button')));
+    await _shoot(tester, key, 'n_02_sheet');
+    await tester.tap(find.byKey(const ValueKey('media-m1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('media-m3')));
+    await _shoot(tester, key, 'n_03_sheet_picked');
+  });
+
+  testWidgets('release: scheduled messages', (tester) async {
+    final (key, c) = await open(
+      tester,
+      conversationPage(),
+      extra: releaseOverrides(),
+    );
+    await _settle(tester);
+    await c.read(scheduledMessagesProvider.notifier).refresh();
+    await tester.tap(find.byKey(const ValueKey('attach-button')));
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('attach-schedule')));
+    await _shoot(tester, key, 'n_04_scheduled');
+    await tester.tap(find.byKey(const ValueKey('scheduled-new')));
+    await _settle(tester);
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey('schedule-text')),
+        matching: find.byType(TextField),
+      ),
+      'Happy birthday Tamara!',
+    );
+    await tester.tap(find.text('Tomorrow, 8 AM'));
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _shoot(tester, key, 'n_05_schedule_new');
+  });
+
+  testWidgets('release: the gallery and the audio list', (tester) async {
+    final (key, _) = await open(
+      tester,
+      const MediaGalleryPage(filter: MediaFilter.visual),
+      extra: releaseOverrides(),
+    );
+    await _settle(tester);
+    await tester.tap(find.byKey(const ValueKey('media-m0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('media-m4')));
+    await _shoot(tester, key, 'n_06_gallery');
+  });
+
+  testWidgets('release: the menu, and chat features', (tester) async {
+    final (key, _) = await open(
+      tester,
+      conversationPage(),
+      extra: releaseOverrides(),
+    );
+    await _settle(tester);
+    await tester.tap(find.byTooltip('Chat options'));
+    await _shoot(tester, key, 'n_07_chat_menu');
+    await tester.tap(find.text('Chat features'));
+    await _shoot(tester, key, 'n_08_chat_features');
+  });
+
+  testWidgets('release: sounds', (tester) async {
+    final (key, _) = await open(tester, const SoundSettingsPage());
+    await _shoot(tester, key, 'n_09_sounds');
+  });
+
+  testWidgets('release: the profile menu, with Echo', (tester) async {
+    myEchoStatus = const MyEchoStatus();
+    final (key, _) = await open(tester, mainScreen());
+    await _settle(tester);
+    await tester.tap(find.byType(ProfileMenuButton).first);
+    await _shoot(tester, key, 'n_10_profile_menu');
+    await tester.tap(find.text('Echo'));
+    await _settle(tester);
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey('echo-text')),
+        matching: find.byType(TextField),
+      ),
+      'Bored on a Friday night. Who wants to talk football?',
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _shoot(tester, key, 'n_11_echo_compose');
+  });
+
+  testWidgets('release: drawing, with stickers', (tester) async {
+    final (key, c) = await open(tester, drawPage());
+    startDrawing(c, 1);
+    await _settle(tester);
+    await _shoot(tester, key, 'n_12_draw');
+    await tester.tap(find.byKey(const ValueKey('draw-stickers')));
+    await _settle(tester);
+    await _shoot(tester, key, 'n_13_stickers');
+    final jelly = find.byKey(const ValueKey('draw-sticker-doodles/jellyfish'));
+    await tester.ensureVisible(jelly);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(jelly);
+    await _shoot(tester, key, 'n_14_placing');
+    await tester.tap(find.byKey(const ValueKey('sticker-place')));
+    await _shoot(tester, key, 'n_15_placed');
+    c.read(drawTogetherProvider.notifier).close();
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('release: edit a copy of a drawing', (tester) async {
+    late String path;
+    await tester.runAsync(() async {
+      final dir = Directory.systemTemp.createTempSync('copy');
+      path = '${dir.path}/1.scribble.png';
+      final png = await renderScribble(
+        strokes: copyStrokes(),
+        displayedWidth: 1,
+        paper: scribblePapers[0],
+        aspect: 1,
+      );
+      File(path).writeAsBytesSync(png);
+    });
+    final (key, _) = await open(
+      tester,
+      ChatImageGallery(
+        images: [
+          (path: path, onSave: () async {}, onDelete: null, onEdit: () async => false),
+        ],
+      ),
+    );
+    await _settleImage(tester, path);
+    await _shoot(tester, key, 'n_16_viewer');
+    final (key2, _) = await open(tester, ScribblePage(editing: path));
+    for (var i = 0; i < 40 && find.byKey(const ValueKey('scribble-pad')).evaluate().isEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await _shoot(tester, key2, 'n_17_edit_copy');
+  });
+
+  testWidgets('release: the feed', (t) => shootTab(t, MockTab.feed, 'n_18_feed'));
+
+  testWidgets('release: the mascot, frame by frame', (tester) async {
+    // The app's own painter, one bounce every 22 frames (two beats of the
+    // track at 30 fps), transparent, so it can go anywhere in the video.
+    const side = 640;
+    const perBounce = 22;
+    final count = perBounce * LoaderFace.values.length;
+    await tester.runAsync(() async {
+      Directory('$_out/frames').createSync(recursive: true);
+      for (var i = 0; i < count; i++) {
+        final recorder = ui.PictureRecorder();
+        SerafimLoaderPainter(
+          beats: AlwaysStoppedAnimation(i / perBounce),
+          ink: const Color(0xFFE6E2FF),
+          accent: const Color(0xFF5B7FD6),
+          fill: const Color(0xFF15161C),
+        ).paint(Canvas(recorder), const Size.square(640));
+        final image = await recorder.endRecording().toImage(side, side);
+        final png = await image.toByteData(format: ui.ImageByteFormat.png);
+        File(
+          '$_out/frames/mascot_${i.toString().padLeft(3, '0')}.png',
+        ).writeAsBytesSync(png!.buffer.asUint8List());
+        image.dispose();
+      }
+    });
+  });
+}
+
+/// A file image needs real time to decode, in turns with the test's clock.
+Future<void> _settleImage(WidgetTester tester, String path) async {
+  await tester.runAsync(() async {
+    final codec = await ui.instantiateImageCodec(File(path).readAsBytesSync());
+    final frame = await codec.getNextFrame();
+    PaintingBinding.instance.imageCache.putIfAbsent(
+      FileImage(File(path)),
+      () => OneFrameImageStreamCompleter(
+        SynchronousFuture(ImageInfo(image: frame.image)),
+      ),
+    );
+  });
+}
+
+/// A smiling face, to edit a copy of.
+List<Stroke> copyStrokes() {
+  Stroke line(Color c, double w, List<Offset> p) =>
+      Stroke(color: c, width: w, points: p);
+  const blue = Color(0xFF1E88E5);
+  return [
+    line(const Color(0xFFE53935), 0.03, [
+      for (var i = 0; i <= 48; i++)
+        Offset(
+          0.5 + 0.34 * math.cos(i / 48 * 2 * math.pi),
+          0.5 + 0.34 * math.sin(i / 48 * 2 * math.pi),
+        ),
+    ]),
+    line(blue, 0.05, const [Offset(0.38, 0.42)]),
+    line(blue, 0.05, const [Offset(0.62, 0.42)]),
+    line(blue, 0.03, [
+      for (var i = 0; i <= 16; i++)
+        Offset(
+          0.5 + 0.17 * math.cos(math.pi * (0.1 + 0.8 * i / 16)),
+          0.5 + 0.17 * math.sin(math.pi * (0.1 + 0.8 * i / 16)),
+        ),
+    ]),
+  ];
+}
+
+/// Photos from the showcase's own folder, as the phone's media library.
+class _Photo implements DeviceMedia {
+  _Photo(this.id, this.path, {this.video = false});
+  @override
+  final String id;
+  final String path;
+  final bool video;
+  @override
+  bool get isVideo => video;
+  @override
+  bool get isAudio => false;
+  @override
+  Duration get duration => const Duration(seconds: 42);
+  @override
+  Future<String> name() async => '$id.jpg';
+  @override
+  Future<Uint8List?> thumbnail(int side) async =>
+      File(path).readAsBytesSync();
+  @override
+  Future<File?> file() async => File(path);
+  @override
+  Future<Uint8List?> photoForSending({
+    required int maxSide,
+    required int quality,
+  }) async => File(path).readAsBytesSync();
+}
+
+class _PhotoLibrary implements MediaLibrary {
+  const _PhotoLibrary(this.items);
+  final List<DeviceMedia> items;
+  @override
+  Future<MediaAccess> access(MediaFilter filter) async => MediaAccess.full;
+  @override
+  Future<MediaAccess> request(MediaFilter filter) async => MediaAccess.full;
+  @override
+  Future<void> openSettings() async {}
+  @override
+  Future<void> selectMore(MediaFilter filter) async {}
+  @override
+  Future<List<MediaAlbum>> albums(MediaFilter filter) async => const [
+    MediaAlbum(id: 'recent', name: 'Recent'),
+    MediaAlbum(id: 'camera', name: 'Camera'),
+  ];
+  @override
+  Future<List<DeviceMedia>> page(MediaAlbum album, int page, int size) async =>
+      page == 0 ? items : const [];
+}
+
+class _Scheduled extends ScheduledMessageService {
+  _Scheduled() : super(Dio());
+  @override
+  Future<List<ScheduledMessage>> list() async => [
+    ScheduledMessage(
+      id: 's1',
+      recipientId: tamara.id,
+      content: 'Good luck with the interview today!',
+      sendAt: DateTime.now().add(const Duration(hours: 3)),
+    ),
+    ScheduledMessage(
+      id: 's2',
+      recipientId: tamara.id,
+      content: 'Remember the hike on Saturday',
+      sendAt: DateTime.now().add(const Duration(days: 1)),
+    ),
+  ];
+}
+
+class _Features extends ChatFeaturesService {
+  _Features() : super(Dio());
+  @override
+  Future<List<ChatFeaturesEntry>> all() async => const [];
+  @override
+  Future<ChatFeatures> get(ChatRef chat) async => const ChatFeatures();
 }

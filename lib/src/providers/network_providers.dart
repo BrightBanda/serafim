@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:serafim/src/core/network/auth_interceptor.dart';
+import 'package:serafim/src/core/network/wake_interceptor.dart';
 import 'package:serafim/src/providers/app_providers.dart';
 import 'package:serafim/src/providers/service_providers.dart';
 
@@ -55,6 +56,10 @@ final apiDioProvider = Provider<Dio>((ref) {
       contentType: Headers.jsonContentType,
     ),
   );
+
+  // First, so a request replayed after waking the server still gets its
+  // token from the interceptor below.
+  WakeInterceptor(directUrl: config.apiDirectUrl).attachTo(dio);
 
   AuthInterceptor(
     store: ref.watch(sessionStoreProvider),

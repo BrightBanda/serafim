@@ -69,6 +69,8 @@ import 'package:serafim/src/utils/chat_file_picking.dart';
 import 'package:serafim/src/data/services/chat_file_service.dart';
 import 'package:serafim/src/providers/chat_file_providers.dart';
 import 'package:serafim/src/presentation/view/video_player_page.dart';
+import 'package:serafim/src/presentation/view/video_trim_page.dart';
+import 'package:serafim/src/providers/video_trim_providers.dart';
 import 'package:serafim/src/presentation/view/chat_media_page.dart';
 import 'package:serafim/src/data/models/group.dart';
 import 'package:serafim/src/data/models/sticker_collection.dart';
@@ -571,7 +573,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
     if (photos.isNotEmpty) await _sendPhotos(photos);
     for (final file in files) {
       if (!mounted) return;
-      await _sendFile(file);
+      await _sendPicked(file);
     }
   }
 
@@ -696,7 +698,7 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
             kind: ChatFileKind.video,
           ),
         );
-        await _sendFile(file);
+        await _sendPicked(file);
       } on ChatFilePickException catch (e) {
         _toast(e.message, error: true);
       } catch (error) {
@@ -782,7 +784,27 @@ class _ChatThreadPageState extends ConsumerState<ChatThreadPage>
       return;
     }
     if (file == null || !mounted) return;
-    await _sendFile(file);
+    await _sendPicked(file);
+  }
+
+  /// Sends something the person just chose. A video first goes to the trim
+  /// screen, so they can send only the part they want; the trimmed copy is
+  /// only a working copy and is deleted once it is in the chat.
+  Future<void> _sendPicked(PickedChatFile file) async {
+    if (file.kind != ChatFileKind.video ||
+        !ref.read(videoTrimServiceProvider).supported) {
+      return _sendFile(file);
+    }
+    final chosen = await chooseVideoPart(context, file);
+    if (chosen == null || !mounted) return;
+    try {
+      // A trimmed clip is a new file: check it like any other.
+      await _sendFile(checkChatFile(chosen));
+    } on ChatFilePickException catch (e) {
+      _toast(e.message, error: true);
+    } finally {
+      if (chosen.path != file.path) File(chosen.path).delete().ignore();
+    }
   }
 
   /// Sends a video or audio file. Only copying it into the chat holds the

@@ -67,6 +67,23 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        val trimmer = VideoTrimmer(this)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, TRIM_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "trim" -> trimmer.trim(
+                        call.argument<String>("path") ?: "",
+                        (call.argument<Number>("startMs") ?: 0).toLong(),
+                        (call.argument<Number>("endMs") ?: 0).toLong(),
+                        result,
+                    )
+                    "cancel" -> {
+                        trimmer.cancel()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATER_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -224,6 +241,7 @@ class MainActivity : FlutterActivity() {
         const val MESSAGES_CHANNEL_ID = "messages"
         const val UPDATER_CHANNEL = "serafim/updater"
         const val SHARE_CHANNEL = "serafim/share"
+        const val TRIM_CHANNEL = "serafim/video_trim"
         private const val INSTALL_REQUEST = 4710
     }
 }

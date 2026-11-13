@@ -107,4 +107,6 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Cuts the part of a video someone chose to send (VideoTrimmer.kt).
+    implementation("androidx.media3:media3-transformer:1.8.0")
 }

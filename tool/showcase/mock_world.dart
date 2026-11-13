@@ -489,7 +489,7 @@ class _Official extends OfficialChatController {
     announcements: [
       Announcement(
         id: 'a1',
-        content: 'Serafim 1.1.0 is here: Posts, Circles and more.',
+        content: 'Serafim 1.2.0 is here: Echos, reactions and more.',
         createdAt: _ago(hours: 1),
       ),
     ],
