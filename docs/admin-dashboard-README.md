@@ -30,7 +30,7 @@ Serafim is a chat and social app: direct messages over a WebSocket, friends and 
 | Database | Supabase Postgres | Same project. Tables are created on startup (`app/main.py`), and column changes are applied by hand from `sql/`. |
 | Profile pictures | Supabase Storage, public bucket `avatars`, path `<user id>/…` | See `supabase/storage_avatars.sql`. Chat images are never stored on the server. They stay on the phones. |
 | Push | Firebase Cloud Messaging, project `serafim-chat-42421` | Server-side only. **The dashboard does not need Firebase at all.** |
-| Deployed API | Render (`serafim-backend.onrender.com`), reached through the Cloudflare Worker **`https://serafim-api.binaryforge.workers.dev`** | Some Malawian networks block Render's addresses, so clients use the Worker (`Backend/Serafim-Backend/cloudflare/`). Use the Worker URL as the default. The first request after an idle period may take about 30 s while Render wakes up. |
+| Deployed API | **`https://serafim-api.hautek.org`** (Nginx + uvicorn on an AWS EC2 instance, `serafim.service`) | Always awake. The Render host and the Cloudflare Worker (`Backend/Serafim-Backend/cloudflare/`) are the previous setup and are no longer the default. |
 | Releases | Public GitHub releases of `BrightBanda/serafim` | See `RELEASING.md`. Tag format `v<version>+<code>`, e.g. `v1.0.2+3`. |
 
 ### Who is an admin
