@@ -100,7 +100,7 @@ class FakeInstaller implements AppInstaller {
   bool allowed = true;
   int free = 1 << 30;
   ApkInfo? info = const ApkInfo(
-    packageName: 'com.binaryforge.serafim',
+    packageName: 'com.hautek.serafim',
     versionCode: 2,
     sameSigner: true,
     samePackage: true,
@@ -350,7 +350,7 @@ void main() {
 
     test('an APK signed with another key is refused', () async {
       installer.info = const ApkInfo(
-        packageName: 'com.binaryforge.serafim',
+        packageName: 'com.hautek.serafim',
         versionCode: 2,
         sameSigner: false,
         samePackage: true,
@@ -792,7 +792,7 @@ void main() {
         final installer = FakeInstaller()
           ..abis = const ['armeabi-v7a', 'armeabi']
           ..info = const ApkInfo(
-            packageName: 'com.binaryforge.serafim',
+            packageName: 'com.hautek.serafim',
             versionCode: 3,
             sameSigner: true,
             samePackage: true,

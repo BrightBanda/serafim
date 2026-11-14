@@ -50,11 +50,11 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyASoRUBa9stviQ9jQPqHg6w5fx4Nz6f0DE',
-    appId: '1:38214413467:android:0a66aea2de52e17fddaa3e',
-    messagingSenderId: '38214413467',
-    projectId: 'serafim-chat-42421',
-    storageBucket: 'serafim-chat-42421.firebasestorage.app',
+    apiKey: 'AIzaSyAw8b0M0bxyi_-g5oU0uXn-KfAwT7jkC78',
+    appId: '1:829288090398:android:f22969a07ff1562011170f',
+    messagingSenderId: '829288090398',
+    projectId: 'serafim-98627',
+    storageBucket: 'serafim-98627.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(

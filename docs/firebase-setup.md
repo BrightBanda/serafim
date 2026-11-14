@@ -1,7 +1,7 @@
 # Firebase, Google sign-in and push notifications
 
-Firebase project: **Serafim** — id `serafim-chat-42421`
-Console: https://console.firebase.google.com/project/serafim-chat-42421
+Firebase project: **Serafim** — id `serafim-98627`
+Console: https://console.firebase.google.com/project/serafim-98627
 
 Sign-in itself stays with **Supabase**. Google is only an identity provider:
 the app gets a Google ID token and trades it to Supabase for a session
@@ -10,7 +10,7 @@ Firebase is used for **FCM** (push) and as the home of the Google OAuth clients.
 
 ## Already done
 
-- Firebase project created; Android app `com.binaryforge.serafim` registered
+- Firebase project created; Android app `com.hautek.serafim` registered
   with the release and debug SHA-1/SHA-256 (the older `com.example.serafim`
   Android app and the iOS app are still registered).
 - `android/app/google-services.json`, `ios/Runner/GoogleService-Info.plist`,
@@ -43,10 +43,10 @@ In `.env` (gitignored):
 Then fully restart the app (`flutter run --dart-define-from-file=.env`).
 Refresh the config files so they include the new OAuth clients:
 
-    firebase apps:sdkconfig ANDROID 1:38214413467:android:51bb077add2a1e9fddaa3e \
-        --project serafim-chat-42421 --out android/app/google-services.json
+    firebase apps:sdkconfig ANDROID 1:829288090398:android:f22969a07ff1562011170f \
+        --project serafim-98627 --out android/app/google-services.json
     firebase apps:sdkconfig IOS 1:38214413467:ios:afb14ebd15f39b8cddaa3e \
-        --project serafim-chat-42421 --out ios/Runner/GoogleService-Info.plist
+        --project serafim-98627 --out ios/Runner/GoogleService-Info.plist
 
 ### 4. Turn on Google in Supabase
 Supabase dashboard → **Authentication** → **Providers** → **Google** → Enable.
@@ -61,7 +61,7 @@ Supabase dashboard → **Authentication** → **Providers** → **Google** → E
 2. Firebase console → **Project settings** → **Service accounts** →
    **Generate new private key**. On your host (Render) set:
    - `FIREBASE_CREDENTIALS_JSON` = the whole JSON file contents
-   - `FIREBASE_PROJECT_ID` = `serafim-chat-42421`
+   - `FIREBASE_PROJECT_ID` = `serafim-98627`
    Never commit this file. Without it, push is simply off and chat works as before.
 3. Redeploy.
 
@@ -82,7 +82,7 @@ only), otherwise with a key derived from the Firebase service-account key.
 ### 6. Before release
 - Add your **release** keystore SHA-1/SHA-256 to the Android app (Project
   settings → Your apps), or Google sign-in fails in release builds:
-  `firebase apps:android:sha:create <appId> <sha> --project serafim-chat-42421`
+  `firebase apps:android:sha:create <appId> <sha> --project serafim-98627`
 - The package name is still `com.example.serafim`; change it before publishing
   (then re-register the app and re-download the config files).
 - Add the `INTERNET` permission to `android/app/src/main/AndroidManifest.xml`

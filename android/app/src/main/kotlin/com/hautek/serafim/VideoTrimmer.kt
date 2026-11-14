@@ -1,4 +1,4 @@
-package com.binaryforge.serafim
+package com.hautek.serafim
 
 import android.content.Context
 import android.net.Uri

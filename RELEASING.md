@@ -15,7 +15,7 @@ time they allow "Install unknown apps" for Serafim.
   means nobody can update without uninstalling.
 - **Higher version code.** The number after `+` in `pubspec.yaml`
   (`version: 1.2.0+5`) must go up with every release.
-- **Same application id.** `com.binaryforge.serafim`. Changing it makes a
+- **Same application id.** `com.hautek.serafim`. Changing it makes a
   different app.
 - **Tag format.** `v<version>+<code>`, e.g. `v1.2.0+5`. The in-app checker
   relies on it.
@@ -71,10 +71,26 @@ release means publishing a newer one.
   the announcement (long-press it in the official chat) and post it again.
 - Anyone can always install by downloading the APK from the release page.
 
-## The package rename (done)
+## The package rename to com.hautek.serafim
+
+The application id is now `com.hautek.serafim` (it was `com.binaryforge.serafim`,
+and `com.example.serafim` before that). The code side is done: `namespace` and
+`applicationId` in `android/app/build.gradle.kts`, and the Kotlin package under
+`android/app/src/main/kotlin/com/hautek/serafim`. Still to do in Firebase
+(`serafim-98627`), or the build stops at `processDebugGoogleServices`:
+
+1. Add an Android app with package `com.hautek.serafim`, with the release
+   key's SHA-1 and SHA-256 and each debug machine's SHA-1 (Google sign-in
+   needs them).
+2. Replace `android/app/google-services.json` with the newly downloaded one.
+3. Update `lib/firebase_options.dart` (`android` app id) to the new app's.
+
+It is a different app to Android: people on `com.binaryforge.serafim`
+uninstall it once and install the new APK; updates happen in the app after
+that. The earlier rename, for the record:
 
 The application id changed from `com.example.serafim` to
-`com.binaryforge.serafim`. In Firebase (`serafim-chat-42421`) the new Android
+`com.binaryforge.serafim`. In Firebase (`serafim-chat-42421, now deleted`) the new Android
 app "Serafim (com.binaryforge)" is registered with the release key (SHA-1
 `80:C7:C4:41:…:3A:08`, SHA-256 `C4:89:08:61:…:F8:09`) and the local debug key,
 `android/app/google-services.json` is the new config and
@@ -93,7 +109,7 @@ the release page; from then on, updates happen in the app.
 Play Protect warns about apps it doesn't know, especially ones installed
 outside the Play Store that can install other apps. What helps:
 
-- A real application id (done: `com.binaryforge.serafim`; `com.example.*` is
+- A real application id (done: `com.hautek.serafim`; `com.example.*` is
   treated as a placeholder).
 - Always the same release key, and only release builds handed out (never the
   debug build).

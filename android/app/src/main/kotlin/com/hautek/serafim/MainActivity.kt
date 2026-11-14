@@ -1,4 +1,4 @@
-package com.binaryforge.serafim
+package com.hautek.serafim
 
 import android.app.Activity
 import android.app.NotificationChannel

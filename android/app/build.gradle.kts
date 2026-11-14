@@ -20,7 +20,7 @@ val keyProperties = Properties().apply {
 val hasReleaseKey = keyProperties.containsKey("storeFile")
 
 android {
-    namespace = "com.binaryforge.serafim"
+    namespace = "com.hautek.serafim"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "29.0.14206865"
 
@@ -38,7 +38,7 @@ android {
     defaultConfig {
         // Must never change again: in-app updates only install over the same
         // application id signed with the same key.
-        applicationId = "com.binaryforge.serafim"
+        applicationId = "com.hautek.serafim"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
