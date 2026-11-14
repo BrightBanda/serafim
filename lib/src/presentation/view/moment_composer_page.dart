@@ -67,6 +67,9 @@ class _MomentComposerPageState extends ConsumerState<MomentComposerPage> {
   bool _busy = false;
   double? _progress;
 
+  /// A photo or video was picked and is being made ready.
+  bool _preparing = false;
+
   bool get _chosen => _photo != null || _video != null;
 
   @override
@@ -93,16 +96,27 @@ class _MomentComposerPageState extends ConsumerState<MomentComposerPage> {
 
   // ----------------------------------------------------------- choosing ---
 
-  Future<void> _fromCamera() async {
+  /// Runs [work] with the loading indicator showing, and one pick at a time.
+  Future<void> _prepare(Future<void> Function() work) async {
+    if (_preparing) return;
+    setState(() => _preparing = true);
+    try {
+      await work();
+    } finally {
+      if (mounted) setState(() => _preparing = false);
+    }
+  }
+
+  Future<void> _fromCamera() => _prepare(() async {
     try {
       final photo = await takeShrunkPhoto(maxSide: 1280, quality: 75);
       if (photo != null) await _usePhoto(photo);
     } catch (error) {
       _tell(humanError(error, fallback: "Couldn't open the camera."));
     }
-  }
+  });
 
-  Future<void> _fromGallery() async {
+  Future<void> _fromGallery() => _prepare(() async {
     try {
       final pick = await pickFromGallery(photos: true);
       if (pick == null) return;
@@ -114,7 +128,7 @@ class _MomentComposerPageState extends ConsumerState<MomentComposerPage> {
     } catch (error) {
       _tell(humanError(error, fallback: "Couldn't open that."));
     }
-  }
+  });
 
   Future<void> _usePhoto(Uint8List photo) async {
     final thumb = await _smallPreview(photo);
@@ -418,6 +432,13 @@ class _MomentComposerPageState extends ConsumerState<MomentComposerPage> {
   }
 
   Widget _media() {
+    if (_preparing) {
+      return const SizedBox(
+        key: ValueKey('moment-preparing'),
+        height: 220,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (!_chosen) {
       return Column(
         children: [

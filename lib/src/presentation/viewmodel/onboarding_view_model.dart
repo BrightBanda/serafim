@@ -5,6 +5,7 @@ import 'package:serafim/src/core/config/profile_limits.dart';
 import 'package:serafim/src/data/models/profile.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/profile_providers.dart';
+import 'package:serafim/src/providers/service_providers.dart';
 
 /// Sentinel so [OnboardingState.copyWith] can tell "leave the error alone"
 /// from "clear the error".
@@ -26,6 +27,7 @@ class OnboardingState {
     this.isSubmitting = false,
     this.errorMessage,
     this.usernameError,
+    this.checkingUsername = false,
     this.completed = false,
     this.avatarBytes,
   });
@@ -37,6 +39,9 @@ class OnboardingState {
   final bool isSubmitting;
   final String? errorMessage;
   final String? usernameError;
+
+  /// Continue was pressed and the username is being checked with the server.
+  final bool checkingUsername;
 
   /// True once a profile exists, or the user skipped past setup. Lets the
   /// gate move on without re-prompting for the rest of the session.
@@ -54,6 +59,7 @@ class OnboardingState {
     bool? isSubmitting,
     Object? errorMessage = _unset,
     Object? usernameError = _unset,
+    bool? checkingUsername,
     bool? completed,
     Uint8List? avatarBytes,
   }) {
@@ -69,6 +75,7 @@ class OnboardingState {
       usernameError: identical(usernameError, _unset)
           ? this.usernameError
           : usernameError as String?,
+      checkingUsername: checkingUsername ?? this.checkingUsername,
       completed: completed ?? this.completed,
       avatarBytes: avatarBytes ?? this.avatarBytes,
     );
@@ -91,22 +98,69 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
 
   /// Step 2 → step 3. An empty name is allowed here; skipping is a valid
   /// path and [finish] falls back to the email local-part.
+  ///
+  /// A username that is not allowed keeps the person here with the reason
+  /// showing, rather than carrying the problem to a screen that can't show it.
   void continueToInterests(String displayName, {String username = ''}) {
+    final name = _clean(username);
+    final error = _usernameProblem(name);
     state = state.copyWith(
       displayName: displayName.trim(),
-      username: username.trim().toLowerCase(),
-      step: OnboardingStep.interests,
+      username: name,
+      step: error == null ? OnboardingStep.interests : OnboardingStep.photoName,
       errorMessage: null,
-      usernameError: null,
+      usernameError: error,
     );
   }
 
+  /// What Continue does: the rules are checked first (no network), then the
+  /// server is asked whether the name is free, and only then does the next
+  /// step open. A name that is not free stays here with the reason showing.
+  ///
+  /// If the server can't be reached, the person is let through: creating the
+  /// profile checks again, and sends them back here if it is taken.
+  Future<void> continueFromNames(
+    String displayName, {
+    String username = '',
+  }) async {
+    if (state.checkingUsername) return;
+    final name = _clean(username);
+    if (name.isEmpty || _usernameProblem(name) != null) {
+      continueToInterests(displayName, username: name);
+      return;
+    }
+    state = state.copyWith(checkingUsername: true, usernameError: null);
+    String? problem;
+    try {
+      problem = await ref.read(profileServiceProvider).usernameProblem(name);
+    } catch (_) {
+      problem = null; // can't tell: the real check comes with the profile
+    }
+    if (!ref.mounted) return;
+    state = state.copyWith(checkingUsername: false);
+    if (problem != null) {
+      state = state.copyWith(usernameError: problem);
+      return;
+    }
+    continueToInterests(displayName, username: name);
+  }
+
+  /// Checked on every keystroke, so a bad username says so as it is typed.
   void usernameChanged(String value) {
+    final name = _clean(value);
     state = state.copyWith(
-      username: value.trim().toLowerCase(),
-      usernameError: null,
+      username: name,
+      usernameError: _usernameProblem(name),
     );
   }
+
+  /// Lowercase, no spaces, and without an "@" (the field already shows one).
+  static String _clean(String value) =>
+      value.replaceAll('@', '').replaceAll(RegExp(r'\s'), '').toLowerCase();
+
+  /// Empty is fine: one is made from the display name.
+  static String? _usernameProblem(String name) =>
+      name.isEmpty ? null : ProfileLimits.usernameError(name);
 
   void setAvatar(Uint8List bytes) => state = state.copyWith(avatarBytes: bytes);
 
@@ -152,7 +206,11 @@ class OnboardingViewModel extends Notifier<OnboardingState> {
         : _slugify(displayName);
     final usernameError = ProfileLimits.usernameError(username);
     if (usernameError != null) {
-      state = state.copyWith(isSubmitting: false, usernameError: usernameError);
+      state = state.copyWith(
+        isSubmitting: false,
+        usernameError: usernameError,
+        step: OnboardingStep.photoName,
+      );
       return;
     }
 

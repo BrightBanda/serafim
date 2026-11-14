@@ -17,6 +17,9 @@ class ApiException implements Exception {
   /// Machine-readable error code from the server, when it sent one.
   final String? code;
 
+  /// True when the account exists but its email has not been confirmed.
+  bool get isEmailNotConfirmed => code == 'email_not_confirmed';
+
   /// True when the caller's token was rejected.
   bool get isUnauthorized => statusCode == 401;
 
@@ -99,7 +102,7 @@ class ApiException implements Exception {
     'username_already_taken' ||
     'username_taken' => 'That username is already taken. Try another one.',
     'email_not_confirmed' =>
-      'Please confirm your email first. Check your inbox for the link.',
+      'Please confirm your email first. Check your inbox for the code.',
     'weak_password' =>
       'That password is too weak. Use a longer one with a mix of letters '
           'and numbers.',
@@ -114,8 +117,7 @@ class ApiException implements Exception {
     'bad_jwt' ||
     'session_expired' ||
     'session_not_found' ||
-    'refresh_token_not_found' =>
-      'Please sign in again.',
+    'refresh_token_not_found' => 'Please sign in again.',
     _ => null,
   };
 
@@ -208,8 +210,9 @@ class ApiException implements Exception {
     422 => 'Some of the details you entered are not valid.',
     429 => 'Too many attempts. Please wait a minute and try again.',
     500 => 'Something went wrong. Please try again.',
-    502 || 503 || 504 =>
-      "Serafim isn't available right now. Please try again in a moment.",
+    502 ||
+    503 ||
+    504 => "Serafim isn't available right now. Please try again in a moment.",
     _ => 'Something went wrong. Please try again.',
   };
 

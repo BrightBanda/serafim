@@ -25,6 +25,25 @@ class ProfileService {
     }
   }
 
+  /// `GET /profile/username-available` — null when [username] can be used,
+  /// otherwise the reason it can't (against the rules, or already taken).
+  Future<String?> usernameProblem(String username) async {
+    try {
+      final response = await _dio.get<dynamic>(
+        '/profile/username-available',
+        queryParameters: {'username': username},
+      );
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        throw const ApiException('Something went wrong. Please try again.');
+      }
+      if (data['available'] == true) return null;
+      return data['reason'] as String? ?? 'That username is not available.';
+    } on DioException catch (error) {
+      throw ApiException.fromDio(error);
+    }
+  }
+
   /// `POST /profile/me`
   Future<Profile> create(ProfileCreateRequest request) =>
       _request('POST', '/profile/me', body: request.toJson());

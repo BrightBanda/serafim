@@ -19,8 +19,10 @@ class SignupFormState {
   const SignupFormState({
     this.email = '',
     this.password = '',
+    this.confirmPassword = '',
     this.emailError,
     this.passwordError,
+    this.confirmError,
     this.formError,
     this.isSubmitting = false,
     this.hasAttemptedSubmit = false,
@@ -29,10 +31,12 @@ class SignupFormState {
 
   final String email;
   final String password;
+  final String confirmPassword;
 
   /// Per-field messages, shown under the offending input.
   final String? emailError;
   final String? passwordError;
+  final String? confirmError;
 
   /// Whole-form failure, e.g. "User already registered" from Supabase, which
   /// belongs to neither field on its own.
@@ -54,13 +58,18 @@ class SignupFormState {
   bool get canSubmit => !isSubmitting && agreedToTerms;
 
   bool get hasErrors =>
-      emailError != null || passwordError != null || formError != null;
+      emailError != null ||
+      passwordError != null ||
+      confirmError != null ||
+      formError != null;
 
   SignupFormState copyWith({
     String? email,
     String? password,
+    String? confirmPassword,
     Object? emailError = _unset,
     Object? passwordError = _unset,
+    Object? confirmError = _unset,
     Object? formError = _unset,
     bool? isSubmitting,
     bool? hasAttemptedSubmit,
@@ -69,12 +78,16 @@ class SignupFormState {
     return SignupFormState(
       email: email ?? this.email,
       password: password ?? this.password,
+      confirmPassword: confirmPassword ?? this.confirmPassword,
       emailError: identical(emailError, _unset)
           ? this.emailError
           : emailError as String?,
       passwordError: identical(passwordError, _unset)
           ? this.passwordError
           : passwordError as String?,
+      confirmError: identical(confirmError, _unset)
+          ? this.confirmError
+          : confirmError as String?,
       formError: identical(formError, _unset)
           ? this.formError
           : formError as String?,
@@ -109,7 +122,9 @@ class SignupViewModel extends Notifier<SignupFormState> {
   void emailChanged(String value) {
     state = state.copyWith(
       email: value,
-      emailError: state.hasAttemptedSubmit ? _validateEmail(value.trim()) : null,
+      emailError: state.hasAttemptedSubmit
+          ? _validateEmail(value.trim())
+          : null,
       // Any edit invalidates a server complaint about the previous input.
       formError: null,
     );
@@ -119,6 +134,20 @@ class SignupViewModel extends Notifier<SignupFormState> {
     state = state.copyWith(
       password: value,
       passwordError: state.hasAttemptedSubmit ? _validatePassword(value) : null,
+      // Changing the first one can make the second match, or stop matching.
+      confirmError: state.hasAttemptedSubmit
+          ? _validateConfirm(value, state.confirmPassword)
+          : null,
+      formError: null,
+    );
+  }
+
+  void confirmPasswordChanged(String value) {
+    state = state.copyWith(
+      confirmPassword: value,
+      confirmError: state.hasAttemptedSubmit
+          ? _validateConfirm(state.password, value)
+          : null,
       formError: null,
     );
   }
@@ -142,16 +171,25 @@ class SignupViewModel extends Notifier<SignupFormState> {
 
     final emailError = _validateEmail(email);
     final passwordError = _validatePassword(password);
-    final termsError = state.agreedToTerms ? null : 'You must agree to the Terms and Conditions.';
+    final confirmError = _validateConfirm(password, state.confirmPassword);
+    final termsError = state.agreedToTerms
+        ? null
+        : 'You must agree to the Terms and Conditions.';
 
     state = state.copyWith(
       hasAttemptedSubmit: true,
       emailError: emailError,
       passwordError: passwordError,
+      confirmError: confirmError,
       formError: termsError,
     );
 
-    if (emailError != null || passwordError != null || termsError != null) return false;
+    if (emailError != null ||
+        passwordError != null ||
+        confirmError != null ||
+        termsError != null) {
+      return false;
+    }
 
     state = state.copyWith(isSubmitting: true);
 
@@ -191,6 +229,12 @@ class SignupViewModel extends Notifier<SignupFormState> {
     }
     return null;
   }
+
+  /// Typing it twice catches a slip before it locks someone out of an account
+  /// they can't yet recover. Silent while both are empty: the password field
+  /// already says to choose one.
+  String? _validateConfirm(String password, String confirm) =>
+      password == confirm ? null : 'The two passwords do not match.';
 
   String? _validatePassword(String password) {
     if (password.isEmpty) return 'Choose a password.';

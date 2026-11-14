@@ -61,6 +61,7 @@ void main() {
     test('a malformed email is reported', () async {
       viewModel().emailChanged('not-an-email');
       viewModel().passwordChanged('longenoughpassword');
+      viewModel().confirmPasswordChanged('longenoughpassword');
 
       expect(await viewModel().submit(), isFalse);
       expect(formState().emailError, contains('does not look like an email'));
@@ -97,6 +98,31 @@ void main() {
         isNull,
         reason: 'the email is valid once trimmed',
       );
+    });
+  });
+
+  group('confirm password', () {
+    test('a different second password is reported on its own field', () async {
+      viewModel().emailChanged('you@sector76.com');
+      viewModel().passwordChanged('longenoughpassword');
+      viewModel().confirmPasswordChanged('longenoughpasswrd');
+      viewModel().termsChanged(true);
+
+      expect(await viewModel().submit(), isFalse);
+      expect(formState().confirmError, 'The two passwords do not match.');
+      expect(formState().passwordError, isNull);
+    });
+
+    test('it follows the first field once they have tried', () async {
+      viewModel().passwordChanged('longenoughpassword');
+      await viewModel().submit();
+      expect(formState().confirmError, isNotNull);
+
+      viewModel().confirmPasswordChanged('longenoughpassword');
+      expect(formState().confirmError, isNull);
+
+      viewModel().passwordChanged('somethingelseentirely');
+      expect(formState().confirmError, isNotNull);
     });
   });
 
@@ -151,15 +177,20 @@ void main() {
     test('cannot submit without agreeing to terms', () async {
       viewModel().emailChanged('you@sector76.com');
       viewModel().passwordChanged('longenoughpassword');
+      viewModel().confirmPasswordChanged('longenoughpassword');
 
       expect(await viewModel().submit(), isFalse);
-      expect(formState().formError, 'You must agree to the Terms and Conditions.');
+      expect(
+        formState().formError,
+        'You must agree to the Terms and Conditions.',
+      );
       expect(formState().canSubmit, isFalse);
     });
 
     test('can submit once terms are agreed', () async {
       viewModel().emailChanged('you@sector76.com');
       viewModel().passwordChanged('longenoughpassword');
+      viewModel().confirmPasswordChanged('longenoughpassword');
       viewModel().termsChanged(true);
 
       expect(formState().agreedToTerms, isTrue);

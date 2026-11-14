@@ -39,11 +39,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   // testable without a widget tree.
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmController.dispose();
     super.dispose();
   }
 
@@ -110,6 +112,16 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 errorText: form.passwordError,
                 enabled: !form.isSubmitting,
               ),
+              const SizedBox(height: 14),
+              SerafimPasswordField(
+                key: const ValueKey('confirm-password'),
+                label: 'Confirm password',
+                controller: _confirmController,
+                hintText: 'Type it again',
+                onChanged: viewModel.confirmPasswordChanged,
+                errorText: form.confirmError,
+                enabled: !form.isSubmitting,
+              ),
 
               if (form.formError != null) ...[
                 const SizedBox(height: 14),
@@ -138,7 +150,9 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                           const TextSpan(text: 'I agree to the '),
                           TextSpan(
                             text: 'Terms and Conditions',
-                            style: AppTextStyles.linkText.copyWith(fontSize: 9.5),
+                            style: AppTextStyles.linkText.copyWith(
+                              fontSize: 9.5,
+                            ),
                             recognizer: TapGestureRecognizer()
                               ..onTap = _launchTerms,
                           ),

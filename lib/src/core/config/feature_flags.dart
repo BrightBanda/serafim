@@ -4,15 +4,13 @@ import 'package:serafim/src/core/platform/google_support.dart';
 class FeatureFlags {
   FeatureFlags._();
 
-  /// Email + password sign-up and log-in on the landing page.
+  /// Email + password sign-up and log-in on the landing page, below Google.
   ///
-  /// Off for now: email addresses are not verified, so anyone could register
-  /// as someone else's address. Google sign-in only accepts accounts Google
-  /// has already verified. The screens, view models and backend support are
-  /// all still in place — flip this to `true` once email confirmation is
-  /// switched on in Supabase (Authentication → Providers → Email → "Confirm
-  /// email").
-  static const bool emailSignIn = false;
+  /// On now that email addresses are confirmed with a one-time code (the
+  /// "Confirm email" switch is on in Supabase, and its "Confirm signup" email
+  /// template carries the code): nobody can register as someone else's
+  /// address. Turn it off to offer Google only.
+  static const bool emailSignIn = true;
 
   /// Whether to offer email sign-in on this device: when the flag is on, or
   /// when Google sign-in can't work here (Linux and Windows desktop), because

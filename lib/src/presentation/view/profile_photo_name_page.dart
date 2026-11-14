@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:serafim/src/core/config/profile_limits.dart';
 import 'package:serafim/src/utils/app_top_bar.dart';
 import 'package:serafim/src/utils/avatar_picker.dart';
@@ -30,9 +29,13 @@ class ProfilePhotoNamePage extends StatefulWidget {
     this.onSkip,
     this.avatarBytes,
     this.avatarBusy = false,
+    this.checkingUsername = false,
   });
 
   final Uint8List? avatarBytes;
+
+  /// Continue was pressed and the username is being checked.
+  final bool checkingUsername;
 
   /// A chosen photo is still being prepared.
   final bool avatarBusy;
@@ -114,25 +117,25 @@ class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
                       label: 'Username',
                       controller: _usernameController,
                       hintText: 'letters, numbers and _',
+                      prefixText: '@',
                       maxLength: ProfileLimits.usernameMax,
                       autocorrect: false,
+                      // Always lowercase, and the "@" is already there: one
+                      // typed or pasted is dropped, so it never counts.
+                      inputFormatters: [
+                        FilteringTextInputFormatter.deny(RegExp(r'[@\s]')),
+                        _LowerCase(),
+                      ],
+                      errorText: widget.usernameError,
                       onChanged: widget.onUsernameChanged,
                     ),
-                    if (widget.usernameError != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.usernameError!,
-                        key: const ValueKey('profile-username-error'),
-                        style: AppTextStyles.smallDim.copyWith(
-                          color: AppColors.rustPale,
-                        ),
-                      ),
-                    ],
                     const SizedBox(height: 22),
 
                     SerafimButton(
-                      label: 'Continue',
-                      onPressed: widget.onContinue,
+                      label: widget.checkingUsername ? 'Checking…' : 'Continue',
+                      onPressed: widget.checkingUsername
+                          ? null
+                          : widget.onContinue,
                     ),
                     const SizedBox(height: 14),
 
@@ -162,4 +165,13 @@ class _ProfilePhotoNamePageState extends State<ProfilePhotoNamePage> {
       ),
     );
   }
+}
+
+/// Lowercases what is typed. Same length, so the cursor stays where it is.
+class _LowerCase extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) => newValue.copyWith(text: newValue.text.toLowerCase());
 }

@@ -144,12 +144,12 @@ class MomentService {
     ),
   );
 
-  Future<Moment> like(String id) async => Moment.fromJson(
-    await _map(() => _dio.post<dynamic>('/moments/$id/like')),
+  Future<Moment> spark(String id) async => Moment.fromJson(
+    await _map(() => _dio.post<dynamic>('/moments/$id/spark')),
   );
 
-  Future<Moment> unlike(String id) async => Moment.fromJson(
-    await _map(() => _dio.delete<dynamic>('/moments/$id/like')),
+  Future<Moment> unspark(String id) async => Moment.fromJson(
+    await _map(() => _dio.delete<dynamic>('/moments/$id/spark')),
   );
 
   /// Who looked at one of your moments, newest first.

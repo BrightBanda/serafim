@@ -16,6 +16,7 @@ import 'package:serafim/src/data/domain/local_chat_room.dart';
 import 'package:serafim/src/data/local/isar_service.dart';
 import 'package:serafim/src/data/models/app_user.dart';
 import 'package:serafim/src/data/models/moment.dart';
+import 'package:serafim/src/data/services/moment_media_cache.dart';
 import 'package:serafim/src/data/services/moment_service.dart';
 import 'package:serafim/src/data/services/websocket_service.dart';
 import 'package:serafim/src/presentation/view/moment_viewer_page.dart';
@@ -52,8 +53,8 @@ Map<String, dynamic> momentJson(
   String? caption,
   String visibility = 'friends',
   bool seen = false,
-  bool liked = false,
-  int likes = 0,
+  bool sparked = false,
+  int sparks = 0,
   int? views,
   List<String>? excluded,
 }) => {
@@ -74,8 +75,8 @@ Map<String, dynamic> momentJson(
       .toIso8601String(),
   'thumbnail': _thumb,
   'seen': seen,
-  'liked': liked,
-  'like_count': likes,
+  'sparked': sparked,
+  'spark_count': sparks,
   'view_count': views,
   'exclude_ids': excluded,
 };
@@ -86,8 +87,8 @@ Moment moment(
   String user = 'ann',
   String? caption,
   bool seen = false,
-  bool liked = false,
-  int likes = 0,
+  bool sparked = false,
+  int sparks = 0,
   int? views,
 }) => Moment.fromJson(
   momentJson(
@@ -96,8 +97,8 @@ Moment moment(
     user: user,
     caption: caption,
     seen: seen,
-    liked: liked,
-    likes: likes,
+    sparked: sparked,
+    sparks: sparks,
     views: views,
   ),
 );
@@ -147,11 +148,11 @@ class FakeMoments extends MomentService {
   Map<String, MomentRing> ringAnswers = {};
   final ringCalls = <List<String>>[];
   final seen = <String>[];
-  final liked = <String>[];
-  final unliked = <String>[];
+  final sparked = <String>[];
+  final unsparked = <String>[];
   final deleted = <String>[];
-  bool failLikes = false;
-  MomentViewers viewerList = const MomentViewers(viewers: [], likeCount: 0);
+  bool failSparks = false;
+  MomentViewers viewerList = const MomentViewers(viewers: [], sparkCount: 0);
 
   @override
   Future<List<Moment>> of(String userId) async => byUser[userId] ?? const [];
@@ -185,22 +186,22 @@ class FakeMoments extends MomentService {
   }
 
   @override
-  Future<Moment> like(String id) async {
-    if (failLikes) throw StateError('no');
-    liked.add(id);
+  Future<Moment> spark(String id) async {
+    if (failSparks) throw StateError('no');
+    sparked.add(id);
     return byUser.values
         .expand((m) => m)
         .firstWhere((m) => m.id == id)
-        .copyWith(liked: true, likeCount: 1);
+        .copyWith(sparked: true, sparkCount: 1);
   }
 
   @override
-  Future<Moment> unlike(String id) async {
-    unliked.add(id);
+  Future<Moment> unspark(String id) async {
+    unsparked.add(id);
     return byUser.values
         .expand((m) => m)
         .firstWhere((m) => m.id == id)
-        .copyWith(liked: false, likeCount: 0);
+        .copyWith(sparked: false, sparkCount: 0);
   }
 
   @override
@@ -264,7 +265,7 @@ void main() {
     test('reads moments, rings and viewers', () async {
       final recorder = Recorder({
         'GET /moments/users/ann': [
-          momentJson('m1', caption: 'Sunset', likes: 2),
+          momentJson('m1', caption: 'Sunset', sparks: 2),
         ],
         'GET /moments/rings': [
           {
@@ -284,17 +285,17 @@ void main() {
                 'profile_pic': null,
               },
               'viewed_at': '2026-01-01T00:00:00Z',
-              'liked': true,
+              'sparked': true,
             },
           ],
-          'like_count': 1,
+          'spark_count': 1,
         },
       });
       final service = MomentService(Dio()..httpClientAdapter = recorder);
 
       final moments = await service.of('ann');
       expect(moments.single.caption, 'Sunset');
-      expect(moments.single.likeCount, 2);
+      expect(moments.single.sparkCount, 2);
       expect(moments.single.thumbnail, _png);
       expect(moments.single.audience, MomentAudience.friends);
 
@@ -304,7 +305,7 @@ void main() {
 
       final viewers = await service.viewers('m1');
       expect(viewers.viewers.single.displayName, 'Bo B');
-      expect(viewers.viewers.single.liked, isTrue);
+      expect(viewers.viewers.single.sparked, isTrue);
     });
 
     test('posts what the server expects', () async {
@@ -555,6 +556,79 @@ void main() {
 
   // ---------------------------------------------------------- the viewer ---
 
+  group('getting moments ready ahead', () {
+    late Directory dir;
+    late FakeMoments service;
+    late ProviderContainer container;
+    final calls = <String>[];
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('moment_prefetch');
+      calls.clear();
+      service = FakeMoments()
+        ..byUser = {
+          'ann': [moment('a'), moment('b', seen: true)],
+          'bo': [moment('c')],
+        };
+      container = ProviderContainer(
+        overrides: [
+          momentServiceProvider.overrideWithValue(service),
+          currentAccountIdProvider.overrideWithValue('me'),
+          momentMediaCacheProvider.overrideWith(
+            (ref) =>
+                MomentMediaCache(directory: () async => dir, useProxy: false),
+          ),
+        ],
+      );
+      addTearDown(() {
+        container.dispose();
+        dir.deleteSync(recursive: true);
+      });
+    });
+
+    MomentRing ring(String id, {bool allSeen = false}) => MomentRing(
+      userId: id,
+      count: 1,
+      latestAt: DateTime.utc(2026, 1, 1),
+      allSeen: allSeen,
+    );
+
+    test(
+      'unseen photos are saved and the list is kept for the viewer',
+      () async {
+        final prefetcher = container.read(momentPrefetcherProvider);
+        await prefetcher.prefetch([ring('ann'), ring('bo', allSeen: true)]);
+        expect(File('${dir.path}/a.jpg').existsSync(), isTrue);
+        expect(File('${dir.path}/b.jpg').existsSync(), isFalse, reason: 'seen');
+        expect(
+          File('${dir.path}/c.jpg').existsSync(),
+          isFalse,
+          reason: 'no news',
+        );
+        expect(prefetcher.take('ann')?.map((m) => m.id), ['a', 'b']);
+        expect(prefetcher.take('ann'), isNull, reason: 'used once');
+      },
+    );
+
+    test(
+      'the viewer opens the list fetched ahead without asking again',
+      () async {
+        await container.read(momentPrefetcherProvider).prefetch([ring('ann')]);
+        service.byUser = {};
+        final list = await container.read(userMomentsProvider('ann').future);
+        expect(list.map((m) => m.id), ['a', 'b']);
+      },
+    );
+
+    test(
+      'your own are not fetched ahead, and a failure is not fatal',
+      () async {
+        await container.read(momentPrefetcherProvider).prefetch([ring('me')]);
+        expect(dir.listSync(), isEmpty);
+      },
+    );
+  });
+
   group('the viewer', () {
     late FakeMoments service;
     setUp(() {
@@ -623,6 +697,25 @@ void main() {
       expect(service.seen, ['b']);
     });
 
+    testWidgets('when the last one ends it closes, once, and only itself', (
+      t,
+    ) async {
+      service.byUser = {
+        'ann': [moment('a', caption: 'one')],
+      };
+      await open(t);
+      await t.pump(const Duration(seconds: 5));
+      await t.pump(const Duration(seconds: 1));
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.byType(MomentViewerPage), findsNothing);
+      expect(
+        find.text('open'),
+        findsOneWidget,
+        reason: 'the page beneath stays',
+      );
+      expect(t.takeException(), isNull);
+    });
+
     testWidgets('a photo plays for five seconds, then the next', (t) async {
       service.byUser = {
         'ann': [moment('a', caption: 'one'), moment('b', caption: 'two')],
@@ -689,24 +782,24 @@ void main() {
       expect(barValue(t, 0), greaterThan(held));
     });
 
-    testWidgets('liking is instant, and undone if it fails', (t) async {
+    testWidgets('sparking is instant, and undone if it fails', (t) async {
       service.byUser = {
         'ann': [moment('a')],
       };
       await open(t);
-      await t.tap(find.byKey(const ValueKey('moment-like')));
+      await t.tap(find.byKey(const ValueKey('moment-spark')));
       await t.pump();
-      expect(find.byIcon(Icons.favorite), findsOneWidget);
+      expect(find.byIcon(Icons.bolt), findsOneWidget);
       await t.pump(const Duration(milliseconds: 50));
-      expect(service.liked, ['a']);
-      await t.tap(find.byKey(const ValueKey('moment-like')));
+      expect(service.sparked, ['a']);
+      await t.tap(find.byKey(const ValueKey('moment-spark')));
       await t.pump(const Duration(milliseconds: 50));
-      expect(service.unliked, ['a']);
+      expect(service.unsparked, ['a']);
 
-      service.failLikes = true;
-      await t.tap(find.byKey(const ValueKey('moment-like')));
+      service.failSparks = true;
+      await t.tap(find.byKey(const ValueKey('moment-spark')));
       await t.pump(const Duration(milliseconds: 50));
-      expect(find.byIcon(Icons.favorite_border), findsOneWidget); // back
+      expect(find.byIcon(Icons.bolt_outlined), findsOneWidget); // back
       expect(find.text("Couldn't do that."), findsOneWidget);
     });
 
@@ -732,7 +825,7 @@ void main() {
       expect(reply.about!.caption, 'Sunset');
       expect(find.text('Reply sent to Ann.'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('moment-like')),
+        find.byKey(const ValueKey('moment-spark')),
         findsOneWidget,
       ); // empty again
     });
@@ -841,24 +934,24 @@ void main() {
     testWidgets('your own show who saw them, not a reply box', (t) async {
       service
         ..byUser = {
-          'me': [moment('a', user: 'me', views: 3, likes: 1)],
+          'me': [moment('a', user: 'me', views: 3, sparks: 1)],
         }
         ..viewerList = MomentViewers(
-          likeCount: 1,
+          sparkCount: 1,
           viewers: [
             MomentViewer(
               userId: 'bo',
               username: 'bo',
               displayName: 'Bo B',
               viewedAt: DateTime.now().toUtc(),
-              liked: true,
+              sparked: true,
             ),
             MomentViewer(
               userId: 'cy',
               username: 'cy',
               displayName: 'Cy C',
               viewedAt: DateTime.now().toUtc(),
-              liked: false,
+              sparked: false,
             ),
           ],
         );
@@ -869,20 +962,17 @@ void main() {
         '3',
       );
       expect(
-        t.widget<Text>(find.byKey(const ValueKey('moment-like-count'))).data,
+        t.widget<Text>(find.byKey(const ValueKey('moment-spark-count'))).data,
         '1',
       );
       expect(service.seen, isEmpty); // your own look doesn't count
 
       await t.tap(find.byKey(const ValueKey('moment-viewers')));
       await t.pumpAndSettle(const Duration(milliseconds: 100));
-      expect(find.text('2 people saw this · 1 like'), findsOneWidget);
+      expect(find.text('2 people saw this · 1 Spark'), findsOneWidget);
       expect(find.text('Bo B'), findsOneWidget);
       expect(find.text('Cy C'), findsOneWidget);
-      expect(
-        find.byIcon(Icons.favorite),
-        findsNWidgets(2),
-      ); // the count, and Bo's
+      expect(find.byIcon(Icons.bolt), findsNWidgets(2)); // the count, and Bo's
     });
 
     testWidgets('you can delete your own, after asking', (t) async {

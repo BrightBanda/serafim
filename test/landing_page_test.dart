@@ -5,7 +5,7 @@ import 'package:serafim/src/core/config/feature_flags.dart';
 import 'package:serafim/src/presentation/view/landing_page.dart';
 
 void main() {
-  testWidgets('offers Google first and hides email sign-in while it is off', (
+  testWidgets('offers Google first, with email sign-in below it', (
     tester,
   ) async {
     var signUpTaps = 0, loginTaps = 0;
@@ -20,11 +20,14 @@ void main() {
       ),
     );
 
-    expect(FeatureFlags.emailSignIn, isFalse);
+    expect(FeatureFlags.emailSignIn, isTrue);
     expect(find.text('Continue with Google'), findsOneWidget);
-    expect(find.text('Create Account'), findsNothing);
-    expect(find.textContaining('log In'), findsNothing);
-    expect(find.text('Sign up'), findsNothing);
-    expect(signUpTaps + loginTaps, 0);
+    expect(
+      tester.getTopLeft(find.text('Create Account')).dy,
+      greaterThan(tester.getTopLeft(find.text('Continue with Google')).dy),
+    );
+    await tester.tap(find.text('Create Account'));
+    await tester.tap(find.textContaining('log In'));
+    expect([signUpTaps, loginTaps], [1, 1]);
   });
 }

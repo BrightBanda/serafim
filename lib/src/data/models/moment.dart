@@ -36,8 +36,8 @@ class Moment {
     required this.expiresAt,
     required this.thumbnail,
     required this.seen,
-    required this.liked,
-    required this.likeCount,
+    required this.sparked,
+    required this.sparkCount,
     this.caption,
     this.allowSave = true,
     this.viewCount,
@@ -56,8 +56,8 @@ class Moment {
     expiresAt: DateTime.parse(json['expires_at'] as String).toUtc(),
     thumbnail: base64Decode(json['thumbnail'] as String),
     seen: json['seen'] as bool? ?? false,
-    liked: json['liked'] as bool? ?? false,
-    likeCount: (json['like_count'] as num?)?.toInt() ?? 0,
+    sparked: json['sparked'] as bool? ?? false,
+    sparkCount: (json['spark_count'] as num?)?.toInt() ?? 0,
     viewCount: (json['view_count'] as num?)?.toInt(),
     excludeIds: (json['exclude_ids'] as List?)
         ?.map((e) => e.toString())
@@ -79,8 +79,8 @@ class Moment {
   /// A small JPEG: shown while the picture or video loads.
   final Uint8List thumbnail;
   final bool seen;
-  final bool liked;
-  final int likeCount;
+  final bool sparked;
+  final int sparkCount;
 
   /// Only on your own moments.
   final int? viewCount;
@@ -94,7 +94,7 @@ class Moment {
     return left.isNegative ? Duration.zero : left;
   }
 
-  Moment copyWith({bool? seen, bool? liked, int? likeCount}) => Moment(
+  Moment copyWith({bool? seen, bool? sparked, int? sparkCount}) => Moment(
     id: id,
     userId: userId,
     kind: kind,
@@ -106,8 +106,8 @@ class Moment {
     expiresAt: expiresAt,
     thumbnail: thumbnail,
     seen: seen ?? this.seen,
-    liked: liked ?? this.liked,
-    likeCount: likeCount ?? this.likeCount,
+    sparked: sparked ?? this.sparked,
+    sparkCount: sparkCount ?? this.sparkCount,
     viewCount: viewCount,
     excludeIds: excludeIds,
   );
@@ -152,7 +152,7 @@ class MomentViewer {
     required this.username,
     required this.displayName,
     required this.viewedAt,
-    required this.liked,
+    required this.sparked,
     this.profilePic,
   });
 
@@ -164,7 +164,7 @@ class MomentViewer {
       displayName: person['display_name'] as String,
       profilePic: person['profile_pic'] as String?,
       viewedAt: DateTime.parse(json['viewed_at'] as String).toUtc(),
-      liked: json['liked'] as bool? ?? false,
+      sparked: json['sparked'] as bool? ?? false,
     );
   }
 
@@ -173,21 +173,21 @@ class MomentViewer {
   final String displayName;
   final String? profilePic;
   final DateTime viewedAt;
-  final bool liked;
+  final bool sparked;
 }
 
 class MomentViewers {
-  const MomentViewers({required this.viewers, required this.likeCount});
+  const MomentViewers({required this.viewers, required this.sparkCount});
 
   factory MomentViewers.fromJson(Map<String, dynamic> json) => MomentViewers(
     viewers: (json['viewers'] as List)
         .map((v) => MomentViewer.fromJson(v as Map<String, dynamic>))
         .toList(),
-    likeCount: (json['like_count'] as num?)?.toInt() ?? 0,
+    sparkCount: (json['spark_count'] as num?)?.toInt() ?? 0,
   );
 
   final List<MomentViewer> viewers;
-  final int likeCount;
+  final int sparkCount;
 }
 
 /// What a chat message that answers a moment carries, so the reply can show

@@ -103,7 +103,8 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
         avatarBusy: _preparingPhoto,
         onEditPhoto: () => _pickPhoto(viewModel),
         onUploadPhoto: () => _pickPhoto(viewModel),
-        onContinue: () => viewModel.continueToInterests(
+        checkingUsername: state.checkingUsername,
+        onContinue: () => viewModel.continueFromNames(
           _nameController.text,
           username: _usernameController.text,
         ),

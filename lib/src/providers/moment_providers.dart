@@ -3,11 +3,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:serafim/src/providers/service_providers.dart';
 import 'package:serafim/src/core/config/feature_flags.dart';
 import 'package:serafim/src/data/models/moment.dart';
+import 'package:serafim/src/data/services/moment_media_cache.dart';
 import 'package:serafim/src/data/services/moment_service.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
 import 'package:serafim/src/providers/network_providers.dart';
@@ -101,13 +103,87 @@ final friendMomentsProvider = FutureProvider.autoDispose<List<MomentRing>>((
   if (ref.watch(currentAccountIdProvider) == null) return const [];
   final rings = await ref.watch(momentServiceProvider).feed();
   ref.read(momentRingsProvider.notifier).merge(rings);
+  unawaited(ref.read(momentPrefetcherProvider).prefetch(rings));
   return rings;
 });
 
-/// [userId]'s moments you may see. Fetched fresh each time they are opened.
+/// Gets friends' unseen moments onto this phone before they are opened, the
+/// way a chat app does, so they open at once instead of loading.
+class MomentPrefetcher {
+  MomentPrefetcher(this._ref);
+
+  final Ref _ref;
+
+  /// Lists fetched ahead; each is used once (the viewer takes it), and goes
+  /// stale after [listLife] so an old one is never shown.
+  final Map<String, (DateTime, List<Moment>)> _lists = {};
+  static const listLife = Duration(minutes: 2);
+  static const maxPeople = 10;
+  bool _running = false;
+
+  /// [userId]'s list as fetched ahead, if still fresh. Taking it removes it.
+  List<Moment>? take(String userId) {
+    final entry = _lists.remove(userId);
+    if (entry == null) return null;
+    return DateTime.now().difference(entry.$1) > listLife ? null : entry.$2;
+  }
+
+  /// Fetches and keeps the unseen moments of the people in [rings] who have
+  /// something new. One run at a time.
+  Future<void> prefetch(Iterable<MomentRing> rings) async {
+    if (_running) return;
+    _running = true;
+    try {
+      final service = _ref.read(momentServiceProvider);
+      final me = _ref.read(currentAccountIdProvider);
+      for (final ring
+          in rings.where((r) => !r.allSeen && r.userId != me).take(maxPeople)) {
+        final held = _lists[ring.userId];
+        final fresh =
+            held != null && DateTime.now().difference(held.$1) < listLife;
+        List<Moment> moments;
+        if (fresh) {
+          moments = held.$2;
+        } else {
+          try {
+            moments = await service.of(ring.userId);
+          } catch (_) {
+            continue;
+          }
+          _lists[ring.userId] = (DateTime.now(), moments);
+        }
+        for (final m in moments.where((m) => !m.seen)) {
+          await prefetchOne(m);
+        }
+      }
+    } catch (_) {
+      // Ahead-of-time work never gets in the way.
+    } finally {
+      _running = false;
+    }
+  }
+
+  /// This one moment's picture or video, onto the phone.
+  Future<void> prefetchOne(Moment moment) {
+    final service = _ref.read(momentServiceProvider);
+    final cache = _ref.read(momentMediaCacheProvider);
+    return moment.isVideo
+        ? cache.prefetchVideo(moment.id, () => service.videoUrl(moment.id))
+        : cache.prefetchPhoto(moment.id, () => service.photo(moment.id));
+  }
+}
+
+final momentPrefetcherProvider = Provider<MomentPrefetcher>(
+  MomentPrefetcher.new,
+);
+
+/// [userId]'s moments you may see: the list fetched ahead if there is one,
+/// otherwise fetched fresh each time they are opened.
 final userMomentsProvider = FutureProvider.autoDispose
     .family<List<Moment>, String>(
-      (ref, userId) => ref.watch(momentServiceProvider).of(userId),
+      (ref, userId) async =>
+          ref.read(momentPrefetcherProvider).take(userId) ??
+          await ref.watch(momentServiceProvider).of(userId),
     );
 
 /// Your own moments that are still showing.
@@ -116,11 +192,27 @@ final myMomentsProvider = FutureProvider.autoDispose<List<Moment>>((ref) {
   return ref.watch(momentServiceProvider).mine();
 });
 
-/// The picture of a photo moment.
+/// What moments showed, kept on this phone: seen again, they don't download
+/// again. Videos play while they download.
+final momentMediaCacheProvider = Provider<MomentMediaCache>((ref) {
+  final cache = MomentMediaCache(
+    directory: () async =>
+        Directory('${(await getTemporaryDirectory()).path}/moment-cache'),
+    // Only Android is set up for the on-phone video server.
+    useProxy: !kIsWeb && Platform.isAndroid,
+  );
+  ref.onDispose(cache.close);
+  return cache;
+});
+
+/// The picture of a photo moment: from this phone if it was seen before.
 final momentPhotoProvider = FutureProvider.autoDispose
-    .family<Uint8List, String>(
-      (ref, id) => ref.watch(momentServiceProvider).photo(id),
-    );
+    .family<Uint8List, String>((ref, id) {
+      final service = ref.watch(momentServiceProvider);
+      return ref
+          .watch(momentMediaCacheProvider)
+          .photo(id, () => service.photo(id));
+    });
 
 /// Looking at, liking and deleting moments, keeping the rings in step.
 class MomentActions {
@@ -169,8 +261,8 @@ class MomentActions {
     }
   }
 
-  Future<Moment> setLiked(Moment moment, bool liked) =>
-      liked ? _service.like(moment.id) : _service.unlike(moment.id);
+  Future<Moment> setSparked(Moment moment, bool sparked) =>
+      sparked ? _service.spark(moment.id) : _service.unspark(moment.id);
 
   Future<void> delete(Moment moment) async {
     await _service.delete(moment.id);

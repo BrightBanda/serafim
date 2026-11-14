@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/utils/serafim_loader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:serafim/src/presentation/view/email_code_page.dart';
 import 'package:serafim/src/presentation/view/landing_page.dart';
 import 'package:serafim/src/presentation/view/login_page.dart';
 import 'package:serafim/src/presentation/view/main_screen.dart';
@@ -169,11 +170,7 @@ class _AuthGateState extends ConsumerState<AuthGate> {
         ),
       },
 
-      AuthStatus.awaitingEmailConfirmation => const _Message(
-        title: 'Check your email',
-        body:
-            'We sent you a confirmation link. Open it, then come back and log in.',
-      ),
+      AuthStatus.awaitingEmailConfirmation => const EmailCodeScreen(),
 
       AuthStatus.backendUnavailable => _Message(
         title: 'No connection',

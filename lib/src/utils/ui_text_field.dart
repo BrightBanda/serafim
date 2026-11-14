@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show MaxLengthEnforcement;
+import 'package:flutter/services.dart'
+    show MaxLengthEnforcement, TextInputFormatter;
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -30,10 +31,18 @@ class UiTextField extends StatelessWidget {
     this.textCapitalization = TextCapitalization.none,
     this.onChanged,
     this.errorText,
+    this.prefixText,
+    this.inputFormatters,
   });
 
   /// Turns the box's border red and says what is wrong below it.
   final String? errorText;
+
+  /// Shown in front of what is typed, and not part of it (an "@").
+  final String? prefixText;
+
+  /// Limits what can be typed.
+  final List<TextInputFormatter>? inputFormatters;
 
   final String label;
   final TextEditingController? controller;
@@ -76,6 +85,7 @@ class UiTextField extends StatelessWidget {
             minLines: minLines,
             textCapitalization: textCapitalization,
             onChanged: onChanged,
+            inputFormatters: inputFormatters,
             style: AppTextStyles.fieldInput,
             cursorColor: AppColors.primary,
             decoration: InputDecoration(
@@ -94,6 +104,10 @@ class UiTextField extends StatelessWidget {
               contentPadding: const EdgeInsets.symmetric(
                 vertical: 12,
                 horizontal: 12,
+              ),
+              prefixText: prefixText,
+              prefixStyle: AppTextStyles.fieldInput.copyWith(
+                color: AppColors.textDim,
               ),
               suffixIcon: suffix,
               // The counter is drawn below the box instead (see [footer]).

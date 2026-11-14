@@ -45,6 +45,25 @@ class AuthService {
     return SignUpResult.signedIn(AuthSession.fromJson(json));
   }
 
+  /// `POST /auth/v1/verify` — trades the code from the confirmation email for
+  /// a session. The "Confirm signup" template must show `{{ .Token }}`.
+  Future<AuthSession> verifySignupCode({
+    required String email,
+    required String code,
+  }) async {
+    final json = await _post('/verify', {
+      'type': 'signup',
+      'email': email,
+      'token': code,
+    });
+    return AuthSession.fromJson(json);
+  }
+
+  /// `POST /auth/v1/resend` — sends a new confirmation code.
+  Future<void> resendSignupCode(String email) async {
+    await _post('/resend', {'type': 'signup', 'email': email});
+  }
+
   /// `POST /auth/v1/token?grant_type=password`
   Future<AuthSession> signIn({
     required String email,
@@ -114,9 +133,7 @@ class AuthService {
       );
       final data = response.data;
       if (data is! Map<String, dynamic>) {
-        throw const ApiException(
-          "Couldn't sign you in. Please try again.",
-        );
+        throw const ApiException("Couldn't sign you in. Please try again.");
       }
       return data;
     } on DioException catch (error) {

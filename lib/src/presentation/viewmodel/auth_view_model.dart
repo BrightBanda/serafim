@@ -24,8 +24,8 @@ enum AuthStatus {
   unknown,
   unauthenticated,
 
-  /// Signed up, but Supabase is waiting on an email click before issuing
-  /// tokens. Not authenticated, but not a plain signed-out state either.
+  /// Signed up, but Supabase is waiting for the code from the email before
+  /// issuing tokens. Not authenticated, but not a plain signed-out state either.
   awaitingEmailConfirmation,
 
   /// We hold a valid Supabase session but the Serafim backend did not answer.
@@ -43,6 +43,7 @@ class AuthState {
     this.user,
     this.isBusy = false,
     this.notice,
+    this.pendingEmail,
   });
 
   const AuthState.unknown() : this(status: AuthStatus.unknown);
@@ -60,6 +61,9 @@ class AuthState {
   /// their session ended because the account no longer exists.
   final String? notice;
 
+  /// While [AuthStatus.awaitingEmailConfirmation]: where the code was sent.
+  final String? pendingEmail;
+
   bool get isAuthenticated => status == AuthStatus.authenticated;
 
   AuthState copyWith({
@@ -73,6 +77,7 @@ class AuthState {
       user: user ?? this.user,
       isBusy: isBusy ?? this.isBusy,
       notice: identical(notice, _keep) ? this.notice : notice as String?,
+      pendingEmail: pendingEmail,
     );
   }
 }
@@ -234,7 +239,7 @@ class AuthViewModel extends Notifier<AuthState> {
       final result = await _auth.signUp(email: email, password: password);
 
       if (result.needsEmailConfirmation) {
-        state = const AuthState(status: AuthStatus.awaitingEmailConfirmation);
+        _awaitCode(email);
         return;
       }
       await _establish(result.session!);
@@ -243,11 +248,49 @@ class AuthViewModel extends Notifier<AuthState> {
     }
   }
 
+  void _awaitCode(String email) {
+    state = AuthState(
+      status: AuthStatus.awaitingEmailConfirmation,
+      pendingEmail: email,
+    );
+  }
+
+  /// Completes sign-up with the code from the email. Throws [ApiException]
+  /// when the code is wrong or has expired.
+  Future<void> verifyEmailCode(String code) async {
+    final email = state.pendingEmail;
+    if (email == null) return;
+    state = state.copyWith(isBusy: true);
+    try {
+      await _establish(await _auth.verifySignupCode(email: email, code: code));
+    } finally {
+      if (ref.mounted && state.isBusy) state = state.copyWith(isBusy: false);
+    }
+  }
+
+  /// Sends a fresh code to the address being confirmed.
+  Future<void> resendEmailCode() async {
+    final email = state.pendingEmail;
+    if (email != null) await _auth.resendSignupCode(email);
+  }
+
+  /// Gives up on this address (typo, or wrong account) and goes back.
+  void cancelEmailConfirmation() {
+    state = const AuthState.unauthenticated();
+  }
+
   /// Throws [ApiException] on failure.
+  ///
+  /// An account whose email was never confirmed is not an error to the person:
+  /// a new code is sent and they are asked for it.
   Future<void> signIn({required String email, required String password}) async {
     state = state.copyWith(isBusy: true);
     try {
       await _establish(await _auth.signIn(email: email, password: password));
+    } on ApiException catch (error) {
+      if (!error.isEmailNotConfirmed) rethrow;
+      await _auth.resendSignupCode(email);
+      if (ref.mounted) _awaitCode(email);
     } finally {
       if (ref.mounted && state.isBusy) state = state.copyWith(isBusy: false);
     }

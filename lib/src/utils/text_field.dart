@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:serafim/src/utils/themes/app_colors.dart';
 import 'package:serafim/src/utils/themes/app_text_styles.dart';
 
@@ -21,6 +22,7 @@ class SerafimTextField extends StatelessWidget {
     this.errorText,
     this.helperText,
     this.enabled = true,
+    this.inputFormatters,
   });
 
   final String label;
@@ -42,6 +44,9 @@ class SerafimTextField extends StatelessWidget {
 
   /// Set false while a submit is in flight.
   final bool enabled;
+
+  /// Limits what can be typed (digits only, a length cap, …).
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +71,7 @@ class SerafimTextField extends StatelessWidget {
             autocorrect: autocorrect,
             onChanged: onChanged,
             enabled: enabled,
+            inputFormatters: inputFormatters,
             style: AppTextStyles.fieldInput,
             cursorColor: AppColors.primary,
             decoration: InputDecoration(

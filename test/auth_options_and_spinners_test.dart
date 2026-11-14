@@ -68,14 +68,18 @@ void main() {
     });
 
     testOn(
-      'on a phone: Google only, no email buttons',
+      'on a phone: Google first, the email buttons below it',
       TargetPlatform.android,
       (tester) async {
         await tester.pumpWidget(
           app(LandingPage(onSignUpTap: () {}, onLoginTap: () {})),
         );
         expect(find.text('Continue with Google'), findsOneWidget);
-        expect(find.text('Create Account'), findsNothing);
+        expect(find.text('Create Account'), findsOneWidget);
+        expect(
+          tester.getTopLeft(find.text('Create Account')).dy,
+          greaterThan(tester.getTopLeft(find.text('Continue with Google')).dy),
+        );
       },
     );
 

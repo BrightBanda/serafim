@@ -21,7 +21,6 @@ class AppConfig {
     required this.supabaseUrl,
     required this.supabasePublishableKey,
     required this.apiBaseUrl,
-    this.apiDirectUrl = '',
     this.googleWebClientId = '',
     this.googleIosClientId = '',
     this.updateRepo = defaultUpdateRepo,
@@ -43,7 +42,6 @@ class AppConfig {
         // localhost. Override this define for a device or a deployed API.
         defaultValue: 'http://10.0.2.2:8000',
       ),
-      apiDirectUrl: String.fromEnvironment('API_DIRECT_URL'),
       googleWebClientId: String.fromEnvironment('GOOGLE_WEB_CLIENT_ID'),
       googleIosClientId: String.fromEnvironment('GOOGLE_IOS_CLIENT_ID'),
       updateRepo: String.fromEnvironment(
@@ -67,10 +65,6 @@ class AppConfig {
 
   /// Base URL of the Serafim FastAPI backend.
   final String apiBaseUrl;
-
-  /// The backend's own address, used only to wake it when it is asleep and
-  /// the route in [apiBaseUrl] (a Cloudflare Worker) cannot. Empty = off.
-  final String apiDirectUrl;
 
   /// The *Web application* OAuth client id from the Firebase / Google Cloud
   /// project. On Android it is what makes Google issue an ID token that

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,8 @@ import 'package:serafim/src/core/errors/human_error.dart';
 import 'package:serafim/src/data/models/moment.dart';
 import 'package:serafim/src/presentation/viewmodel/chat_viewmodel.dart';
 import 'package:serafim/src/providers/auth_providers.dart';
+import 'package:serafim/src/data/services/moment_media_cache.dart';
+import 'package:serafim/src/data/services/moment_service.dart';
 import 'package:serafim/src/providers/moment_providers.dart';
 import 'package:serafim/src/providers/settings_providers.dart';
 import 'package:serafim/src/utils/chat/avatar_thumb.dart';
@@ -15,7 +18,7 @@ import 'package:serafim/src/utils/themes/app_text_styles.dart';
 import 'package:video_player/video_player.dart';
 
 /// Opens [userId]'s moments full screen, from the first one you haven't seen.
-/// For your own (pass your own id) it shows who looked and liked instead of a
+/// For your own (pass your own id) it shows who looked and sparked instead of a
 /// reply box.
 Future<void> openMoments(
   BuildContext context, {
@@ -68,12 +71,23 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
   bool _loading = true;
   bool _failed = false;
   VideoPlayerController? _video;
+  String? _playingVideoId;
   bool _videoFailed = false;
   bool _sending = false;
+
+  /// The show is over and the page is being closed (once), or this video has
+  /// already moved things along (its player reports the end many times).
+  bool _closing = false;
+  bool _videoEnded = false;
 
   /// Why the show is held: a finger down, the reply box, a sheet. It plays
   /// again when nothing holds it.
   final Set<Object> _holds = {};
+
+  // Providers this page uses from dispose() or after an await, taken once
+  // here: `ref` can't be used once the page is leaving the tree.
+  late final MomentMediaCache _cache;
+  late final MomentService _service;
 
   bool get _mine => ref.read(currentAccountIdProvider) == widget.userId;
   Moment? get _current => _moments.isEmpty ? null : _moments[_index];
@@ -81,13 +95,24 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
   @override
   void initState() {
     super.initState();
+    _cache = ref.read(momentMediaCacheProvider);
+    _service = ref.read(momentServiceProvider);
     _clock.addListener(() => _progress.value = _clock.value);
     _replyFocus.addListener(() => _hold(_replyFocus, _replyFocus.hasFocus));
     unawaited(_load());
   }
 
+  /// Tells the cache the video that was playing is no longer wanted, so an
+  /// unfinished download stops instead of spending data.
+  void _releaseVideo() {
+    final id = _playingVideoId;
+    _playingVideoId = null;
+    if (id != null) _cache.release(id);
+  }
+
   @override
   void dispose() {
+    _releaseVideo();
     _clock.dispose();
     _progress.dispose();
     _video?.dispose();
@@ -135,11 +160,19 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
     final old = _video;
     _video = null;
     _videoFailed = false;
+    _videoEnded = false;
     unawaited(old?.dispose());
+    _releaseVideo();
     setState(() => _index = index);
 
     final moment = _moments[index];
     _see(moment);
+    // The next one is fetched while this one plays, so it opens at once.
+    if (index + 1 < _moments.length) {
+      unawaited(
+        ref.read(momentPrefetcherProvider).prefetchOne(_moments[index + 1]),
+      );
+    }
     if (moment.isVideo) {
       unawaited(_startVideo(moment));
     } else {
@@ -149,12 +182,21 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
   }
 
   Future<void> _startVideo(Moment moment) async {
+    _playingVideoId = moment.id;
     try {
-      final url = await ref.read(momentServiceProvider).videoUrl(moment.id);
-      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      // Plays from this phone if it was seen before; otherwise it plays as
+      // the first part arrives, and is kept for next time.
+      final uri = await _cache.video(
+        moment.id,
+        () => _service.videoUrl(moment.id),
+      );
+      final controller = uri.scheme == 'file'
+          ? VideoPlayerController.file(File(uri.toFilePath()))
+          : VideoPlayerController.networkUrl(uri);
       await controller.initialize();
       if (!mounted || _current?.id != moment.id) {
         await controller.dispose();
+        _cache.release(moment.id);
         return;
       }
       controller.addListener(() => _videoTick(controller));
@@ -173,16 +215,29 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
     final total = value.duration.inMilliseconds;
     if (total <= 0) return;
     _progress.value = (value.position.inMilliseconds / total).clamp(0.0, 1.0);
-    if (value.position >= value.duration && !value.isPlaying) _next();
+    if (value.position >= value.duration && !value.isPlaying && !_videoEnded) {
+      _videoEnded = true;
+      _next();
+    }
   }
 
   void _next() {
-    if (!mounted) return;
+    if (!mounted || _closing) return;
     if (_index < _moments.length - 1) {
       _start(_index + 1);
     } else {
-      Navigator.of(context).pop();
+      _close();
     }
+  }
+
+  /// Leaves the page, once. The player and the clock can both say "finished",
+  /// and a second pop would take the page underneath with it.
+  void _close() {
+    if (_closing || !mounted) return;
+    _closing = true;
+    _clock.stop();
+    unawaited(_video?.pause());
+    Navigator.of(context).maybePop();
   }
 
   void _previous() {
@@ -230,19 +285,21 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
 
   // --------------------------------------------------------- reacting ---
 
-  Future<void> _toggleLike() async {
+  Future<void> _toggleSpark() async {
     final moment = _current;
     if (moment == null) return;
     HapticFeedback.selectionClick();
-    final liked = !moment.liked;
+    final sparked = !moment.sparked;
     _replace(
       moment.copyWith(
-        liked: liked,
-        likeCount: moment.likeCount + (liked ? 1 : -1),
+        sparked: sparked,
+        sparkCount: moment.sparkCount + (sparked ? 1 : -1),
       ),
     );
     try {
-      _replace(await ref.read(momentActionsProvider).setLiked(moment, liked));
+      _replace(
+        await ref.read(momentActionsProvider).setSparked(moment, sparked),
+      );
     } catch (error) {
       _replace(moment);
       _toast(humanError(error, fallback: "Couldn't do that."));
@@ -347,7 +404,7 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
         if (m.id != moment.id) m,
     ];
     if (rest.isEmpty) {
-      Navigator.of(context).pop();
+      _close();
       return;
     }
     setState(() => _moments = rest);
@@ -379,10 +436,7 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
           "Couldn't load moments.",
           style: AppTextStyles.body.copyWith(color: Colors.white70),
         ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Close'),
-        ),
+        TextButton(onPressed: () => _close(), child: const Text('Close')),
       ],
     ),
   );
@@ -401,7 +455,7 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
             onLongPressStart: (_) => _hold('finger', true),
             onLongPressEnd: (_) => _hold('finger', false),
             onVerticalDragEnd: (d) {
-              if ((d.primaryVelocity ?? 0) > 400) Navigator.of(context).pop();
+              if ((d.primaryVelocity ?? 0) > 400) _close();
             },
             child: _content(moment),
           ),
@@ -514,7 +568,7 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
                   key: const ValueKey('moment-close'),
                   icon: const Icon(Icons.close, color: Colors.white),
                   tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => _close(),
                 ),
               ],
             ),
@@ -578,11 +632,11 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
                 style: AppTextStyles.body.copyWith(color: Colors.white),
               ),
               const SizedBox(width: 16),
-              const Icon(Icons.favorite, color: Colors.white),
+              const Icon(Icons.bolt, color: Colors.white),
               const SizedBox(width: 6),
               Text(
-                '${moment.likeCount}',
-                key: const ValueKey('moment-like-count'),
+                '${moment.sparkCount}',
+                key: const ValueKey('moment-spark-count'),
                 style: AppTextStyles.body.copyWith(color: Colors.white),
               ),
               const SizedBox(width: 8),
@@ -656,13 +710,13 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
         valueListenable: _reply,
         builder: (_, value, _) => value.text.trim().isEmpty
             ? IconButton(
-                key: const ValueKey('moment-like'),
-                tooltip: moment.liked ? 'Unlike' : 'Like',
+                key: const ValueKey('moment-spark'),
+                tooltip: moment.sparked ? 'Remove Spark' : 'Spark',
                 icon: Icon(
-                  moment.liked ? Icons.favorite : Icons.favorite_border,
-                  color: moment.liked ? Colors.redAccent : Colors.white,
+                  moment.sparked ? Icons.bolt : Icons.bolt_outlined,
+                  color: moment.sparked ? AppColors.sparkAmber : Colors.white,
                 ),
-                onPressed: _toggleLike,
+                onPressed: _toggleSpark,
               )
             : IconButton(
                 key: const ValueKey('moment-send-reply'),
@@ -675,7 +729,7 @@ class _MomentViewerPageState extends ConsumerState<MomentViewerPage>
   );
 }
 
-/// Who looked at one of your moments, and who liked it.
+/// Who looked at one of your moments, and who sparked it.
 class _ViewersSheet extends ConsumerWidget {
   const _ViewersSheet({required this.moment});
 
@@ -717,8 +771,8 @@ class _ViewersSheet extends ConsumerWidget {
                   child: Text(
                     '${data.viewers.length} '
                     '${data.viewers.length == 1 ? 'person' : 'people'} saw this'
-                    ' · ${data.likeCount} '
-                    '${data.likeCount == 1 ? 'like' : 'likes'}',
+                    ' · ${data.sparkCount} '
+                    '${data.sparkCount == 1 ? 'Spark' : 'Sparks'}',
                     key: const ValueKey('viewers-title'),
                     style: AppTextStyles.eyebrow,
                   ),
@@ -752,11 +806,8 @@ class _ViewersSheet extends ConsumerWidget {
                               '${momentAgo(DateTime.now().difference(v.viewedAt))}',
                               style: AppTextStyles.smallDim,
                             ),
-                            trailing: v.liked
-                                ? const Icon(
-                                    Icons.favorite,
-                                    color: Colors.redAccent,
-                                  )
+                            trailing: v.sparked
+                                ? Icon(Icons.bolt, color: AppColors.sparkAmber)
                                 : null,
                           ),
                       ],

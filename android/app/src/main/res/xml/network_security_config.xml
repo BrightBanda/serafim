@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Everything must be HTTPS, except this phone talking to itself: moment
+     videos play through a tiny server on 127.0.0.1 that downloads them once
+     and keeps them (lib/src/data/services/moment_media_cache.dart). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
